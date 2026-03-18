@@ -15,7 +15,7 @@ impl AnthropicProvider {
         Self {
             client: Client::new(),
             api_key,
-            model: model.unwrap_or_else(|| "claude-sonnet-4-20250514".to_string()),
+            model: model.unwrap_or_else(|| "claude-sonnet-4-6".to_string()),
         }
     }
 }

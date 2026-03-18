@@ -15,7 +15,7 @@ impl OpenAiProvider {
         Self {
             client: Client::new(),
             api_key,
-            model: model.unwrap_or_else(|| "gpt-4o".to_string()),
+            model: model.unwrap_or_else(|| "gpt-5.4-mini".to_string()),
         }
     }
 }

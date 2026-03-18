@@ -1,0 +1,65 @@
+# bilbycast-manager
+
+Centralized monitoring and management server for bilbycast-edge nodes. Provides a web dashboard, REST API, and WebSocket connectivity for real-time status, configuration, and control of distributed media transport nodes.
+
+## Quick Start
+
+1. **Prerequisites**: Install the [Rust toolchain](https://rustup.rs/) (stable) and ensure SQLite3 is available on your system.
+
+2. **Clone and build**:
+   ```bash
+   git clone <repo-url>
+   cd bilbycast-manager
+   cargo build --release
+   ```
+
+3. **Create `.env` file** from the example and generate secrets:
+   ```bash
+   cp .env.example .env
+   # Generate two separate secrets:
+   echo "BILBYCAST_JWT_SECRET=$(openssl rand -hex 32)" >> .env
+   echo "BILBYCAST_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+   chmod 600 .env
+   ```
+
+4. **Edit `config/default.toml`** if you need to change the listen port (default: 8443) or database path.
+
+5. **Run initial setup** to create the database and first super_admin user:
+   ```bash
+   ./target/release/bilbycast-manager setup --config config/default.toml
+   ```
+
+6. **Start the server**:
+   ```bash
+   ./target/release/bilbycast-manager serve --config config/default.toml
+   ```
+
+7. **Open browser** at `http://localhost:8443` and log in with the admin credentials created during setup.
+
+8. **Register edge nodes**: Navigate to the Dashboard, create a new node entry via the API, and use the generated registration token to connect edge nodes.
+
+9. **Optional -- Enable TLS for production**: Set `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY` environment variables pointing to your PEM certificate and key files, then rebuild with:
+   ```bash
+   cargo build --release --features tls
+   ```
+
+## CLI Reference
+
+| Command          | Description                                    |
+|------------------|------------------------------------------------|
+| `setup`          | Create database and first super_admin user     |
+| `serve`          | Start the manager server                       |
+| `reset-password` | Reset a user's password (`--username <name>`)  |
+| `export`         | Export all data to JSON (`--output <file>`)     |
+| `import`         | Import data from JSON (`--input <file>`)       |
+
+All commands accept `--config <path>` (default: `config/default.toml`). The `serve` command also accepts `--port <port>` to override the listen port.
+
+## Documentation
+
+- [Security](docs/SECURITY.md) -- encryption, authentication, and deployment guidance
+- [API Reference](docs/API.md) -- REST and WebSocket endpoints
+
+## License
+
+See [LICENSE](LICENSE).

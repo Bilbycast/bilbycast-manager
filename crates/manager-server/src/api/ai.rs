@@ -19,7 +19,7 @@ pub async fn generate_config(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<GenerateConfigRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let provider_name = req.provider.as_deref().unwrap_or("openai");
 
     // Get the user's API key for this provider
@@ -60,7 +60,8 @@ pub async fn generate_config(
          8. For WebRTC outputs: include \"whip_url\", optionally \"bearer_token\", \"video_only\"\n\
          9. IMPORTANT: Use exact field names as shown. NOT \"key_length\" — use \"aes_key_len\". NOT \"address\" — use \"local_addr\" or \"dest_addr\".\n\
          10. Generate realistic port numbers (9000-9999) and reasonable latency (120-500ms)\n\
-         11. If user asks to modify existing flow, return the complete updated FlowConfig"
+         11. If user asks to modify an existing flow (e.g. add output, change settings), return the COMPLETE updated FlowConfig with the SAME \"id\" as the existing flow. Include the original input and ALL outputs (existing + new). The system will automatically replace the old flow with the updated config.\n\
+         12. NEVER create a new flow ID when the user is asking to modify an existing flow. Reuse the existing flow's \"id\"."
     );
 
     // Call the AI provider
@@ -101,7 +102,7 @@ pub async fn analyze_anomaly(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<AnalyzeRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let provider_name = req.provider.as_deref().unwrap_or("openai");
     let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
 
@@ -124,7 +125,7 @@ pub async fn answer_query(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<QueryRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let provider_name = req.provider.as_deref().unwrap_or("openai");
     let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
 
@@ -235,7 +236,7 @@ async fn get_user_api_key(
     state: &AppState,
     user_id: &str,
     provider: &str,
-) -> Result<String, StatusCode> {
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT api_key_enc FROM ai_keys WHERE user_id = ? AND provider = ?",
     )
@@ -243,14 +244,35 @@ async fn get_user_api_key(
     .bind(provider)
     .fetch_optional(&state.db)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|_| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({ "success": false, "error": "Database error while fetching API key" })),
+    ))?;
 
     let encrypted = row
-        .ok_or(StatusCode::BAD_REQUEST)?
+        .ok_or_else(|| (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false,
+                "error": format!(
+                    "No API key configured for '{}'. Go to AI Keys in the sidebar to add your {} API key.",
+                    provider,
+                    match provider {
+                        "openai" => "OpenAI",
+                        "anthropic" => "Anthropic Claude",
+                        "gemini" => "Google Gemini",
+                        _ => provider,
+                    }
+                )
+            })),
+        ))?
         .0;
 
     manager_core::crypto::decrypt(&encrypted, &state.master_key)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+        .map_err(|_| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": "Failed to decrypt API key. The master key may have changed." })),
+        ))
 }
 
 async fn call_ai_provider(

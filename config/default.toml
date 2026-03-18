@@ -1,15 +1,24 @@
 # bilbycast-manager configuration
+#
+# SECRETS: Do NOT put secrets in this file.
+# Set them as environment variables or in a .env file:
+#
+#   BILBYCAST_JWT_SECRET=<random-64-char-hex>
+#   BILBYCAST_MASTER_KEY=<random-64-char-hex>
+#
+# Generate secure values:
+#   openssl rand -hex 32
 
 # Server listen port
 listen_port = 8443
 
 # SQLite database URL (created automatically if it doesn't exist)
-database_url = "sqlite:/Users/rezarahimi/Development/dev_claude/bilbycast-manager/bilbycast-manager.db?mode=rwc"
+database_url = "sqlite:bilbycast-manager.db?mode=rwc"
 
-# JWT signing secret (CHANGE THIS in production!)
-# Must be at least 32 characters
-jwt_secret = "change-me-to-a-secure-random-secret-in-production"
-
-# Master encryption key for stored secrets (API keys, node credentials)
-# CHANGE THIS in production! Derive from a secure passphrase.
-master_key = "change-me-to-a-secure-master-key-in-production"
+# TLS configuration (optional — set to enable HTTPS/WSS)
+# [tls]
+# cert_path = "certs/server.crt"
+# key_path = "certs/server.key"
+# Or use environment variables:
+#   BILBYCAST_TLS_CERT=/path/to/cert.pem
+#   BILBYCAST_TLS_KEY=/path/to/key.pem

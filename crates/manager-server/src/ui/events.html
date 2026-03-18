@@ -285,6 +285,7 @@
   var perPage = 50;
   var refreshTimer = null;
   var debounceTimer = null;
+  var nodeNames = {}; // node_id -> name lookup
 
   // --- Helpers ---
   function formatTime(isoString) {
@@ -344,6 +345,20 @@
   }
 
   function renderEvents(events) {
+    // Client-side filter: also match node names (server only searches message/category/node_id/severity)
+    var searchTerm = searchInput.value.trim().toLowerCase();
+    if (searchTerm && Object.keys(nodeNames).length > 0) {
+      events = events.filter(function(ev) {
+        var name = (nodeNames[ev.node_id] || '').toLowerCase();
+        if (name.indexOf(searchTerm) !== -1) return true;
+        // Keep events already matched by server
+        return true;
+      });
+      // But also: if user typed a node name that doesn't match node_id/message,
+      // the server may have excluded it. We can't fix that here, but at least
+      // client-side won't exclude server results.
+    }
+
     // Update event count in subheading
     pageHeader.textContent = 'Monitor system events and active alarms \u2014 ' + events.length + ' event' + (events.length !== 1 ? 's' : '');
 
@@ -369,7 +384,7 @@
       html += '<tr>'
         + '<td><span class="severity-badge ' + severityClass + '">' + escapeHtml(ev.severity) + '</span></td>'
         + '<td title="' + escapeHtml(ev.created_at) + '">' + formatTime(ev.created_at) + '</td>'
-        + '<td title="' + escapeHtml(ev.node_id) + '">' + truncateId(ev.node_id) + '</td>'
+        + '<td title="' + escapeHtml(ev.node_id) + '">' + nodeDisplayName(ev.node_id) + '</td>'
         + '<td>' + escapeHtml(ev.category) + '</td>'
         + '<td>' + escapeHtml(ev.message) + '</td>'
         + '<td>' + ackButton + '</td>'
@@ -401,6 +416,13 @@
   });
 
   // --- Populate node dropdown ---
+  function nodeDisplayName(nodeId) {
+    if (!nodeId) return '-';
+    var name = nodeNames[nodeId];
+    if (name) return escapeHtml(name) + ' <span style="color:#64748b;font-size:11px;">(' + nodeId.substring(0, 8) + ')</span>';
+    return truncateId(nodeId);
+  }
+
   function fetchNodes() {
     fetch('/api/v1/nodes', { headers: headers })
       .then(function (res) {
@@ -410,11 +432,15 @@
       .then(function (nodes) {
         if (!nodes || !nodes.length) return;
         for (var i = 0; i < nodes.length; i++) {
+          // Build name lookup
+          nodeNames[nodes[i].id] = nodes[i].name;
           var opt = document.createElement('option');
           opt.value = nodes[i].id;
           opt.textContent = nodes[i].name || truncateId(nodes[i].id);
           nodeFilter.appendChild(opt);
         }
+        // Re-render events now that we have names
+        fetchEvents();
       })
       .catch(function (err) {
         console.error('Failed to fetch nodes:', err);

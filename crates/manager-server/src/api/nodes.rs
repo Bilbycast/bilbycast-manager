@@ -174,3 +174,85 @@ pub async fn send_command(
         }
     }
 }
+
+/// Proxy flow operations directly to the edge node's HTTP API.
+/// More reliable than WebSocket commands for flow CRUD.
+pub async fn proxy_flow_create(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(flow): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !auth.role.has_permission(UserRole::Operator) {
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+    if !auth.can_access_node(&id) {
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
+    }
+
+    let api_addr = get_node_api_addr(&state, &id).await
+        .ok_or_else(|| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "Node API address not available. Is the node connected?"}))))?;
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/api/v1/flows", api_addr);
+
+    let resp = client.post(&url)
+        .json(&flow)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to reach node: {e}")}))))?;
+
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await
+        .unwrap_or_else(|_| serde_json::json!({"error": "Invalid response from node"}));
+
+    if status.is_success() {
+        Ok(Json(body))
+    } else {
+        Err((StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY), Json(body)))
+    }
+}
+
+/// Proxy flow delete directly to the edge node's HTTP API.
+pub async fn proxy_flow_delete(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((id, flow_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !auth.role.has_permission(UserRole::Operator) {
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+    if !auth.can_access_node(&id) {
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
+    }
+
+    let api_addr = get_node_api_addr(&state, &id).await
+        .ok_or_else(|| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "Node API address not available"}))))?;
+
+    let client = reqwest::Client::new();
+    let url = format!("http://{}/api/v1/flows/{}", api_addr, flow_id);
+
+    let resp = client.delete(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to reach node: {e}")}))))?;
+
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await
+        .unwrap_or_else(|_| serde_json::json!({"success": true}));
+
+    if status.is_success() {
+        Ok(Json(body))
+    } else {
+        Err((StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY), Json(body)))
+    }
+}
+
+/// Get the node's HTTP API address from its cached health data.
+async fn get_node_api_addr(state: &AppState, node_id: &str) -> Option<String> {
+    let node = manager_core::db::nodes::get_node_by_id(&state.db, node_id).await.ok()?;
+    let health = node.last_health?;
+    health["api_addr"].as_str().map(|s| s.to_string())
+}

@@ -1,11 +1,11 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::response::IntoResponse;
 use chrono::Utc;
 use dashmap::DashMap;
-use serde::Deserialize;
 use sqlx::SqlitePool;
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
@@ -13,13 +13,75 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use manager_core::models::{EventSeverity, NodeStatus, WsEnvelope};
 
-/// Query parameters for WebSocket connection.
-#[derive(Deserialize)]
-pub struct WsQuery {
-    pub token: Option<String>,
-    pub node_id: Option<String>,
-    pub node_secret: Option<String>,
+// ───────────────────────────────────────────────────────
+// Node auth rate limiter / lockout
+// ───────────────────────────────────────────────────────
+
+/// Tracks failed authentication attempts per identifier (node_id or IP).
+/// After `max_failures` within `window_secs`, the identifier is locked out
+/// for the remainder of the window.
+pub struct NodeAuthLimiter {
+    /// Map of identifier -> (failure_count, first_failure_time)
+    failures: DashMap<String, (u32, Instant)>,
+    max_failures: u32,
+    window_secs: u64,
 }
+
+impl NodeAuthLimiter {
+    pub fn new(max_failures: u32, window_secs: u64) -> Self {
+        Self {
+            failures: DashMap::new(),
+            max_failures,
+            window_secs,
+        }
+    }
+
+    /// Check if an identifier is currently locked out.
+    /// Returns true if locked out (should reject), false if allowed.
+    pub fn is_locked_out(&self, identifier: &str) -> bool {
+        if let Some(entry) = self.failures.get(identifier) {
+            let (count, first_failure) = *entry;
+            let elapsed = first_failure.elapsed().as_secs();
+            if elapsed < self.window_secs && count >= self.max_failures {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Record a failed authentication attempt. Returns true if now locked out.
+    pub fn record_failure(&self, identifier: &str) -> bool {
+        let now = Instant::now();
+        let mut entry = self.failures.entry(identifier.to_string()).or_insert((0, now));
+        let (count, first_failure) = entry.value_mut();
+
+        // Reset window if expired
+        if first_failure.elapsed().as_secs() >= self.window_secs {
+            *count = 1;
+            *first_failure = now;
+            return false;
+        }
+
+        *count += 1;
+        *count >= self.max_failures
+    }
+
+    /// Clear failure tracking for an identifier (on successful auth).
+    pub fn clear(&self, identifier: &str) {
+        self.failures.remove(identifier);
+    }
+
+    /// Periodic cleanup of expired entries.
+    pub fn cleanup(&self) {
+        self.failures.retain(|_, (_, first_failure)| {
+            first_failure.elapsed().as_secs() < self.window_secs * 2
+        });
+    }
+}
+
+// ───────────────────────────────────────────────────────
+// Connected node state
+// ───────────────────────────────────────────────────────
 
 /// State for a connected edge node.
 struct ConnectedNode {
@@ -33,23 +95,33 @@ struct ConnectedNode {
     connected_at: chrono::DateTime<chrono::Utc>,
 }
 
+// ───────────────────────────────────────────────────────
+// NodeHub
+// ───────────────────────────────────────────────────────
+
 /// Hub managing all edge node WebSocket connections.
 pub struct NodeHub {
     connections: DashMap<String, ConnectedNode>,
     browser_tx: broadcast::Sender<String>,
     db: SqlitePool,
+    auth_limiter: Arc<NodeAuthLimiter>,
 }
 
 impl NodeHub {
-    pub fn new(db: SqlitePool, browser_tx: broadcast::Sender<String>) -> Self {
+    pub fn new(
+        db: SqlitePool,
+        browser_tx: broadcast::Sender<String>,
+        auth_limiter: Arc<NodeAuthLimiter>,
+    ) -> Self {
         Self {
             connections: DashMap::new(),
             browser_tx,
             db,
+            auth_limiter,
         }
     }
 
-    /// Send a command to a connected node. Returns the command ack or error.
+    /// Send a command to a connected node.
     pub async fn send_command(
         &self,
         node_id: &str,
@@ -88,7 +160,7 @@ impl NodeHub {
             .and_then(|c| c.cached_config.clone())
     }
 
-    /// Disconnect a node (e.g., when deleting it).
+    /// Disconnect a node.
     pub async fn disconnect_node(&self, node_id: &str) {
         if let Some((_, conn)) = self.connections.remove(node_id) {
             drop(conn.command_tx);
@@ -127,24 +199,31 @@ impl NodeHub {
     }
 }
 
+// ───────────────────────────────────────────────────────
+// WebSocket handler
+// ───────────────────────────────────────────────────────
+
 /// WebSocket handler for edge node connections.
+/// Credentials are NOT in query params — the node sends an "auth" message
+/// as the first WebSocket frame after connecting.
 pub async fn node_ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-    Query(query): Query<WsQuery>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_node_connection(socket, state, query))
+    ws.on_upgrade(move |socket| handle_node_connection(socket, state))
 }
 
-async fn handle_node_connection(mut socket: WebSocket, state: AppState, query: WsQuery) {
-    // Step 1: Authenticate the node
-    let auth_result = match authenticate_node(&state, &query).await {
+async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
+    // Step 1: Wait for auth message (first message must be auth, within 10 seconds)
+    let auth_result = match wait_for_auth(&mut socket, &state).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("Node authentication failed: {e}");
             let _ = socket
                 .send(Message::Text(
-                    serde_json::json!({"type": "error", "message": e}).to_string().into(),
+                    serde_json::json!({"type": "auth_error", "message": e})
+                        .to_string()
+                        .into(),
                 ))
                 .await;
             return;
@@ -153,7 +232,7 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState, query: W
 
     let node_id = auth_result.node_id;
 
-    // Send register_ack with credentials if this was a first-time registration
+    // Send auth response (register_ack with credentials if first-time, or auth_ok)
     if let Some((ref nid, ref nsecret)) = auth_result.new_credentials {
         let ack = serde_json::json!({
             "type": "register_ack",
@@ -166,7 +245,18 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState, query: W
         if let Ok(json) = serde_json::to_string(&ack) {
             let _ = socket.send(Message::Text(json.into())).await;
         }
+    } else {
+        let ok = serde_json::json!({
+            "type": "auth_ok",
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        });
+        if let Ok(json) = serde_json::to_string(&ok) {
+            let _ = socket.send(Message::Text(json.into())).await;
+        }
     }
+
+    // Clear any failure tracking on successful auth
+    state.node_hub.auth_limiter.clear(&node_id);
 
     tracing::info!("Edge node {node_id} connected");
 
@@ -213,7 +303,6 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState, query: W
     // Main message loop
     loop {
         tokio::select! {
-            // Receive from edge node
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
@@ -227,7 +316,6 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState, query: W
                     _ => {}
                 }
             }
-            // Send commands to edge node
             cmd = cmd_rx.recv() => {
                 match cmd {
                     Some(msg) => {
@@ -261,29 +349,66 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState, query: W
     .await;
 }
 
-/// Authentication result: node_id and optionally new credentials for first-time registration.
+// ───────────────────────────────────────────────────────
+// Authentication (via WebSocket message, not query params)
+// ───────────────────────────────────────────────────────
+
 struct AuthResult {
     node_id: String,
-    /// Set only on first-time registration (token-based), so we can send register_ack.
-    new_credentials: Option<(String, String)>, // (node_id, node_secret)
+    new_credentials: Option<(String, String)>,
 }
 
-async fn authenticate_node(state: &AppState, query: &WsQuery) -> Result<AuthResult, String> {
-    // Registration with token
-    if let Some(ref token) = query.token {
+/// Wait for the first WebSocket message which must be an auth frame.
+/// Times out after 10 seconds.
+async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthResult, String> {
+    let timeout = tokio::time::timeout(std::time::Duration::from_secs(10), socket.recv()).await;
+
+    let msg = match timeout {
+        Ok(Some(Ok(Message::Text(text)))) => text,
+        Ok(Some(Ok(_))) => return Err("First message must be a text auth frame".into()),
+        Ok(Some(Err(e))) => return Err(format!("WebSocket error: {e}")),
+        Ok(None) => return Err("Connection closed before auth".into()),
+        Err(_) => return Err("Auth timeout (10s)".into()),
+    };
+
+    let auth: serde_json::Value =
+        serde_json::from_str(&msg).map_err(|e| format!("Invalid auth JSON: {e}"))?;
+
+    let msg_type = auth["type"].as_str().unwrap_or("");
+    if msg_type != "auth" {
+        return Err(format!(
+            "Expected 'auth' message type, got '{msg_type}'"
+        ));
+    }
+
+    let payload = &auth["payload"];
+
+    // Check for registration token
+    if let Some(token) = payload["registration_token"].as_str() {
+        // Rate-limit token-based registration attempts too
+        let limiter_key = format!("token:{}", &token[..token.len().min(8)]);
+        if state.node_hub.auth_limiter.is_locked_out(&limiter_key) {
+            return Err("Too many failed attempts. Try again later.".into());
+        }
+
         let node = manager_core::db::nodes::get_node_by_token(&state.db, token)
             .await
             .map_err(|e| e.to_string())?
-            .ok_or("Invalid registration token")?;
+            .ok_or_else(|| {
+                state.node_hub.auth_limiter.record_failure(&limiter_key);
+                "Invalid registration token".to_string()
+            })?;
 
         // Generate node secret
         let node_secret = Uuid::new_v4().to_string();
-        let encrypted =
-            manager_core::crypto::encrypt(&node_secret, &state.master_key).map_err(|e| e.to_string())?;
+        let encrypted = manager_core::crypto::encrypt(&node_secret, &state.master_key)
+            .map_err(|e| e.to_string())?;
 
         manager_core::db::nodes::complete_registration(&state.db, &node.id, &encrypted)
             .await
             .map_err(|e| e.to_string())?;
+
+        state.node_hub.auth_limiter.clear(&limiter_key);
 
         return Ok(AuthResult {
             node_id: node.id.clone(),
@@ -292,27 +417,57 @@ async fn authenticate_node(state: &AppState, query: &WsQuery) -> Result<AuthResu
     }
 
     // Reconnection with node_id + node_secret
-    if let (Some(node_id), Some(node_secret)) = (&query.node_id, &query.node_secret) {
-        let stored_enc = manager_core::db::nodes::get_node_secret_enc(&state.db, node_id)
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or("Node not registered")?;
+    let node_id = payload["node_id"]
+        .as_str()
+        .ok_or("Missing node_id in auth payload")?;
+    let node_secret = payload["node_secret"]
+        .as_str()
+        .ok_or("Missing node_secret in auth payload")?;
 
-        let stored_secret =
-            manager_core::crypto::decrypt(&stored_enc, &state.master_key).map_err(|e| e.to_string())?;
-
-        if stored_secret != *node_secret {
-            return Err("Invalid node secret".into());
-        }
-
-        return Ok(AuthResult {
-            node_id: node_id.clone(),
-            new_credentials: None,
-        });
+    // Check lockout BEFORE doing any crypto
+    if state.node_hub.auth_limiter.is_locked_out(node_id) {
+        tracing::warn!(
+            "Node {node_id} is locked out due to repeated auth failures"
+        );
+        return Err("Too many failed authentication attempts. Locked out for 60 seconds.".into());
     }
 
-    Err("Missing authentication parameters (token or node_id+node_secret)".into())
+    let stored_enc = manager_core::db::nodes::get_node_secret_enc(&state.db, node_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            state.node_hub.auth_limiter.record_failure(node_id);
+            "Node not registered".to_string()
+        })?;
+
+    let stored_secret = manager_core::crypto::decrypt(&stored_enc, &state.master_key)
+        .map_err(|e| e.to_string())?;
+
+    if stored_secret != node_secret {
+        let locked = state.node_hub.auth_limiter.record_failure(node_id);
+        if locked {
+            tracing::warn!(
+                "Node {node_id} locked out after repeated failed auth attempts"
+            );
+            return Err(
+                "Invalid node secret. Too many failures — locked out for 60 seconds.".into(),
+            );
+        }
+        return Err("Invalid node secret".into());
+    }
+
+    // Success — clear any prior failures
+    state.node_hub.auth_limiter.clear(node_id);
+
+    Ok(AuthResult {
+        node_id: node_id.to_string(),
+        new_credentials: None,
+    })
 }
+
+// ───────────────────────────────────────────────────────
+// Message handling
+// ───────────────────────────────────────────────────────
 
 async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
     let envelope: WsEnvelope = match serde_json::from_str(text) {
@@ -325,16 +480,13 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
 
     match envelope.msg_type.as_str() {
         "stats" => {
-            // Cache the latest stats
             if let Some(mut conn) = state.node_hub.connections.get_mut(node_id) {
                 conn.cached_stats = Some(envelope.payload.clone());
             }
-            // Broadcast to browsers
             state.node_hub.broadcast_to_browsers();
         }
         "health" => {
             let version = envelope.payload["version"].as_str().map(String::from);
-            // Cache health on connection for browser broadcasts
             if let Some(mut conn) = state.node_hub.connections.get_mut(node_id) {
                 conn.cached_health = Some(envelope.payload.clone());
                 if let Some(ref v) = version {
@@ -348,7 +500,6 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
                 version.as_deref(),
             )
             .await;
-            // Also broadcast after health update
             state.node_hub.broadcast_to_browsers();
         }
         "event" => {
@@ -382,10 +533,7 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
             }
         }
         "command_ack" => {
-            tracing::info!(
-                "Command ack from {node_id}: {}",
-                envelope.payload
-            );
+            tracing::info!("Command ack from {node_id}: {}", envelope.payload);
         }
         "pong" => {}
         other => {

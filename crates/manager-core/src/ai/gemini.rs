@@ -15,7 +15,7 @@ impl GeminiProvider {
         Self {
             client: Client::new(),
             api_key,
-            model: model.unwrap_or_else(|| "gemini-2.0-flash".to_string()),
+            model: model.unwrap_or_else(|| "gemini-3-flash".to_string()),
         }
     }
 

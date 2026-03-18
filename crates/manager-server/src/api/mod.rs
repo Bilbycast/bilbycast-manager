@@ -37,6 +37,8 @@ pub fn build_api_router(state: AppState) -> Router<AppState> {
         .route("/api/v1/nodes/{id}/token", post(nodes::regenerate_token))
         .route("/api/v1/nodes/{id}/config", get(nodes::get_node_config))
         .route("/api/v1/nodes/{id}/command", post(nodes::send_command))
+        .route("/api/v1/nodes/{id}/flows", post(nodes::proxy_flow_create))
+        .route("/api/v1/nodes/{id}/flows/{flow_id}", delete(nodes::proxy_flow_delete))
         // Events
         .route("/api/v1/events", get(events::list_events))
         .route("/api/v1/events/{id}/ack", post(events::acknowledge_event))

@@ -518,7 +518,13 @@
       headers: authHeaders(),
       body: JSON.stringify(body)
     })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      return r.json().catch(function () {
+        // If response body isn't JSON, create a synthetic error
+        if (!r.ok) throw new Error('Server returned ' + r.status + '. Check your AI API key in AI Keys settings.');
+        throw new Error('Invalid response from server');
+      });
+    })
     .then(function (data) {
       loadingEl.remove();
       isWaiting = false;
@@ -535,7 +541,7 @@
       loadingEl.remove();
       isWaiting = false;
       sendBtn.disabled = false;
-      addAiTextMessage('Request failed: ' + (err.message || 'Network error. Please check your connection and AI key configuration.'));
+      addAiTextMessage(err.message || 'Network error. Please check your connection and AI key configuration.');
     });
   }
 
@@ -655,41 +661,64 @@
       return;
     }
 
-    var command = {
-      action: {
-        type: 'create_flow',
-        flow: config
-      }
-    };
+    // Use direct HTTP proxy to node API (more reliable than WebSocket commands)
+    var baseUrl = '/api/v1/nodes/' + encodeURIComponent(nodeId);
 
-    fetch('/api/v1/nodes/' + encodeURIComponent(nodeId) + '/command', {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(command)
-    })
+    // Check if flow ID already exists on the node — if so, delete first then recreate
+    var existingFlows = nodeFlows[nodeId] || [];
+    var flowExists = existingFlows.some(function (f) {
+      return (f.id || f.flow_id) === config.id;
+    });
+
+    function sendCreateFlow() {
+      return fetch(baseUrl + '/flows', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(config)
+      });
+    }
+
+    var applyPromise;
+    if (flowExists) {
+      statusEl.textContent = 'Replacing existing flow "' + config.id + '"...';
+      statusEl.style.color = '#fbbf24';
+      applyPromise = fetch(baseUrl + '/flows/' + encodeURIComponent(config.id), {
+        method: 'DELETE',
+        headers: authHeaders()
+      })
+      .then(function () {
+        return new Promise(function (resolve) { setTimeout(resolve, 500); });
+      })
+      .then(sendCreateFlow);
+    } else {
+      applyPromise = sendCreateFlow();
+    }
+
+    applyPromise
     .then(function (r) {
-      return r.text().then(function (text) {
-        try { return JSON.parse(text); } catch(e) {
-          if (!r.ok) throw new Error('Server error ' + r.status + ': ' + (text || 'No response'));
-          throw new Error('Invalid JSON response');
-        }
+      return r.json().catch(function () {
+        if (!r.ok) throw new Error('Node returned error ' + r.status);
+        return {};
       });
     })
     .then(function (data) {
-      if (data.sent) {
+      if (data.success || (data.data && data.data.id)) {
         statusEl.className = 'apply-status success';
-        statusEl.textContent = 'Flow command sent to node successfully';
+        statusEl.textContent = 'Flow "' + config.id + '" applied to node successfully';
+        statusEl.style.color = '';
         btn.disabled = true;
-        btn.innerHTML =
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
-          'Applied';
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Applied';
+        btn.style.background = '#064e3b';
+        // Refresh node flows cache
+        fetchNodeFlows(nodeId);
       } else {
+        var errMsg = data.error || (typeof data === 'string' ? data : JSON.stringify(data));
         statusEl.className = 'apply-status error';
-        statusEl.textContent = 'Failed: ' + (data.error || 'Unknown error');
+        statusEl.textContent = 'Node rejected config: ' + errMsg;
+        statusEl.style.color = '';
         btn.disabled = false;
         btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
       }
-      btn.style.background = '#064e3b';
     })
     .catch(function (err) {
       statusEl.className = 'apply-status error';
@@ -698,6 +727,57 @@
       btn.innerHTML =
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
         'Retry Apply';
+    });
+  }
+
+  // ── Verify flow was actually created on the node ──
+  function verifyFlowOnNode(nodeId, flowId, btn, statusEl) {
+    // Ask the manager for the node's cached config/stats to see if the flow exists
+    // We use the node command to request a config refresh, or check stats
+    fetch('/api/v1/nodes/' + encodeURIComponent(nodeId) + '/config', {
+      headers: authHeaders()
+    })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      // Check if the flow appears in the config or stats
+      var found = false;
+      if (data && data.flows && Array.isArray(data.flows)) {
+        for (var i = 0; i < data.flows.length; i++) {
+          if (data.flows[i].id === flowId) { found = true; break; }
+        }
+      }
+      // Also check from live stats (the WS-cached stats may have the flow)
+      if (!found && data && data.stats && Array.isArray(data.stats)) {
+        for (var i = 0; i < data.stats.length; i++) {
+          if (data.stats[i].flow_id === flowId) { found = true; break; }
+        }
+      }
+
+      if (found) {
+        statusEl.className = 'apply-status success';
+        statusEl.textContent = 'Flow "' + flowId + '" created successfully on node';
+        statusEl.style.color = '';
+        btn.disabled = true;
+        btn.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+          'Applied';
+        btn.style.background = '#064e3b';
+      } else {
+        // Flow not found — might have failed on the node
+        statusEl.className = 'apply-status error';
+        statusEl.textContent = 'Command was sent but flow "' + flowId + '" was not found on node. The node may have rejected the configuration — check node logs for errors.';
+        statusEl.style.color = '';
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
+      }
+    })
+    .catch(function () {
+      // Can't verify — show cautious success
+      statusEl.className = 'apply-status';
+      statusEl.textContent = 'Command sent to node (could not verify — check node dashboard)';
+      statusEl.style.color = '#fbbf24';
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
     });
   }
 

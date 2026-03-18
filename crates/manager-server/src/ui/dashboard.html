@@ -388,6 +388,50 @@
     color: #e2e8f0;
   }
 
+  /* ── WebSocket status indicator ── */
+  /* ── Connection status: small badge when connected ── */
+  .ws-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500; padding: 4px 10px;
+    border-radius: 6px; border: 1px solid #334155;
+  }
+  .ws-status .ws-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .ws-status.connected { color: #4ade80; border-color: rgba(74,222,128,0.3); }
+  .ws-status.connected .ws-dot { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.5); }
+  .ws-status.disconnected { display: none; } /* hide small badge when disconnected — banner takes over */
+
+  /* ── Full-width disconnection warning banner ── */
+  .disconnect-banner {
+    display: none;
+    background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%);
+    color: #fef2f2;
+    padding: 10px 24px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-bottom: 2px solid #ef4444;
+    animation: banner-pulse 2s ease-in-out infinite;
+    z-index: 100;
+  }
+  .disconnect-banner.visible { display: flex; }
+  .disconnect-banner svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .disconnect-banner .banner-sub { font-weight: 400; font-size: 12px; color: #fca5a5; margin-left: 8px; }
+  @keyframes banner-pulse {
+    0%, 100% { background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%); }
+    50% { background: linear-gradient(90deg, #7f1d1d 0%, #991b1b 50%, #7f1d1d 100%); }
+  }
+
+  /* ── Delete button for offline nodes ── */
+  .node-delete-btn {
+    background: none; border: none; cursor: pointer; color: #64748b;
+    padding: 2px 4px; border-radius: 4px; font-size: 14px; line-height: 1;
+    transition: color 0.15s, background 0.15s;
+  }
+  .node-delete-btn:hover { color: #f87171; background: rgba(248,113,113,0.1); }
+
   /* ── Responsive ── */
   @media (max-width: 1024px) {
     .summary-grid { grid-template-columns: repeat(2, 1fr); }
@@ -464,6 +508,16 @@
 
 <!-- Main -->
 <div class="main-wrapper">
+  <!-- Disconnection warning banner (shown when backend is unreachable) -->
+  <div class="disconnect-banner" id="disconnectBanner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+    <span>Server connection lost — live data is not updating</span>
+    <span class="banner-sub" id="bannerDetail">Reconnecting...</span>
+  </div>
+
   <!-- Top bar -->
   <header class="topbar">
     <div class="topbar-search">
@@ -473,6 +527,10 @@
       <input type="text" placeholder="Search nodes, events..." />
     </div>
     <div class="topbar-right">
+      <div class="ws-status disconnected" id="wsStatus">
+        <span class="ws-dot"></span>
+        <span id="wsStatusText">Connecting...</span>
+      </div>
       <button class="alarm-btn" id="alarmBtn" title="Alarms" onclick="window.location.href='/events'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
@@ -520,6 +578,9 @@
     <!-- Node cards -->
     <div class="nodes-header">
       <h2>Edge Nodes</h2>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#94a3b8;cursor:pointer;">
+        <input type="checkbox" id="hideOffline" style="accent-color:#3b82f6;"> Hide offline nodes
+      </label>
     </div>
     <div class="nodes-grid" id="nodesGrid">
       <!-- Placeholder cards rendered by JS -->
@@ -577,13 +638,31 @@
     var offline = 0;
     var seenIds = {};
 
+    // Sort: online first, then by name
+    nodes.sort(function(a, b) {
+      if (a.status === 'online' && b.status !== 'online') return -1;
+      if (a.status !== 'online' && b.status === 'online') return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    var hideOffline = document.getElementById('hideOffline').checked;
+
     nodes.forEach(function (node) {
       var key = node.id || node.name;
-      seenIds[key] = true;
       if (node.status === 'online') online++; else offline++;
 
+      if (hideOffline && node.status !== 'online') {
+        var existing = document.getElementById('node-' + key);
+        if (existing) existing.remove();
+        return;
+      }
+
+      seenIds[key] = true;
       var statusClass = node.status === 'online' ? 'online' : 'offline';
       var statusLabel = node.status === 'online' ? 'Online' : 'Offline';
+      var deleteBtn = node.status !== 'online'
+        ? '<button class="node-delete-btn" title="Remove offline node" data-node-id="' + escapeHtml(key) + '">&#x2715;</button>'
+        : '';
 
       var existing = document.getElementById('node-' + key);
       if (existing) {
@@ -596,6 +675,14 @@
         if (vals[0]) vals[0].textContent = node.flows != null ? node.flows : '--';
         if (vals[1]) vals[1].textContent = node.bitrate || '--';
         if (vals[2]) vals[2].textContent = node.uptime || '--';
+        // Update delete button presence
+        var existingDel = existing.querySelector('.node-delete-btn');
+        if (node.status !== 'online' && !existingDel) {
+          var topEl = existing.querySelector('.node-card-top');
+          if (topEl) topEl.insertAdjacentHTML('beforeend', deleteBtn);
+        } else if (node.status === 'online' && existingDel) {
+          existingDel.remove();
+        }
       } else {
         // Create new card
         var card = document.createElement('div');
@@ -606,6 +693,7 @@
           '<div class="node-card-top">' +
             '<span class="node-name">' + escapeHtml(node.name) + '</span>' +
             '<span class="status-dot ' + statusClass + '"><span class="dot"></span>' + statusLabel + '</span>' +
+            deleteBtn +
           '</div>' +
           '<div class="node-stats">' +
             '<div><div class="node-stat-label">Flows</div><div class="node-stat-value">' + (node.flows != null ? node.flows : '--') + '</div></div>' +
@@ -694,6 +782,9 @@
 
     ws.onopen = function () {
       wsRetryDelay = 1000;
+      document.getElementById('wsStatus').className = 'ws-status connected';
+      document.getElementById('wsStatusText').textContent = 'Connected';
+      document.getElementById('disconnectBanner').classList.remove('visible');
     };
 
     ws.onmessage = function (evt) {
@@ -728,6 +819,10 @@
     };
 
     ws.onclose = function () {
+      document.getElementById('wsStatus').className = 'ws-status disconnected';
+      document.getElementById('wsStatusText').textContent = 'Reconnecting...';
+      document.getElementById('disconnectBanner').classList.add('visible');
+      document.getElementById('bannerDetail').textContent = 'Attempting to reconnect...';
       setTimeout(function () {
         wsRetryDelay = Math.min(wsRetryDelay * 2, 30000);
         connectWebSocket();
@@ -735,11 +830,39 @@
     };
 
     ws.onerror = function () {
+      document.getElementById('wsStatus').className = 'ws-status disconnected';
+      document.getElementById('wsStatusText').textContent = 'Disconnected';
+      document.getElementById('disconnectBanner').classList.add('visible');
+      document.getElementById('bannerDetail').textContent = 'Server may be down';
       ws.close();
     };
   }
 
   connectWebSocket();
+
+  // Hide offline toggle
+  document.getElementById('hideOffline').addEventListener('change', function() { renderNodes(); });
+
+  // Delete offline node handler (delegated)
+  document.getElementById('nodesGrid').addEventListener('click', function(e) {
+    var btn = e.target.closest('.node-delete-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    var nodeId = btn.getAttribute('data-node-id');
+    if (!nodeId) return;
+    if (!confirm('Remove offline node "' + nodeId + '"?')) return;
+    fetch('/api/v1/nodes/' + encodeURIComponent(nodeId), {
+      method: 'DELETE',
+      headers: authHeaders()
+    }).then(function(r) {
+      if (r.ok) {
+        delete _knownNodes[nodeId];
+        var card = document.getElementById('node-' + nodeId);
+        if (card) card.remove();
+        renderNodes();
+      }
+    }).catch(function() {});
+  });
 })();
 </script>
 </body>

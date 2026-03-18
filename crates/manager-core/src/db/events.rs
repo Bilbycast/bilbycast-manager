@@ -58,7 +58,7 @@ pub async fn query_events(
           AND (? IS NULL OR severity = ?)
           AND (? IS NULL OR category = ?)
           AND (? IS NULL OR flow_id = ?)
-          AND (? IS NULL OR message LIKE ?)
+          AND (? IS NULL OR (message LIKE ? OR category LIKE ? OR node_id LIKE ? OR severity LIKE ?))
           AND (? IS NULL OR created_at >= ?)
           AND (? IS NULL OR created_at <= ?)
         ORDER BY created_at DESC
@@ -73,6 +73,9 @@ pub async fn query_events(
     .bind(query.category.as_deref())
     .bind(query.flow_id.as_deref())
     .bind(query.flow_id.as_deref())
+    .bind(search_pattern.as_deref())
+    .bind(search_pattern.as_deref())
+    .bind(search_pattern.as_deref())
     .bind(search_pattern.as_deref())
     .bind(search_pattern.as_deref())
     .bind(from_str.as_deref())

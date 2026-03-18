@@ -66,8 +66,17 @@ enum Commands {
     },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    // Load .env BEFORE starting tokio runtime (set_var is safe here: single-threaded)
+    load_dotenv();
+
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async_main())
+}
+
+async fn async_main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -79,9 +88,39 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Setup { config } => run_setup(&config).await,
         Commands::Serve { config, port } => run_serve(&config, port).await,
-        Commands::ResetPassword { username, config } => run_reset_password(&config, &username).await,
+        Commands::ResetPassword { username, config } => {
+            run_reset_password(&config, &username).await
+        }
         Commands::Export { output, config } => run_export(&config, &output).await,
         Commands::Import { input, config } => run_import(&config, &input).await,
+    }
+}
+
+/// Load .env file from current directory or parent directories.
+fn load_dotenv() {
+    // Check CWD first, then parent dirs
+    for name in &[".env", "../.env"] {
+        let path = std::path::Path::new(name);
+        if path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(path) {
+                for line in contents.lines() {
+                    let line = line.trim();
+                    if line.is_empty() || line.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, value)) = line.split_once('=') {
+                        let key = key.trim();
+                        let value = value.trim();
+                        // Don't override existing env vars
+                        if std::env::var(key).is_err() {
+                            // SAFETY: Called before tokio runtime starts (single-threaded).
+                            unsafe { std::env::set_var(key, value) };
+                        }
+                    }
+                }
+            }
+            break;
+        }
     }
 }
 
@@ -91,7 +130,10 @@ async fn run_setup(config_path: &str) -> anyhow::Result<()> {
 
     let count = manager_core::db::users::count_users(&pool).await?;
     if count > 0 {
-        println!("Database already has {} user(s). Setup is only for first-time initialization.", count);
+        println!(
+            "Database already has {} user(s). Setup is only for first-time initialization.",
+            count
+        );
         return Ok(());
     }
 
@@ -118,8 +160,7 @@ async fn run_setup(config_path: &str) -> anyhow::Result<()> {
         anyhow::bail!("Passwords do not match");
     }
 
-    manager_core::auth::validate_password(&password)
-        .map_err(|e| anyhow::anyhow!(e))?;
+    manager_core::auth::validate_password(&password).map_err(|e| anyhow::anyhow!(e))?;
 
     let req = manager_core::models::CreateUserRequest {
         username,
@@ -133,7 +174,10 @@ async fn run_setup(config_path: &str) -> anyhow::Result<()> {
     };
 
     let user = manager_core::db::users::create_user(&pool, &req).await?;
-    println!("\nSuper admin user '{}' created successfully (ID: {}).", user.username, user.id);
+    println!(
+        "\nSuper admin user '{}' created successfully (ID: {}).",
+        user.username, user.id
+    );
     println!("You can now start the server with: bilbycast-manager serve");
 
     Ok(())
@@ -148,44 +192,134 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
     // Check if setup has been run
     let count = manager_core::db::users::count_users(&pool).await?;
     if count == 0 {
-        tracing::warn!("No users found. Run 'bilbycast-manager setup' to create the first admin user.");
+        tracing::warn!(
+            "No users found. Run 'bilbycast-manager setup' to create the first admin user."
+        );
     }
 
-    let jwt_secret = server_config
-        .jwt_secret
-        .as_deref()
-        .unwrap_or("bilbycast-manager-default-secret-change-me!!")
-        .as_bytes()
-        .to_vec();
-
-    let master_key = manager_core::crypto::derive_key(
-        &server_config
-            .master_key
-            .clone()
-            .unwrap_or_else(|| "bilbycast-default-master-key-change-me".to_string()),
-    );
+    // Load secrets from environment variables (REQUIRED)
+    let jwt_secret = load_required_env_secret("BILBYCAST_JWT_SECRET")?;
+    let master_key_str = load_required_env_secret("BILBYCAST_MASTER_KEY")?;
+    let master_key = manager_core::crypto::derive_key(&master_key_str);
 
     let (browser_tx, _) = broadcast::channel(256);
-    let node_hub = Arc::new(ws::node_hub::NodeHub::new(pool.clone(), browser_tx.clone()));
+
+    // Create node auth rate limiter: 5 failed attempts per 60 seconds = lockout
+    let node_auth_limiter = Arc::new(ws::node_hub::NodeAuthLimiter::new(5, 60));
+
+    let node_hub = Arc::new(ws::node_hub::NodeHub::new(
+        pool.clone(),
+        browser_tx.clone(),
+        node_auth_limiter.clone(),
+    ));
 
     let state = AppState {
         db: pool,
         node_hub,
-        jwt_secret,
+        jwt_secret: jwt_secret.as_bytes().to_vec(),
         master_key,
         browser_stats_tx: browser_tx,
-        config: Arc::new(RwLock::new(server_config)),
+        config: Arc::new(RwLock::new(server_config.clone())),
     };
 
     let app = build_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    tracing::info!("bilbycast-manager listening on {addr}");
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    // Check for TLS configuration
+    let tls_cert = std::env::var("BILBYCAST_TLS_CERT")
+        .ok()
+        .or_else(|| server_config.tls.as_ref().map(|t| t.cert_path.clone()));
+    let tls_key = std::env::var("BILBYCAST_TLS_KEY")
+        .ok()
+        .or_else(|| server_config.tls.as_ref().map(|t| t.key_path.clone()));
+
+    match (tls_cert, tls_key) {
+        #[cfg(feature = "tls")]
+        (Some(cert_path), Some(key_path)) => {
+            tracing::info!(
+                "bilbycast-manager listening on {addr} with TLS (HTTPS/WSS)"
+            );
+
+            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+                &cert_path,
+                &key_path,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to load TLS cert/key: {e}"))?;
+
+            axum_server::bind_rustls(addr, tls_config)
+                .serve(app.into_make_service())
+                .await?;
+        }
+        #[cfg(not(feature = "tls"))]
+        (Some(_), Some(_)) => {
+            anyhow::bail!(
+                "TLS cert/key configured but the 'tls' feature is not enabled. \
+                 Rebuild with: cargo build --features tls"
+            );
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            anyhow::bail!("Both BILBYCAST_TLS_CERT and BILBYCAST_TLS_KEY must be set for TLS");
+        }
+        (None, None) => {
+            tracing::warn!(
+                "TLS not configured — running in plaintext HTTP/WS mode. \
+                 Set BILBYCAST_TLS_CERT and BILBYCAST_TLS_KEY for production."
+            );
+            tracing::info!("bilbycast-manager listening on {addr}");
+
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            axum::serve(listener, app).await?;
+        }
+    }
 
     Ok(())
+}
+
+/// Load a required secret from an environment variable.
+/// Refuses to start with weak/default values.
+fn load_required_env_secret(name: &str) -> anyhow::Result<String> {
+    let value = std::env::var(name).map_err(|_| {
+        anyhow::anyhow!(
+            "Environment variable {name} is not set.\n\
+             Set it in your .env file or shell:\n\
+             {name}=$(openssl rand -hex 32)"
+        )
+    })?;
+
+    if value.is_empty() {
+        anyhow::bail!("{name} is empty");
+    }
+
+    // Reject known-weak defaults that might be copy-pasted
+    let weak_values = [
+        "change-me",
+        "default",
+        "secret",
+        "password",
+        "bilbycast-manager-default",
+        "bilbycast-default",
+    ];
+    let lower = value.to_lowercase();
+    for weak in &weak_values {
+        if lower.contains(weak) {
+            anyhow::bail!(
+                "{name} contains a weak/default value. Generate a proper secret:\n\
+                 {name}=$(openssl rand -hex 32)"
+            );
+        }
+    }
+
+    if value.len() < 16 {
+        anyhow::bail!(
+            "{name} is too short ({}). Use at least 32 characters:\n\
+             {name}=$(openssl rand -hex 32)",
+            value.len()
+        );
+    }
+
+    Ok(value)
 }
 
 async fn run_reset_password(config_path: &str, username: &str) -> anyhow::Result<()> {
@@ -203,8 +337,7 @@ async fn run_reset_password(config_path: &str, username: &str) -> anyhow::Result
         anyhow::bail!("Passwords do not match");
     }
 
-    manager_core::auth::validate_password(&password)
-        .map_err(|e| anyhow::anyhow!(e))?;
+    manager_core::auth::validate_password(&password).map_err(|e| anyhow::anyhow!(e))?;
 
     let req = manager_core::models::UpdateUserRequest {
         password: Some(password),
@@ -227,7 +360,8 @@ async fn run_export(config_path: &str, output_path: &str) -> anyhow::Result<()> 
     let server_config = load_config(config_path)?;
     let pool = manager_core::db::init_db(&server_config.database_url).await?;
 
-    let export = manager_core::export::export_all(&pool, "cli-export", true, Some(30), true).await?;
+    let export =
+        manager_core::export::export_all(&pool, "cli-export", true, Some(30), true).await?;
     let json = serde_json::to_string_pretty(&export)?;
     std::fs::write(output_path, json)?;
 
@@ -264,14 +398,21 @@ fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// TLS configuration section in TOML.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TlsConfig {
+    pub cert_path: String,
+    pub key_path: String,
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ServerConfig {
     #[serde(default = "default_listen_port")]
     pub listen_port: u16,
     #[serde(default = "default_database_url")]
     pub database_url: String,
-    pub jwt_secret: Option<String>,
-    pub master_key: Option<String>,
+    /// TLS certificate/key paths (optional, can also be set via env vars).
+    pub tls: Option<TlsConfig>,
 }
 
 fn default_listen_port() -> u16 {
@@ -287,21 +428,31 @@ impl Default for ServerConfig {
         Self {
             listen_port: 8443,
             database_url: default_database_url(),
-            jwt_secret: None,
-            master_key: None,
+            tls: None,
         }
     }
 }
 
 fn load_config(path: &str) -> anyhow::Result<ServerConfig> {
-    if std::path::Path::new(path).exists() {
+    let mut config = if std::path::Path::new(path).exists() {
         let content = std::fs::read_to_string(path)?;
-        let config: ServerConfig = toml::from_str(&content)?;
-        Ok(config)
+        toml::from_str(&content)?
     } else {
         tracing::warn!("Config file not found at {path}, using defaults");
-        Ok(ServerConfig::default())
+        ServerConfig::default()
+    };
+
+    // Environment variable overrides for non-secret config
+    if let Ok(port) = std::env::var("BILBYCAST_PORT") {
+        if let Ok(p) = port.parse() {
+            config.listen_port = p;
+        }
     }
+    if let Ok(db_url) = std::env::var("BILBYCAST_DATABASE_URL") {
+        config.database_url = db_url;
+    }
+
+    Ok(config)
 }
 
 fn read_line() -> anyhow::Result<String> {
@@ -313,7 +464,6 @@ fn read_line() -> anyhow::Result<String> {
 }
 
 fn rpassword_read(prompt: &str) -> anyhow::Result<String> {
-    // Simple password reading without echo (basic implementation)
     print!("{prompt}");
     read_line()
 }
