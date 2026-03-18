@@ -240,6 +240,7 @@
         <div class="form-row">
           <div class="form-group"><label>Remote Address (caller/rendezvous)</label><input type="text" id="srtInputRemoteAddr" placeholder="remote-host:9000"/><div class="hint">Required for caller and rendezvous modes</div></div>
           <div class="form-group"><label>Latency (ms)</label><input type="number" id="srtInputLatency" value="120" min="0"/></div>
+          <div class="form-group"><label>Peer Idle Timeout (s)</label><input type="number" id="srtInputPeerIdleTimeout" value="30" min="5"/><div class="hint">Drop connection after this many seconds without data (default 30)</div></div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Passphrase (AES encryption)</label><input type="text" id="srtInputPassphrase" placeholder="Optional, 10-79 chars"/></div>
@@ -437,6 +438,7 @@ function buildFlowConfig() {
   var itype = val('inputType');
   if (itype === 'srt') {
     var inp = { type: 'srt', mode: val('srtInputMode'), local_addr: val('srtInputLocalAddr'), latency_ms: parseInt(val('srtInputLatency'))||120 };
+    var pit = parseInt(val('srtInputPeerIdleTimeout')); if (pit && pit !== 30) inp.peer_idle_timeout_secs = pit;
     if (val('srtInputRemoteAddr')) inp.remote_addr = val('srtInputRemoteAddr');
     if (val('srtInputPassphrase')) inp.passphrase = val('srtInputPassphrase');
     var aes = val('srtInputAesKeyLen'); if (aes) inp.aes_key_len = parseInt(aes);
@@ -460,6 +462,7 @@ function buildFlowConfig() {
       out.mode = val('outSrtMode-'+idx); out.local_addr = val('outSrtLocal-'+idx) || '0.0.0.0:0';
       if (val('outSrtRemote-'+idx)) out.remote_addr = val('outSrtRemote-'+idx);
       out.latency_ms = parseInt(val('outSrtLatency-'+idx))||120;
+      var opit = parseInt(val('outSrtPeerIdle-'+idx)); if (opit && opit !== 30) out.peer_idle_timeout_secs = opit;
       if (val('outSrtPass-'+idx)) out.passphrase = val('outSrtPass-'+idx);
       var a = val('outSrtAes-'+idx); if (a) out.aes_key_len = parseInt(a);
     } else if (otype === 'rtp') {
@@ -684,6 +687,7 @@ function buildOutputConfig(p) {
     out.mode = val('outSrtMode-'+p); out.local_addr = val('outSrtLocal-'+p) || '0.0.0.0:0';
     if (val('outSrtRemote-'+p)) out.remote_addr = val('outSrtRemote-'+p);
     out.latency_ms = parseInt(val('outSrtLatency-'+p))||120;
+    var opit2 = parseInt(val('outSrtPeerIdle-'+p)); if (opit2 && opit2 !== 30) out.peer_idle_timeout_secs = opit2;
     if (val('outSrtPass-'+p)) out.passphrase = val('outSrtPass-'+p);
     var a = val('outSrtAes-'+p); if (a) out.aes_key_len = parseInt(a);
   } else if (otype === 'rtp') {

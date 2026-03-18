@@ -22,6 +22,7 @@ INPUT TYPES:
    - local_addr: local bind address
    - remote_addr: required for caller/rendezvous modes
    - latency_ms: SRT latency in milliseconds (default 120)
+   - peer_idle_timeout_secs: seconds before connection is considered dead if no data (default 30, use higher for broadcast)
    - Optional: AES encryption (passphrase + key length 16/24/32), SMPTE 2022-7 redundancy
 
 OUTPUT TYPES:
@@ -53,7 +54,7 @@ pub const FLOW_CONFIG_SCHEMA: &str = r#"
   "input": {
     "type": "rtp | srt",
     // For RTP: "bind_addr", optionally "interface_addr", "fec_decode", "allowed_sources", etc.
-    // For SRT: "mode", "local_addr", optionally "remote_addr", "latency_ms", "passphrase", etc.
+    // For SRT: "mode", "local_addr", optionally "remote_addr", "latency_ms", "peer_idle_timeout_secs", "passphrase", etc.
   },
   "outputs": [
     {
