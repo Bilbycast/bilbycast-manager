@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node Configuration - bilbycast manager</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; min-height: 100vh; overflow-x: hidden; }
+
+  .sidebar { width: 256px; min-width: 256px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 20; }
+  .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid #334155; }
+  .sidebar-logo .logo-text { font-size: 22px; font-weight: 700; color: #60a5fa; }
+  .sidebar-logo .logo-sub { font-size: 12px; color: #64748b; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+  .nav-section-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; padding: 20px 20px 8px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: #94a3b8; text-decoration: none; font-size: 14px; font-weight: 500; border-left: 3px solid transparent; transition: all 0.15s; }
+  .nav-item:hover { background: rgba(96,165,250,0.06); color: #e2e8f0; }
+  .nav-item.active { background: rgba(96,165,250,0.1); color: #60a5fa; border-left-color: #60a5fa; }
+  .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid #334155; font-size: 12px; color: #475569; }
+
+  .main-wrapper { margin-left: 256px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+  .topbar { height: 56px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; position: sticky; top: 0; z-index: 10; }
+  .topbar-search { position: relative; width: 320px; }
+  .topbar-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #64748b; }
+  .topbar-search input { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px 8px 36px; font-size: 13px; color: #e2e8f0; outline: none; }
+  .topbar-search input::placeholder { color: #64748b; }
+  .topbar-search input:focus { border-color: #60a5fa; }
+  .topbar-right { display: flex; align-items: center; gap: 20px; }
+  .alarm-btn { position: relative; background: none; border: none; cursor: pointer; padding: 6px; color: #94a3b8; }
+  .alarm-btn svg { width: 20px; height: 20px; }
+  .alarm-badge { position: absolute; top: 0; right: 0; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; transform: translate(4px,-4px); }
+  .alarm-badge.hidden { display: none; }
+  .user-info { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+  .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; }
+  .user-name { font-size: 13px; font-weight: 500; }
+
+  .content { flex: 1; padding: 32px; }
+  .page-header { margin-bottom: 28px; }
+  .page-header h1 { font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+  .page-header p { font-size: 14px; color: #64748b; }
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: #64748b; text-decoration: none; font-size: 13px; margin-bottom: 16px; }
+  .back-link:hover { color: #e2e8f0; }
+  .back-link svg { width: 16px; height: 16px; }
+
+  .section { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #334155; }
+  .section-header h2 { font-size: 16px; font-weight: 600; color: #f1f5f9; }
+
+  .btn-primary { background: #3b82f6; color: #fff; border: none; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: background 0.15s; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-primary svg { width: 16px; height: 16px; }
+  .btn-secondary { background: transparent; color: #94a3b8; border: 1px solid #334155; border-radius: 8px; padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-secondary:hover { border-color: #60a5fa; color: #60a5fa; }
+  .btn-danger { background: transparent; color: #f87171; border: 1px solid #7f1d1d; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+  .btn-danger:hover { background: rgba(248,113,113,0.1); }
+
+  .flows-empty { text-align: center; padding: 40px 20px; color: #64748b; }
+  .flows-empty svg { width: 40px; height: 40px; margin-bottom: 12px; opacity: 0.4; }
+  .flows-empty p { font-size: 14px; font-weight: 500; }
+  .flows-empty span { font-size: 12px; display: block; margin-top: 4px; }
+
+  .flow-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid rgba(51,65,85,0.5); }
+  .flow-item:last-child { border-bottom: none; }
+  .flow-name { font-size: 14px; font-weight: 600; color: #e2e8f0; margin-bottom: 2px; }
+  .flow-desc { font-size: 12px; color: #64748b; }
+  .flow-status { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; margin-right: 16px; }
+  .flow-status .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .flow-status.running .dot { background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,0.5); }
+  .flow-status.running { color: #4ade80; }
+  .flow-status.stopped .dot { background: #64748b; }
+  .flow-status.stopped { color: #64748b; }
+  .flow-actions { display: flex; gap: 8px; }
+  .action-btn { background: none; border: 1px solid #334155; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #94a3b8; cursor: pointer; }
+  .action-btn:hover { border-color: #60a5fa; color: #60a5fa; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: none; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #1e293b; border: 1px solid #334155; border-radius: 16px; width: 720px; max-width: 90vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid #334155; }
+  .modal-header h2 { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+  .modal-close { background: none; border: none; color: #64748b; cursor: pointer; padding: 4px; }
+  .modal-close:hover { color: #e2e8f0; }
+  .modal-close svg { width: 20px; height: 20px; }
+  .modal-body { padding: 24px; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid #334155; }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .form-row.full { grid-template-columns: 1fr; }
+  .form-group { margin-bottom: 0; }
+  .form-group label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .form-group input, .form-group select { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #e2e8f0; outline: none; }
+  .form-group input::placeholder { color: #475569; }
+  .form-group input:focus, .form-group select:focus { border-color: #60a5fa; }
+  .form-group select { appearance: none; background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  .form-group select option { background: #1e293b; color: #e2e8f0; }
+  .form-group .hint { font-size: 11px; color: #475569; margin-top: 4px; }
+
+  .form-divider { border: none; border-top: 1px solid #334155; margin: 20px 0; }
+  .form-section-title { font-size: 13px; font-weight: 600; color: #60a5fa; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .output-block { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 16px; margin-bottom: 12px; position: relative; }
+  .output-block .remove-output { position: absolute; top: 12px; right: 12px; background: none; border: none; color: #64748b; cursor: pointer; }
+  .output-block .remove-output:hover { color: #f87171; }
+  .add-output-btn { background: transparent; border: 1px dashed #334155; border-radius: 10px; padding: 14px; width: 100%; color: #64748b; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .add-output-btn:hover { border-color: #60a5fa; color: #60a5fa; }
+
+  .json-preview { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: #94a3b8; white-space: pre-wrap; max-height: 300px; overflow-y: auto; display: none; margin-top: 16px; }
+  .json-preview.visible { display: block; }
+
+  .ai-section { display: flex; gap: 12px; align-items: flex-end; }
+  .ai-section .input-group { flex: 1; }
+  .ai-section label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .ai-section input { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #e2e8f0; outline: none; }
+  .ai-section input::placeholder { color: #475569; }
+  .ai-section input:focus { border-color: #60a5fa; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #22c55e; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; z-index: 200; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .toast.error { background: #ef4444; }
+  .toast.visible { display: block; }
+
+  @media (max-width: 768px) { .sidebar { display: none; } .main-wrapper { margin-left: 0; } .form-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo"><div class="logo-text">bilbycast</div><div class="logo-sub">manager</div></div>
+  <nav class="sidebar-nav">
+    <a href="/dashboard" class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Dashboard</a>
+    <a href="/topology" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>Topology</a>
+    <a href="/events" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Events</a>
+    <div class="nav-section-label">Administration</div>
+    <a href="/admin/users" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Users</a>
+    <a href="/admin/settings" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>Settings</a>
+    <div class="nav-section-label">AI Assistant</div>
+    <a href="/ai/assistant" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="12" r="3"/></svg>AI Config</a>
+    <a href="/ai/settings" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>AI Keys</a>
+  </nav>
+  <div class="sidebar-footer">v0.1.0</div>
+</aside>
+
+<div class="main-wrapper">
+  <header class="topbar">
+    <div class="topbar-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search nodes, events..."/>
+    </div>
+    <div class="topbar-right">
+      <button class="alarm-btn" onclick="location.href='/events'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="alarm-badge hidden" id="alarmBadge">0</span></button>
+      <div class="user-info"><div class="user-avatar">A</div><span class="user-name">Admin</span></div>
+    </div>
+  </header>
+
+  <main class="content">
+    <a href="#" class="back-link" id="backLink">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to Node Detail
+    </a>
+    <div class="page-header">
+      <h1 id="pageTitle">Node Configuration</h1>
+      <p id="pageDesc">Configure flows and streaming pipelines</p>
+    </div>
+
+    <!-- Flows Section -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Flows</h2>
+        <button class="btn-primary" id="newFlowBtn" onclick="openNewFlowModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Flow
+        </button>
+      </div>
+      <div id="flowsList">
+        <div class="flows-empty" id="flowsEmpty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <p>No flows configured</p>
+          <span>Click "New Flow" to create a streaming pipeline</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Config Generation -->
+    <div class="section">
+      <div class="section-header"><h2>AI Config Generation</h2></div>
+      <div class="ai-section">
+        <div class="input-group">
+          <label>Describe the flow you want</label>
+          <input type="text" id="aiPrompt" placeholder="e.g. SRT listener on port 9000 with AES-256 that sends to RTP multicast 239.1.1.1:5004 with 10x10 FEC"/>
+        </div>
+        <button class="btn-primary" id="aiGenerateBtn" onclick="aiGenerate()">Generate</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- New Flow Modal -->
+<div class="modal-overlay" id="flowModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modalTitle">New Flow</h2>
+      <button class="modal-close" onclick="closeFlowModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <!-- Basic Info -->
+      <div class="form-section-title">Flow Details</div>
+      <div class="form-row">
+        <div class="form-group"><label>Flow ID</label><input type="text" id="flowId" placeholder="e.g. srt-to-rtp-1"/></div>
+        <div class="form-group"><label>Flow Name</label><input type="text" id="flowName" placeholder="e.g. SRT Input to RTP Output"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Enabled</label>
+          <select id="flowEnabled"><option value="true">Yes - Start on apply</option><option value="false">No - Create but don't start</option></select>
+        </div>
+      </div>
+
+      <hr class="form-divider"/>
+
+      <!-- Input -->
+      <div class="form-section-title">Input</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Input Type</label>
+          <select id="inputType" onchange="updateInputFields()">
+            <option value="srt">SRT</option>
+            <option value="rtp">RTP / UDP</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- SRT Input Fields -->
+      <div id="srtInputFields">
+        <div class="form-row">
+          <div class="form-group"><label>Mode</label><select id="srtInputMode"><option value="listener">Listener</option><option value="caller">Caller</option><option value="rendezvous">Rendezvous</option></select></div>
+          <div class="form-group"><label>Local Address</label><input type="text" id="srtInputLocalAddr" placeholder="0.0.0.0:9000"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Remote Address (caller/rendezvous)</label><input type="text" id="srtInputRemoteAddr" placeholder="remote-host:9000"/><div class="hint">Required for caller and rendezvous modes</div></div>
+          <div class="form-group"><label>Latency (ms)</label><input type="number" id="srtInputLatency" value="120" min="0"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Passphrase (AES encryption)</label><input type="text" id="srtInputPassphrase" placeholder="Optional, 10-79 chars"/></div>
+          <div class="form-group"><label>AES Key Length</label><select id="srtInputAesKeyLen"><option value="">Default (128-bit)</option><option value="16">AES-128</option><option value="24">AES-192</option><option value="32">AES-256</option></select></div>
+        </div>
+      </div>
+
+      <!-- RTP Input Fields -->
+      <div id="rtpInputFields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group"><label>Bind Address</label><input type="text" id="rtpInputBindAddr" placeholder="0.0.0.0:5000 or 239.1.1.1:5000"/><div class="hint">Use multicast address for multicast receive</div></div>
+          <div class="form-group"><label>Interface Address</label><input type="text" id="rtpInputInterface" placeholder="Optional, e.g. 192.168.1.1"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>FEC Decode Columns (L)</label><input type="number" id="rtpInputFecCols" placeholder="Optional, 1-20"/></div>
+          <div class="form-group"><label>FEC Decode Rows (D)</label><input type="number" id="rtpInputFecRows" placeholder="Optional, 4-20"/></div>
+        </div>
+      </div>
+
+      <hr class="form-divider"/>
+
+      <!-- Outputs -->
+      <div class="form-section-title">Outputs</div>
+      <div id="outputsContainer"></div>
+      <button class="add-output-btn" onclick="addOutput()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Output
+      </button>
+
+      <!-- JSON Preview -->
+      <hr class="form-divider"/>
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="form-section-title" style="margin-bottom:0;">JSON Preview</div>
+        <button class="btn-secondary" onclick="togglePreview()" style="padding:6px 14px; font-size:12px;">Toggle Preview</button>
+      </div>
+      <pre class="json-preview" id="jsonPreview"></pre>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeFlowModal()">Cancel</button>
+      <button class="btn-primary" onclick="applyFlow()">Apply to Node</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Output Modal -->
+<div class="modal-overlay" id="addOutputModal">
+  <div class="modal" style="width:560px;">
+    <div class="modal-header">
+      <h2 id="addOutputModalTitle">Add Output</h2>
+      <button class="modal-close" onclick="closeAddOutputModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="addOutputFlowId"/>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Output Type</label>
+          <select id="addOutType" onchange="updateOutputFields('addOut')">
+            <option value="srt">SRT</option><option value="rtp">RTP / UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC / WHIP</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Output ID</label><input type="text" id="addOutId" placeholder="e.g. out-2"/></div>
+      </div>
+      <div class="form-row"><div class="form-group"><label>Output Name</label><input type="text" id="addOutName" placeholder="e.g. SRT to London"/></div></div>
+      <div id="addOutFields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeAddOutputModal()">Cancel</button>
+      <button class="btn-primary" onclick="submitAddOutput()">Add Output</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+  var token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+
+  var pathParts = window.location.pathname.split('/');
+  var nodeId = decodeURIComponent(pathParts[2] || '');
+  if (nodeId) {
+    document.getElementById('backLink').href = '/nodes/' + encodeURIComponent(nodeId);
+  }
+  window._nodeId = nodeId;
+
+  // Fetch node name from API
+  fetch('/api/v1/nodes/' + encodeURIComponent(nodeId), {
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+  })
+  .then(function(r) { return r.ok ? r.json() : null; })
+  .then(function(node) {
+    if (node && node.name) {
+      document.getElementById('pageTitle').textContent = node.name + ' \u2014 Configuration';
+      document.getElementById('pageDesc').textContent = 'Configure flows and streaming pipelines for ' + node.name;
+      document.title = node.name + ' - Configuration - bilbycast manager';
+    } else {
+      document.getElementById('pageTitle').textContent = 'Node Configuration';
+      document.getElementById('pageDesc').textContent = 'ID: ' + nodeId;
+    }
+  })
+  .catch(function() {
+    document.getElementById('pageTitle').textContent = 'Node Configuration';
+  });
+})();
+
+var outputCounter = 0;
+
+function openNewFlowModal() {
+  document.getElementById('flowModal').classList.add('open');
+  document.getElementById('modalTitle').textContent = 'New Flow';
+  document.getElementById('flowId').value = '';
+  document.getElementById('flowName').value = '';
+  document.getElementById('outputsContainer').innerHTML = '';
+  outputCounter = 0;
+  addOutput(); // start with one output
+  updateInputFields();
+}
+
+function closeFlowModal() {
+  document.getElementById('flowModal').classList.remove('open');
+}
+
+function updateInputFields() {
+  var type = document.getElementById('inputType').value;
+  document.getElementById('srtInputFields').style.display = type === 'srt' ? '' : 'none';
+  document.getElementById('rtpInputFields').style.display = type === 'rtp' ? '' : 'none';
+}
+
+function addOutput() {
+  outputCounter++;
+  var idx = outputCounter;
+  var html = '<div class="output-block" id="output-' + idx + '">' +
+    '<button class="remove-output" onclick="removeOutput(' + idx + ')" title="Remove">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
+    '<div class="form-row"><div class="form-group"><label>Output Type</label>' +
+    '<select id="outType-' + idx + '" onchange="updateOutputFields(' + idx + ')">' +
+    '<option value="srt">SRT</option><option value="rtp">RTP / UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC / WHIP</option></select></div>' +
+    '<div class="form-group"><label>Output ID</label><input type="text" id="outId-' + idx + '" placeholder="e.g. out-1"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Output Name</label><input type="text" id="outName-' + idx + '" placeholder="e.g. SRT to London"/></div></div>' +
+    '<div id="outFields-' + idx + '"></div></div>';
+  document.getElementById('outputsContainer').insertAdjacentHTML('beforeend', html);
+  updateOutputFields(idx);
+}
+
+function removeOutput(idx) {
+  var el = document.getElementById('output-' + idx);
+  if (el) el.remove();
+}
+
+function updateOutputFields(idx) {
+  // idx can be a number (from New Flow modal) or a string prefix like 'addOut' (from Add Output modal)
+  var prefix = (typeof idx === 'string' && idx === 'addOut') ? 'addOut' : 'outType-' + idx;
+  var fieldsId = (typeof idx === 'string' && idx === 'addOut') ? 'addOutFields' : 'outFields-' + idx;
+  var p = (typeof idx === 'string' && idx === 'addOut') ? 'addOut' : idx;
+  var type = document.getElementById(prefix.indexOf('addOut') === 0 ? 'addOutType' : prefix).value;
+  var container = document.getElementById(fieldsId);
+  var h = '';
+  if (type === 'srt') {
+    h = '<div class="form-row"><div class="form-group"><label>Mode</label><select id="outSrtMode-'+p+'"><option value="caller">Caller</option><option value="listener">Listener</option><option value="rendezvous">Rendezvous</option></select></div>' +
+    '<div class="form-group"><label>Local Address</label><input type="text" id="outSrtLocal-'+p+'" placeholder="0.0.0.0:0"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Remote Address</label><input type="text" id="outSrtRemote-'+p+'" placeholder="remote:9000"/></div>' +
+    '<div class="form-group"><label>Latency (ms)</label><input type="number" id="outSrtLatency-'+p+'" value="120"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Passphrase</label><input type="text" id="outSrtPass-'+p+'" placeholder="Optional"/></div>' +
+    '<div class="form-group"><label>AES Key Length</label><select id="outSrtAes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>';
+  } else if (type === 'rtp') {
+    h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><input type="text" id="outRtpDest-'+p+'" placeholder="192.168.1.100:5004"/></div>' +
+    '<div class="form-group"><label>DSCP</label><input type="number" id="outRtpDscp-'+p+'" value="46" min="0" max="63"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>FEC Columns (L)</label><input type="number" id="outRtpFecCols-'+p+'" placeholder="Optional"/></div>' +
+    '<div class="form-group"><label>FEC Rows (D)</label><input type="number" id="outRtpFecRows-'+p+'" placeholder="Optional"/></div></div>';
+  } else if (type === 'rtmp') {
+    h = '<div class="form-row"><div class="form-group"><label>Destination URL</label><input type="text" id="outRtmpUrl-'+p+'" placeholder="rtmp://live.twitch.tv/app"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Stream Key</label><input type="text" id="outRtmpKey-'+p+'" placeholder="live_123456_secretkey"/></div>' +
+    '<div class="form-group"><label>Reconnect Delay (s)</label><input type="number" id="outRtmpReconnect-'+p+'" value="5"/></div></div>';
+  } else if (type === 'hls') {
+    h = '<div class="form-row"><div class="form-group"><label>Ingest URL</label><input type="text" id="outHlsUrl-'+p+'" placeholder="https://a.rtmps.youtube.com/..."/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Segment Duration (s)</label><input type="number" id="outHlsDur-'+p+'" value="2" step="0.5"/></div>' +
+    '<div class="form-group"><label>Max Segments</label><input type="number" id="outHlsMax-'+p+'" value="5"/></div></div>';
+  } else if (type === 'webrtc') {
+    h = '<div class="form-row"><div class="form-group"><label>WHIP Endpoint URL</label><input type="text" id="outWhipUrl-'+p+'" placeholder="https://example.com/whip"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Bearer Token</label><input type="text" id="outWhipToken-'+p+'" placeholder="Optional"/></div>' +
+    '<div class="form-group"><label>Video Only</label><select id="outWhipVonly-'+p+'"><option value="false">No</option><option value="true">Yes</option></select></div></div>';
+  }
+  container.innerHTML = h;
+}
+
+function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function ival(id) { var v = val(id); return v ? parseInt(v,10) : null; }
+
+function buildFlowConfig() {
+  var config = { id: val('flowId'), name: val('flowName'), enabled: val('flowEnabled') === 'true' };
+
+  // Input
+  var itype = val('inputType');
+  if (itype === 'srt') {
+    var inp = { type: 'srt', mode: val('srtInputMode'), local_addr: val('srtInputLocalAddr'), latency_ms: parseInt(val('srtInputLatency'))||120 };
+    if (val('srtInputRemoteAddr')) inp.remote_addr = val('srtInputRemoteAddr');
+    if (val('srtInputPassphrase')) inp.passphrase = val('srtInputPassphrase');
+    var aes = val('srtInputAesKeyLen'); if (aes) inp.aes_key_len = parseInt(aes);
+    config.input = inp;
+  } else {
+    var inp = { type: 'rtp', bind_addr: val('rtpInputBindAddr') };
+    if (val('rtpInputInterface')) inp.interface_addr = val('rtpInputInterface');
+    var fc = ival('rtpInputFecCols'), fr = ival('rtpInputFecRows');
+    if (fc && fr) inp.fec_decode = { columns: fc, rows: fr };
+    config.input = inp;
+  }
+
+  // Outputs
+  config.outputs = [];
+  var blocks = document.querySelectorAll('.output-block');
+  blocks.forEach(function(block) {
+    var idx = block.id.split('-')[1];
+    var otype = val('outType-'+idx);
+    var out = { type: otype, id: val('outId-'+idx), name: val('outName-'+idx) };
+    if (otype === 'srt') {
+      out.mode = val('outSrtMode-'+idx); out.local_addr = val('outSrtLocal-'+idx) || '0.0.0.0:0';
+      if (val('outSrtRemote-'+idx)) out.remote_addr = val('outSrtRemote-'+idx);
+      out.latency_ms = parseInt(val('outSrtLatency-'+idx))||120;
+      if (val('outSrtPass-'+idx)) out.passphrase = val('outSrtPass-'+idx);
+      var a = val('outSrtAes-'+idx); if (a) out.aes_key_len = parseInt(a);
+    } else if (otype === 'rtp') {
+      out.dest_addr = val('outRtpDest-'+idx); out.dscp = parseInt(val('outRtpDscp-'+idx))||46;
+      var fc = ival('outRtpFecCols-'+idx), fr = ival('outRtpFecRows-'+idx);
+      if (fc && fr) out.fec_encode = { columns: fc, rows: fr };
+    } else if (otype === 'rtmp') {
+      out.dest_url = val('outRtmpUrl-'+idx); out.stream_key = val('outRtmpKey-'+idx);
+      out.reconnect_delay_secs = parseInt(val('outRtmpReconnect-'+idx))||5;
+    } else if (otype === 'hls') {
+      out.ingest_url = val('outHlsUrl-'+idx); out.segment_duration_secs = parseFloat(val('outHlsDur-'+idx))||2;
+      out.max_segments = parseInt(val('outHlsMax-'+idx))||5;
+    } else if (otype === 'webrtc') {
+      out.whip_url = val('outWhipUrl-'+idx);
+      if (val('outWhipToken-'+idx)) out.bearer_token = val('outWhipToken-'+idx);
+      out.video_only = val('outWhipVonly-'+idx) === 'true';
+    }
+    config.outputs.push(out);
+  });
+
+  return config;
+}
+
+function togglePreview() {
+  var el = document.getElementById('jsonPreview');
+  if (el.classList.contains('visible')) { el.classList.remove('visible'); return; }
+  el.textContent = JSON.stringify(buildFlowConfig(), null, 2);
+  el.classList.add('visible');
+}
+
+function showToast(msg, isError) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast visible' + (isError ? ' error' : '');
+  setTimeout(function(){ t.className = 'toast'; }, 3000);
+}
+
+function applyFlow() {
+  var config = buildFlowConfig();
+  if (!config.id) { showToast('Flow ID is required', true); return; }
+  if (!config.name) { showToast('Flow Name is required', true); return; }
+  if (config.outputs.length === 0) { showToast('At least one output is required', true); return; }
+
+  var token = localStorage.getItem('token');
+  fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/command', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ action: { type: 'create_flow', flow: config } })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.sent) {
+      showToast('Flow "' + config.name + '" sent to node');
+      closeFlowModal();
+      addFlowToList(config);
+    } else {
+      showToast('Failed: ' + (data.error || 'Unknown error'), true);
+    }
+  })
+  .catch(function(e) { showToast('Error: ' + e.message, true); });
+}
+
+function addFlowToList(config) {
+  // After creating a flow, it will appear via WebSocket update.
+  // Show a temporary entry until WS catches up.
+  document.getElementById('flowsEmpty').style.display = 'none';
+}
+
+// ── Escape HTML ──
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// ── WebSocket for live flow data ──
+var _ws = null;
+var _wsRetry = 1000;
+var _liveFlows = [];
+
+function connectConfigWs() {
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  _ws = new WebSocket(proto + '//' + location.host + '/ws/dashboard');
+
+  _ws.onopen = function() { _wsRetry = 1000; };
+
+  _ws.onmessage = function(evt) {
+    try {
+      var msg = JSON.parse(evt.data);
+      if (msg.type === 'dashboard_update' && Array.isArray(msg.nodes)) {
+        var myNode = null;
+        for (var i = 0; i < msg.nodes.length; i++) {
+          if (msg.nodes[i].node_id === window._nodeId) { myNode = msg.nodes[i]; break; }
+        }
+        if (myNode && myNode.stats) {
+          var flows = Array.isArray(myNode.stats) ? myNode.stats : (myNode.stats.flows || []);
+          _liveFlows = flows;
+          renderConfigFlows(flows);
+        }
+      }
+    } catch(e) { /* ignore */ }
+  };
+
+  _ws.onclose = function() {
+    setTimeout(function() {
+      _wsRetry = Math.min(_wsRetry * 2, 30000);
+      connectConfigWs();
+    }, _wsRetry);
+  };
+
+  _ws.onerror = function() { _ws.close(); };
+}
+
+connectConfigWs();
+
+// ── Render flows in the config page ──
+function renderConfigFlows(flows) {
+  var emptyEl = document.getElementById('flowsEmpty');
+  var listEl = document.getElementById('flowsList');
+
+  if (!flows || flows.length === 0) {
+    emptyEl.style.display = '';
+    // Remove any flow-item elements but keep the empty placeholder
+    var items = listEl.querySelectorAll('.flow-item');
+    for (var r = 0; r < items.length; r++) items[r].remove();
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+
+  // Build HTML for all flows
+  var html = '';
+  for (var i = 0; i < flows.length; i++) {
+    var f = flows[i];
+    var flowName = f.flow_name || f.flow_id || 'Unknown';
+    var flowId = f.flow_id || '';
+    var state = f.state || 'unknown';
+    var isRunning = (state.toLowerCase() === 'running');
+    var stateClass = isRunning ? 'running' : 'stopped';
+    var stateLabel = isRunning ? 'Running' : (state.charAt(0).toUpperCase() + state.slice(1));
+
+    var inp = f.input || {};
+    var inputType = (inp.input_type || inp.type || 'unknown').toUpperCase();
+    var outs = f.outputs || [];
+    var outputTypes = [];
+    for (var oi = 0; oi < outs.length; oi++) {
+      outputTypes.push((outs[oi].output_type || outs[oi].type || 'unknown').toUpperCase());
+    }
+    var pipelineDesc = inputType + ' \u2192 ' + (outputTypes.length > 0 ? outputTypes.join(', ') : 'No outputs');
+
+    html += '<div class="flow-item" data-flow-id="' + esc(flowId) + '">';
+    html += '<div><div class="flow-name">' + esc(flowName) + '</div>';
+    html += '<div class="flow-desc">' + esc(pipelineDesc) + '</div></div>';
+    html += '<div style="display:flex;align-items:center;gap:12px;">';
+    html += '<div class="flow-status ' + stateClass + '"><span class="dot"></span>' + esc(stateLabel) + '</div>';
+    html += '<div class="flow-actions">';
+    if (isRunning) {
+      html += '<button class="action-btn" onclick="stopFlow(\'' + esc(flowId) + '\')">Stop</button>';
+    }
+    html += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
+    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
+    html += '</div></div></div>';
+  }
+
+  // Keep the empty placeholder in the DOM (hidden) and replace flow items
+  var items = listEl.querySelectorAll('.flow-item');
+  for (var ri = 0; ri < items.length; ri++) items[ri].remove();
+  listEl.insertAdjacentHTML('beforeend', html);
+}
+
+// ── Send command to node ──
+function sendNodeCommand(action, callback) {
+  var token = localStorage.getItem('token');
+  fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/command', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ action: action })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.sent) {
+      if (callback) callback(null, data);
+    } else {
+      if (callback) callback(data.error || 'Unknown error');
+    }
+  })
+  .catch(function(e) { if (callback) callback(e.message); });
+}
+
+// ── Stop flow ──
+function stopFlow(flowId) {
+  sendNodeCommand({ type: 'stop_flow', flow_id: flowId }, function(err) {
+    if (err) { showToast('Failed to stop flow: ' + err, true); }
+    else { showToast('Stop command sent for flow "' + flowId + '"'); }
+  });
+}
+
+// ── Delete flow ──
+function deleteFlow(flowId) {
+  if (!confirm('Are you sure you want to delete flow "' + flowId + '"?')) return;
+  sendNodeCommand({ type: 'delete_flow', flow_id: flowId }, function(err) {
+    if (err) { showToast('Failed to delete flow: ' + err, true); }
+    else { showToast('Delete command sent for flow "' + flowId + '"'); }
+  });
+}
+
+// ── Add Output modal ──
+function openAddOutputModal(flowId) {
+  document.getElementById('addOutputFlowId').value = flowId;
+  document.getElementById('addOutputModalTitle').textContent = 'Add Output to "' + flowId + '"';
+  document.getElementById('addOutType').value = 'srt';
+  document.getElementById('addOutId').value = '';
+  document.getElementById('addOutName').value = '';
+  updateOutputFields('addOut');
+  document.getElementById('addOutputModal').classList.add('open');
+}
+
+function closeAddOutputModal() {
+  document.getElementById('addOutputModal').classList.remove('open');
+}
+
+function buildOutputConfig(p) {
+  var otype = val(p === 'addOut' ? 'addOutType' : 'outType-' + p);
+  var out = { type: otype, id: val(p === 'addOut' ? 'addOutId' : 'outId-' + p), name: val(p === 'addOut' ? 'addOutName' : 'outName-' + p) };
+  if (otype === 'srt') {
+    out.mode = val('outSrtMode-'+p); out.local_addr = val('outSrtLocal-'+p) || '0.0.0.0:0';
+    if (val('outSrtRemote-'+p)) out.remote_addr = val('outSrtRemote-'+p);
+    out.latency_ms = parseInt(val('outSrtLatency-'+p))||120;
+    if (val('outSrtPass-'+p)) out.passphrase = val('outSrtPass-'+p);
+    var a = val('outSrtAes-'+p); if (a) out.aes_key_len = parseInt(a);
+  } else if (otype === 'rtp') {
+    out.dest_addr = val('outRtpDest-'+p); out.dscp = parseInt(val('outRtpDscp-'+p))||46;
+    var fc = ival('outRtpFecCols-'+p), fr = ival('outRtpFecRows-'+p);
+    if (fc && fr) out.fec_encode = { columns: fc, rows: fr };
+  } else if (otype === 'rtmp') {
+    out.dest_url = val('outRtmpUrl-'+p); out.stream_key = val('outRtmpKey-'+p);
+    out.reconnect_delay_secs = parseInt(val('outRtmpReconnect-'+p))||5;
+  } else if (otype === 'hls') {
+    out.ingest_url = val('outHlsUrl-'+p); out.segment_duration_secs = parseFloat(val('outHlsDur-'+p))||2;
+    out.max_segments = parseInt(val('outHlsMax-'+p))||5;
+  } else if (otype === 'webrtc') {
+    out.whip_url = val('outWhipUrl-'+p);
+    if (val('outWhipToken-'+p)) out.bearer_token = val('outWhipToken-'+p);
+    out.video_only = val('outWhipVonly-'+p) === 'true';
+  }
+  return out;
+}
+
+function submitAddOutput() {
+  var flowId = val('addOutputFlowId');
+  var output = buildOutputConfig('addOut');
+  if (!output.id) { showToast('Output ID is required', true); return; }
+
+  sendNodeCommand({ type: 'add_output', flow_id: flowId, output: output }, function(err) {
+    if (err) { showToast('Failed to add output: ' + err, true); }
+    else {
+      showToast('Add output command sent');
+      closeAddOutputModal();
+    }
+  });
+}
+
+function aiGenerate() {
+  var prompt = val('aiPrompt');
+  if (!prompt) { showToast('Enter a description first', true); return; }
+
+  var token = localStorage.getItem('token');
+  showToast('Generating config with AI...');
+
+  fetch('/api/v1/ai/generate-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({
+      prompt: prompt,
+      provider: 'openai',
+      node_id: window._nodeId,
+      existing_flows: _liveFlows
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success && data.config) {
+      // Auto-open the New Flow modal and fill it with AI-generated config
+      showToast('AI config generated! Review and apply.');
+      // Show the config in a preview
+      var preview = document.getElementById('jsonPreview');
+      if (preview) {
+        preview.textContent = JSON.stringify(data.config, null, 2);
+        preview.classList.add('visible');
+      }
+      // Try to apply directly
+      if (confirm('AI generated a flow config. Apply it to the node now?')) {
+        sendNodeCommand({ type: 'create_flow', flow: data.config }, function(err) {
+          if (err) showToast('Failed to apply: ' + err, true);
+          else showToast('Flow created successfully from AI config!');
+        });
+      }
+    } else if (data.success && data.raw_response) {
+      showToast('AI responded (see console for details)');
+      console.log('AI raw response:', data.raw_response);
+      alert('AI Response:\n\n' + data.raw_response.substring(0, 500));
+    } else {
+      showToast('AI error: ' + (data.error || 'Unknown'), true);
+    }
+  })
+  .catch(function(e) { showToast('Error: ' + e.message, true); });
+}
+</script>
+</body>
+</html>

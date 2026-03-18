@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Assistant - bilbycast manager</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    display: flex;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 256px; min-width: 256px; background: #1e293b; border-right: 1px solid #334155;
+    display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 20;
+  }
+  .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid #334155; }
+  .sidebar-logo .logo-text { font-size: 22px; font-weight: 700; color: #60a5fa; letter-spacing: -0.5px; }
+  .sidebar-logo .logo-sub { font-size: 12px; color: #64748b; margin-top: 2px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+  .nav-section-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; padding: 20px 20px 8px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: #94a3b8; text-decoration: none; font-size: 14px; font-weight: 500; border-left: 3px solid transparent; transition: all 0.15s ease; }
+  .nav-item:hover { background: rgba(96, 165, 250, 0.06); color: #e2e8f0; }
+  .nav-item.active { background: rgba(96, 165, 250, 0.1); color: #60a5fa; border-left-color: #60a5fa; }
+  .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+  .nav-item.active svg, .nav-item:hover svg { opacity: 1; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid #334155; font-size: 12px; color: #475569; }
+
+  /* ── Main wrapper ── */
+  .main-wrapper { margin-left: 256px; flex: 1; display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── Topbar ── */
+  .topbar { height: 56px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; flex-shrink: 0; z-index: 10; }
+  .topbar-search { position: relative; width: 320px; }
+  .topbar-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #64748b; }
+  .topbar-search input { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px 8px 36px; font-size: 13px; color: #e2e8f0; outline: none; transition: border-color 0.15s; }
+  .topbar-search input::placeholder { color: #64748b; }
+  .topbar-search input:focus { border-color: #60a5fa; }
+  .topbar-right { display: flex; align-items: center; gap: 20px; }
+  .alarm-btn { position: relative; background: none; border: none; cursor: pointer; padding: 6px; color: #94a3b8; transition: color 0.15s; }
+  .alarm-btn:hover { color: #e2e8f0; }
+  .alarm-btn svg { width: 20px; height: 20px; }
+  .alarm-badge { position: absolute; top: 0; right: 0; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px; transform: translate(4px, -4px); }
+  .alarm-badge.hidden { display: none; }
+  .user-info { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px 8px; border-radius: 8px; transition: background 0.15s; }
+  .user-info:hover { background: rgba(255,255,255,0.05); }
+  .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; }
+  .user-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
+
+  /* ── Chat layout ── */
+  .chat-container {
+    flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ── Config bar ── */
+  .config-bar {
+    display: flex; align-items: center; gap: 16px; padding: 16px 24px;
+    background: #1e293b; border-bottom: 1px solid #334155; flex-shrink: 0;
+  }
+  .config-bar label {
+    font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: 0.5px; white-space: nowrap;
+  }
+  .config-bar select {
+    background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; color: #e2e8f0; outline: none;
+    transition: border-color 0.15s; min-width: 180px;
+  }
+  .config-bar select:focus { border-color: #60a5fa; }
+  .config-bar .spacer { flex: 1; }
+  .btn-link {
+    background: none; border: 1px solid #334155; border-radius: 8px;
+    padding: 8px 16px; font-size: 13px; font-weight: 500; color: #94a3b8;
+    cursor: pointer; text-decoration: none; transition: all 0.15s; display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .btn-link:hover { border-color: #60a5fa; color: #60a5fa; }
+  .btn-link svg { width: 14px; height: 14px; }
+
+  /* ── Messages area ── */
+  .messages-area {
+    flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px;
+  }
+
+  .message {
+    max-width: 75%; display: flex; flex-direction: column; gap: 8px;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .message.user { align-self: flex-end; }
+  .message.ai { align-self: flex-start; }
+
+  .message-bubble {
+    padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6;
+    word-wrap: break-word; white-space: pre-wrap;
+  }
+  .message.user .message-bubble {
+    background: #3b82f6; color: #fff; border-bottom-right-radius: 4px;
+  }
+  .message.ai .message-bubble {
+    background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+    border-bottom-left-radius: 4px;
+  }
+
+  .message-label {
+    font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .message.user .message-label { text-align: right; }
+
+  /* ── Code block inside AI messages ── */
+  .config-block {
+    background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+    margin-top: 8px; overflow: hidden;
+  }
+  .config-block-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: rgba(96, 165, 250, 0.08); border-bottom: 1px solid #334155;
+  }
+  .config-block-header span {
+    font-size: 11px; font-weight: 600; color: #60a5fa; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .btn-copy {
+    background: none; border: none; color: #64748b; cursor: pointer; font-size: 11px;
+    padding: 2px 6px; border-radius: 4px; transition: all 0.15s;
+  }
+  .btn-copy:hover { color: #e2e8f0; background: rgba(255,255,255,0.05); }
+  .config-block pre {
+    padding: 12px; overflow-x: auto; font-size: 12px; line-height: 1.6;
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Consolas', monospace;
+    color: #e2e8f0; margin: 0;
+  }
+
+  /* ── JSON syntax highlighting ── */
+  .json-key { color: #7dd3fc; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fbbf24; }
+  .json-bool { color: #c084fc; }
+  .json-null { color: #94a3b8; }
+
+  /* ── Apply button ── */
+  .btn-apply {
+    background: #059669; color: #fff; border: none; border-radius: 8px;
+    padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s; display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 8px;
+  }
+  .btn-apply:hover { background: #047857; }
+  .btn-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-apply svg { width: 16px; height: 16px; }
+
+  .apply-status {
+    font-size: 12px; margin-top: 6px; padding: 6px 10px; border-radius: 6px;
+  }
+  .apply-status.success { background: rgba(5, 150, 105, 0.15); color: #4ade80; }
+  .apply-status.error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+  /* ── Welcome state ── */
+  .welcome {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 16px; color: #64748b; text-align: center;
+    padding: 40px;
+  }
+  .welcome-icon {
+    width: 64px; height: 64px; border-radius: 16px;
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(139, 92, 246, 0.15));
+    display: flex; align-items: center; justify-content: center;
+  }
+  .welcome-icon svg { width: 32px; height: 32px; color: #60a5fa; }
+  .welcome h2 { font-size: 18px; font-weight: 600; color: #e2e8f0; }
+  .welcome p { font-size: 14px; max-width: 460px; line-height: 1.6; }
+  .welcome-examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; justify-content: center; }
+  .example-chip {
+    background: #1e293b; border: 1px solid #334155; border-radius: 20px;
+    padding: 8px 16px; font-size: 13px; color: #94a3b8; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .example-chip:hover { border-color: #60a5fa; color: #60a5fa; }
+
+  /* ── Loading indicator ── */
+  .loading-indicator {
+    align-self: flex-start; display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; background: #1e293b; border: 1px solid #334155;
+    border-radius: 12px; border-bottom-left-radius: 4px;
+  }
+  .loading-dots { display: flex; gap: 4px; }
+  .loading-dots span {
+    width: 8px; height: 8px; border-radius: 50%; background: #60a5fa;
+    animation: dotPulse 1.2s infinite;
+  }
+  .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dotPulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+  .loading-text { font-size: 13px; color: #64748b; }
+
+  /* ── Input bar ── */
+  .input-bar {
+    padding: 16px 24px; background: #1e293b; border-top: 1px solid #334155;
+    display: flex; gap: 12px; align-items: flex-end; flex-shrink: 0;
+  }
+  .input-bar textarea {
+    flex: 1; background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+    padding: 12px 16px; font-size: 14px; color: #e2e8f0; outline: none;
+    resize: none; font-family: inherit; line-height: 1.5; min-height: 44px;
+    max-height: 120px; transition: border-color 0.15s;
+  }
+  .input-bar textarea::placeholder { color: #64748b; }
+  .input-bar textarea:focus { border-color: #60a5fa; }
+  .btn-send {
+    background: #3b82f6; color: #fff; border: none; border-radius: 10px;
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background 0.15s; flex-shrink: 0;
+  }
+  .btn-send:hover { background: #2563eb; }
+  .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-send svg { width: 20px; height: 20px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-wrapper { margin-left: 0; }
+    .config-bar { flex-wrap: wrap; gap: 10px; }
+    .config-bar select { min-width: 140px; }
+    .message { max-width: 90%; }
+  }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-text">bilbycast</div>
+    <div class="logo-sub">manager</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="/dashboard" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+    <a href="/topology" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+      Topology
+    </a>
+    <a href="/events" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Events
+    </a>
+    <div class="nav-section-label">Administration</div>
+    <a href="/admin/users" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Users
+    </a>
+    <a href="/admin/settings" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Settings
+    </a>
+    <div class="nav-section-label">AI Assistant</div>
+    <a href="/ai/assistant" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="12" cy="15" r="2"/></svg>
+      AI Config
+    </a>
+    <a href="/ai/settings" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+      AI Keys
+    </a>
+  </nav>
+  <div class="sidebar-footer">v0.1.0</div>
+</aside>
+
+<div class="main-wrapper">
+  <header class="topbar">
+    <div class="topbar-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search nodes, events..." />
+    </div>
+    <div class="topbar-right">
+      <button class="alarm-btn" title="Alarms" onclick="window.location.href='/events'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="alarm-badge hidden" id="alarmBadge">0</span>
+      </button>
+      <div class="user-info">
+        <div class="user-avatar">A</div>
+        <span class="user-name">Admin</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="chat-container">
+    <!-- Config bar: node + provider selectors -->
+    <div class="config-bar">
+      <label for="nodeSelect">Target Node</label>
+      <select id="nodeSelect">
+        <option value="">Loading nodes...</option>
+      </select>
+      <label for="providerSelect">AI Provider</label>
+      <select id="providerSelect">
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="gemini">Gemini</option>
+      </select>
+      <div class="spacer"></div>
+      <a href="/ai/settings" class="btn-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        AI Settings
+      </a>
+    </div>
+
+    <!-- Messages area -->
+    <div class="messages-area" id="messagesArea">
+      <div class="welcome" id="welcomeState">
+        <div class="welcome-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="12" cy="15" r="2"/></svg>
+        </div>
+        <h2>AI Configuration Assistant</h2>
+        <p>Describe the flow configuration you need in plain language, and the AI will generate the FlowConfig JSON for you. Select a target node above, then try one of these examples:</p>
+        <div class="welcome-examples">
+          <button class="example-chip" data-prompt="SRT listener on port 9000 with AES-256, output as RTP multicast to 239.1.1.1:5004 with SMPTE 2022-1 FEC 10x10">SRT to RTP multicast</button>
+          <button class="example-chip" data-prompt="SRT listener on port 9000, fan out to three SRT callers: London on port 5001, Sydney on port 5002, and New York on port 5003, all with 200ms latency">SRT fan-out to 3 sites</button>
+          <button class="example-chip" data-prompt="RTP input on multicast 239.1.1.1:5000, output to RTMP on rtmp://live.example.com/app with stream key 'live123', and also output SRT caller to 10.0.0.1:9000">Multicast to RTMP + SRT</button>
+          <button class="example-chip" data-prompt="SRT listener on port 9000 with AES-128, output to WebRTC via WHIP endpoint https://whip.example.com/ingest and also RTP to 192.168.1.100:5004">SRT to WebRTC + RTP</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input bar -->
+    <div class="input-bar">
+      <textarea id="chatInput" placeholder="Describe the flow configuration you want..." rows="1"></textarea>
+      <button class="btn-send" id="sendBtn" title="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Auth guard ──
+  var token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+
+  // ── Helpers ──
+  var $ = function (id) { return document.getElementById(id); };
+
+  function authHeaders() {
+    return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  }
+
+  function escapeHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // ── State ──
+  var nodeFlows = {};       // node_id -> [flow objects] from WS
+  var isWaiting = false;    // prevent double-send
+  var messageCounter = 0;   // unique IDs for apply buttons
+
+  // ── Fetch nodes for dropdown ──
+  function fetchNodes() {
+    fetch('/api/v1/nodes', { headers: authHeaders() })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (nodes) {
+        var sel = $('nodeSelect');
+        sel.innerHTML = '';
+        if (!nodes.length) {
+          sel.innerHTML = '<option value="">No nodes available</option>';
+          return;
+        }
+        nodes.forEach(function (n) {
+          var opt = document.createElement('option');
+          opt.value = n.id || n.name;
+          opt.textContent = n.name + (n.status === 'online' ? '' : ' (offline)');
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function () {
+        $('nodeSelect').innerHTML = '<option value="">Failed to load nodes</option>';
+      });
+  }
+
+  fetchNodes();
+
+  // ── WebSocket for flow context ──
+  var ws = null;
+  var wsRetryDelay = 1000;
+
+  function connectWebSocket() {
+    var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + window.location.host + '/ws/dashboard';
+    ws = new WebSocket(url);
+
+    ws.onopen = function () { wsRetryDelay = 1000; };
+
+    ws.onmessage = function (evt) {
+      try {
+        var msg = JSON.parse(evt.data);
+        if (msg.type === 'dashboard_update' && Array.isArray(msg.nodes)) {
+          msg.nodes.forEach(function (n) {
+            var key = n.node_id || n.id || n.name;
+            var stats = n.stats || {};
+            nodeFlows[key] = stats.flows || [];
+          });
+        }
+      } catch (e) { /* ignore */ }
+    };
+
+    ws.onclose = function () {
+      setTimeout(function () {
+        wsRetryDelay = Math.min(wsRetryDelay * 2, 30000);
+        connectWebSocket();
+      }, wsRetryDelay);
+    };
+
+    ws.onerror = function () { ws.close(); };
+  }
+
+  connectWebSocket();
+
+  // ── Alarm badge ──
+  fetch('/api/v1/events/count', { headers: authHeaders() })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data) return;
+      var count = typeof data === 'number' ? data : (data.count || 0);
+      var badge = $('alarmBadge');
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.classList.remove('hidden');
+      }
+    })
+    .catch(function () {});
+
+  // ── Chat logic ──
+  var messagesArea = $('messagesArea');
+  var chatInput = $('chatInput');
+  var sendBtn = $('sendBtn');
+  var welcomeState = $('welcomeState');
+
+  // Auto-resize textarea
+  chatInput.addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  // Send on Enter (Shift+Enter for newline)
+  chatInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  sendBtn.addEventListener('click', sendMessage);
+
+  // Example chips
+  document.querySelectorAll('.example-chip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      chatInput.value = this.getAttribute('data-prompt');
+      chatInput.dispatchEvent(new Event('input'));
+      sendMessage();
+    });
+  });
+
+  function sendMessage() {
+    var text = chatInput.value.trim();
+    if (!text || isWaiting) return;
+
+    var nodeId = $('nodeSelect').value;
+    if (!nodeId) {
+      addSystemMessage('Please select a target node before sending a message.');
+      return;
+    }
+
+    // Hide welcome state
+    if (welcomeState) {
+      welcomeState.remove();
+      welcomeState = null;
+    }
+
+    // Add user message
+    addUserMessage(text);
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+
+    // Show loading
+    isWaiting = true;
+    sendBtn.disabled = true;
+    var loadingEl = addLoadingIndicator();
+
+    // Build request
+    var provider = $('providerSelect').value;
+    var existingFlows = nodeFlows[nodeId] || [];
+
+    var body = {
+      prompt: text,
+      provider: provider,
+      node_id: nodeId,
+      existing_flows: existingFlows
+    };
+
+    fetch('/api/v1/ai/generate-config', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      loadingEl.remove();
+      isWaiting = false;
+      sendBtn.disabled = false;
+
+      if (data.success && data.config) {
+        addAiConfigMessage(data.config, data.message || null, nodeId);
+      } else {
+        var errMsg = data.error || data.message || 'The AI was unable to generate a configuration. Please try rephrasing your request.';
+        addAiTextMessage(errMsg);
+      }
+    })
+    .catch(function (err) {
+      loadingEl.remove();
+      isWaiting = false;
+      sendBtn.disabled = false;
+      addAiTextMessage('Request failed: ' + (err.message || 'Network error. Please check your connection and AI key configuration.'));
+    });
+  }
+
+  function addUserMessage(text) {
+    var div = document.createElement('div');
+    div.className = 'message user';
+    div.innerHTML =
+      '<div class="message-label">You</div>' +
+      '<div class="message-bubble">' + escapeHtml(text) + '</div>';
+    messagesArea.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addAiTextMessage(text) {
+    var div = document.createElement('div');
+    div.className = 'message ai';
+    div.innerHTML =
+      '<div class="message-label">AI Assistant</div>' +
+      '<div class="message-bubble">' + escapeHtml(text) + '</div>';
+    messagesArea.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addAiConfigMessage(config, explanationText, nodeId) {
+    messageCounter++;
+    var msgId = 'config-' + messageCounter;
+    var jsonStr = JSON.stringify(config, null, 2);
+    var highlightedJson = syntaxHighlight(jsonStr);
+
+    var div = document.createElement('div');
+    div.className = 'message ai';
+
+    var html =
+      '<div class="message-label">AI Assistant</div>';
+
+    if (explanationText) {
+      html += '<div class="message-bubble">' + escapeHtml(explanationText) + '</div>';
+    }
+
+    html +=
+      '<div class="config-block">' +
+        '<div class="config-block-header">' +
+          '<span>FlowConfig JSON</span>' +
+          '<button class="btn-copy" data-json="' + escapeAttr(jsonStr) + '">Copy</button>' +
+        '</div>' +
+        '<pre>' + highlightedJson + '</pre>' +
+      '</div>' +
+      '<button class="btn-apply" id="' + msgId + '" data-node="' + escapeAttr(nodeId) + '" data-config="' + escapeAttr(jsonStr) + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+        'Apply to Node' +
+      '</button>' +
+      '<div id="' + msgId + '-status"></div>';
+
+    div.innerHTML = html;
+    messagesArea.appendChild(div);
+
+    // Bind copy button
+    div.querySelector('.btn-copy').addEventListener('click', function () {
+      var json = this.getAttribute('data-json');
+      navigator.clipboard.writeText(json).then(function () {
+        // brief feedback
+      });
+      this.textContent = 'Copied!';
+      var btn = this;
+      setTimeout(function () { btn.textContent = 'Copy'; }, 2000);
+    });
+
+    // Bind apply button
+    div.querySelector('.btn-apply').addEventListener('click', function () {
+      applyConfig(this);
+    });
+
+    scrollToBottom();
+  }
+
+  function addSystemMessage(text) {
+    var div = document.createElement('div');
+    div.className = 'message ai';
+    div.innerHTML =
+      '<div class="message-bubble" style="border-color: #f59e0b; color: #fbbf24;">' + escapeHtml(text) + '</div>';
+    messagesArea.appendChild(div);
+    scrollToBottom();
+  }
+
+  function addLoadingIndicator() {
+    var div = document.createElement('div');
+    div.className = 'loading-indicator';
+    div.innerHTML =
+      '<div class="loading-dots"><span></span><span></span><span></span></div>' +
+      '<span class="loading-text">Generating configuration...</span>';
+    messagesArea.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function scrollToBottom() {
+    messagesArea.scrollTop = messagesArea.scrollHeight;
+  }
+
+  // ── Apply config to node ──
+  function applyConfig(btn) {
+    var nodeId = btn.getAttribute('data-node');
+    var configStr = btn.getAttribute('data-config');
+    var statusEl = $(btn.id + '-status');
+
+    btn.disabled = true;
+    btn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>' +
+      'Applying...';
+
+    var config;
+    try { config = JSON.parse(configStr); } catch (e) {
+      statusEl.className = 'apply-status error';
+      statusEl.textContent = 'Invalid config JSON';
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Apply to Node';
+      return;
+    }
+
+    var command = {
+      action: {
+        type: 'create_flow',
+        flow: config
+      }
+    };
+
+    fetch('/api/v1/nodes/' + encodeURIComponent(nodeId) + '/command', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(command)
+    })
+    .then(function (r) {
+      return r.text().then(function (text) {
+        try { return JSON.parse(text); } catch(e) {
+          if (!r.ok) throw new Error('Server error ' + r.status + ': ' + (text || 'No response'));
+          throw new Error('Invalid JSON response');
+        }
+      });
+    })
+    .then(function (data) {
+      if (data.sent) {
+        statusEl.className = 'apply-status success';
+        statusEl.textContent = 'Flow command sent to node successfully';
+        btn.disabled = true;
+        btn.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+          'Applied';
+      } else {
+        statusEl.className = 'apply-status error';
+        statusEl.textContent = 'Failed: ' + (data.error || 'Unknown error');
+        btn.disabled = false;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
+      }
+      btn.style.background = '#064e3b';
+    })
+    .catch(function (err) {
+      statusEl.className = 'apply-status error';
+      statusEl.textContent = 'Failed to apply: ' + (err.error || err.message || 'Unknown error');
+      btn.disabled = false;
+      btn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+        'Retry Apply';
+    });
+  }
+
+  // ── JSON syntax highlighting ──
+  function syntaxHighlight(json) {
+    json = escapeHtml(json);
+    return json.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      function (match) {
+        var cls = 'json-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+          } else {
+            cls = 'json-string';
+          }
+        } else if (/true|false/.test(match)) {
+          cls = 'json-bool';
+        } else if (/null/.test(match)) {
+          cls = 'json-null';
+        }
+        return '<span class="' + cls + '">' + match + '</span>';
+      }
+    );
+  }
+
+  function escapeAttr(str) {
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+})();
+</script>
+<style>
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+</style>
+</body>
+</html>

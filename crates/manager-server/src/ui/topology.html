@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Topology - bilbycast manager</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    display: flex;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 256px; min-width: 256px; background: #1e293b; border-right: 1px solid #334155;
+    display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 20;
+  }
+  .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid #334155; }
+  .sidebar-logo .logo-text { font-size: 22px; font-weight: 700; color: #60a5fa; letter-spacing: -0.5px; }
+  .sidebar-logo .logo-sub { font-size: 12px; color: #64748b; margin-top: 2px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+  .nav-section-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.8px; padding: 20px 20px 8px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 20px; color: #94a3b8; text-decoration: none; font-size: 14px; font-weight: 500; border-left: 3px solid transparent; transition: all 0.15s ease; }
+  .nav-item:hover { background: rgba(96, 165, 250, 0.06); color: #e2e8f0; }
+  .nav-item.active { background: rgba(96, 165, 250, 0.1); color: #60a5fa; border-left-color: #60a5fa; }
+  .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+  .nav-item.active svg, .nav-item:hover svg { opacity: 1; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid #334155; font-size: 12px; color: #475569; }
+
+  /* ── Main wrapper ── */
+  .main-wrapper { margin-left: 256px; flex: 1; display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── Top bar ── */
+  .topbar { height: 56px; min-height: 56px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; z-index: 10; }
+  .topbar-search { position: relative; width: 320px; }
+  .topbar-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: #64748b; }
+  .topbar-search input { width: 100%; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px 8px 36px; font-size: 13px; color: #e2e8f0; outline: none; transition: border-color 0.15s; }
+  .topbar-search input::placeholder { color: #64748b; }
+  .topbar-search input:focus { border-color: #60a5fa; }
+  .topbar-right { display: flex; align-items: center; gap: 20px; }
+  .alarm-btn { position: relative; background: none; border: none; cursor: pointer; padding: 6px; color: #94a3b8; transition: color 0.15s; }
+  .alarm-btn:hover { color: #e2e8f0; }
+  .alarm-btn svg { width: 20px; height: 20px; }
+  .alarm-badge { position: absolute; top: 0; right: 0; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; padding: 0 4px; transform: translate(4px, -4px); }
+  .alarm-badge.hidden { display: none; }
+  .user-info { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px 8px; border-radius: 8px; transition: background 0.15s; }
+  .user-info:hover { background: rgba(255,255,255,0.05); }
+  .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; }
+  .user-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
+
+  /* ── Content area ── */
+  .content { flex: 1; padding: 20px 32px 32px; display: flex; flex-direction: column; overflow: hidden; }
+  .page-header { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .page-header-left h1 { font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+  .page-header-left p { font-size: 14px; color: #64748b; }
+
+  .topology-stats {
+    display: flex; gap: 16px; align-items: center;
+  }
+  .topo-stat {
+    background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px 14px;
+    font-size: 12px; font-weight: 600; color: #94a3b8;
+  }
+  .topo-stat .val { color: #f1f5f9; font-size: 16px; margin-right: 4px; }
+  .topo-stat.online .val { color: #4ade80; }
+
+  /* ── Canvas container ── */
+  .canvas-container {
+    flex: 1; background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+    position: relative; overflow: hidden; cursor: grab;
+  }
+  .canvas-container:active { cursor: grabbing; }
+  .canvas-container canvas { display: block; }
+
+  .placeholder-msg {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; color: #64748b; pointer-events: none;
+  }
+  .placeholder-msg p { font-size: 16px; font-weight: 500; margin-bottom: 4px; }
+  .placeholder-msg span { font-size: 13px; }
+
+  .canvas-toolbar {
+    position: absolute; bottom: 16px; right: 16px; display: flex; gap: 8px; z-index: 5;
+  }
+  .canvas-toolbar button {
+    width: 36px; height: 36px; border-radius: 8px; border: 1px solid #334155;
+    background: #0f172a; color: #94a3b8; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+  }
+  .canvas-toolbar button:hover { background: #1e293b; color: #e2e8f0; border-color: #475569; }
+
+  .legend {
+    position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.85);
+    border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; font-size: 11px;
+    color: #94a3b8; z-index: 5; display: flex; flex-direction: column; gap: 6px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend-line { width: 24px; height: 0; border-top: 2px dashed; }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-wrapper { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-text">bilbycast</div>
+    <div class="logo-sub">manager</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="/dashboard" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+    <a href="/topology" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+      Topology
+    </a>
+    <a href="/events" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Events
+    </a>
+    <div class="nav-section-label">Administration</div>
+    <a href="/admin/users" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Users
+    </a>
+    <a href="/admin/settings" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Settings
+    </a>
+    <div class="nav-section-label">AI Assistant</div>
+    <a href="/ai/assistant" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="12" cy="15" r="2"/></svg>
+      AI Config
+    </a>
+    <a href="/ai/settings" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+      AI Keys
+    </a>
+  </nav>
+  <div class="sidebar-footer">v0.1.0</div>
+</aside>
+
+<!-- Main -->
+<div class="main-wrapper">
+  <header class="topbar">
+    <div class="topbar-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search nodes, events..." />
+    </div>
+    <div class="topbar-right">
+      <button class="alarm-btn" title="Alarms" onclick="window.location.href='/events'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="alarm-badge hidden" id="alarmBadge">0</span>
+      </button>
+      <div class="user-info">
+        <div class="user-avatar">A</div>
+        <span class="user-name">Admin</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Network Topology</h1>
+        <p>Live visual map of edge nodes and their connections</p>
+      </div>
+      <div class="topology-stats">
+        <div class="topo-stat online"><span class="val" id="statOnline">0</span> online</div>
+        <div class="topo-stat"><span class="val" id="statTotal">0</span> nodes</div>
+        <div class="topo-stat"><span class="val" id="statFlows">0</span> flows</div>
+        <div class="topo-stat"><span class="val" id="statLinks">0</span> links</div>
+      </div>
+    </div>
+
+    <div class="canvas-container" id="canvasContainer">
+      <canvas id="topoCanvas"></canvas>
+
+      <div class="placeholder-msg" id="placeholder">
+        <p>Waiting for edge nodes...</p>
+        <span>Nodes will appear here once they connect to the manager</span>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.5)"></div> Online</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> Offline</div>
+        <div class="legend-item"><div class="legend-line" style="border-color:#60a5fa"></div> SRT link (potential)</div>
+        <div class="legend-item"><div class="legend-line" style="border-color:#a78bfa;border-style:dotted"></div> Other protocol</div>
+      </div>
+
+      <div class="canvas-toolbar">
+        <button id="btnZoomIn" title="Zoom in">+</button>
+        <button id="btnZoomOut" title="Zoom out">&minus;</button>
+        <button id="btnFit" title="Fit to view">&#8982;</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Auth guard ──
+  var token = localStorage.getItem('token');
+  if (!token) { window.location.href = '/login'; return; }
+
+  function authHeaders() {
+    return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  }
+
+  // ── Canvas setup ──
+  var container = document.getElementById('canvasContainer');
+  var canvas = document.getElementById('topoCanvas');
+  var ctx = canvas.getContext('2d');
+  var dpr = window.devicePixelRatio || 1;
+
+  // Viewport / camera
+  var camera = { x: 0, y: 0, zoom: 1 };
+  var NODE_W = 200;
+  var NODE_H = 100;
+
+  function resizeCanvas() {
+    var rect = container.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // ── Data store ──
+  var topoNodes = [];  // { id, name, status, x, y, vx, vy, flows: [...], srtInput: bool, srtOutput: bool }
+  var topoLinks = [];  // { source: idx, target: idx, label: string }
+  var hoveredNode = null;
+  var dragNode = null;
+  var dragOffset = { x: 0, y: 0 };
+  var isPanning = false;
+  var panStart = { x: 0, y: 0 };
+  var panCameraStart = { x: 0, y: 0 };
+  var animFrameId = null;
+  var layoutStable = false;
+  var layoutIterations = 0;
+
+  // ── Coordinate transforms ──
+  function screenToWorld(sx, sy) {
+    var rect = container.getBoundingClientRect();
+    return {
+      x: (sx - rect.left - rect.width / 2) / camera.zoom + camera.x,
+      y: (sy - rect.top - rect.height / 2) / camera.zoom + camera.y
+    };
+  }
+
+  function worldToScreen(wx, wy) {
+    var rect = container.getBoundingClientRect();
+    return {
+      x: (wx - camera.x) * camera.zoom + rect.width / 2,
+      y: (wy - camera.y) * camera.zoom + rect.height / 2
+    };
+  }
+
+  // ── Force-directed layout ──
+  function runLayoutStep() {
+    if (topoNodes.length === 0) return;
+
+    var REPULSION = 30000;
+    var ATTRACTION = 0.005;
+    var DAMPING = 0.85;
+    var CENTER_PULL = 0.001;
+    var MIN_DIST = 50;
+
+    // Reset forces
+    for (var i = 0; i < topoNodes.length; i++) {
+      topoNodes[i].fx = 0;
+      topoNodes[i].fy = 0;
+    }
+
+    // Node-node repulsion
+    for (var i = 0; i < topoNodes.length; i++) {
+      for (var j = i + 1; j < topoNodes.length; j++) {
+        var a = topoNodes[i];
+        var b = topoNodes[j];
+        var dx = a.x - b.x;
+        var dy = a.y - b.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < MIN_DIST) dist = MIN_DIST;
+        var force = REPULSION / (dist * dist);
+        var fx = (dx / dist) * force;
+        var fy = (dy / dist) * force;
+        a.fx += fx;
+        a.fy += fy;
+        b.fx -= fx;
+        b.fy -= fy;
+      }
+    }
+
+    // Link attraction
+    for (var l = 0; l < topoLinks.length; l++) {
+      var link = topoLinks[l];
+      var a = topoNodes[link.source];
+      var b = topoNodes[link.target];
+      if (!a || !b) continue;
+      var dx = b.x - a.x;
+      var dy = b.y - a.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var idealDist = 300;
+      var force = (dist - idealDist) * ATTRACTION;
+      var fx = (dx / (dist || 1)) * force;
+      var fy = (dy / (dist || 1)) * force;
+      a.fx += fx;
+      a.fy += fy;
+      b.fx -= fx;
+      b.fy -= fy;
+    }
+
+    // Center gravity
+    var totalKE = 0;
+    for (var i = 0; i < topoNodes.length; i++) {
+      var n = topoNodes[i];
+      n.fx -= n.x * CENTER_PULL;
+      n.fy -= n.y * CENTER_PULL;
+
+      if (!n.pinned) {
+        n.vx = (n.vx + n.fx) * DAMPING;
+        n.vy = (n.vy + n.fy) * DAMPING;
+        n.x += n.vx;
+        n.y += n.vy;
+      }
+      totalKE += n.vx * n.vx + n.vy * n.vy;
+    }
+
+    layoutStable = totalKE < 0.1;
+    layoutIterations++;
+  }
+
+  // ── Detect links between nodes ──
+  // Heuristic: if two online nodes both have SRT flows, draw a potential link
+  function computeLinks() {
+    topoLinks = [];
+    var srtNodes = [];
+
+    for (var i = 0; i < topoNodes.length; i++) {
+      var n = topoNodes[i];
+      if (n.status === 'online' && (n.srtInput || n.srtOutput)) {
+        srtNodes.push(i);
+      }
+    }
+
+    // Connect nodes that can plausibly talk to each other:
+    // nodes with SRT output -> nodes with SRT input
+    for (var i = 0; i < topoNodes.length; i++) {
+      if (topoNodes[i].status !== 'online' || !topoNodes[i].srtOutput) continue;
+      for (var j = 0; j < topoNodes.length; j++) {
+        if (i === j) continue;
+        if (topoNodes[j].status !== 'online' || !topoNodes[j].srtInput) continue;
+        // Check if we already have this link in reverse
+        var exists = false;
+        for (var k = 0; k < topoLinks.length; k++) {
+          if (topoLinks[k].source === j && topoLinks[k].target === i) { exists = true; break; }
+          if (topoLinks[k].source === i && topoLinks[k].target === j) { exists = true; break; }
+        }
+        if (!exists) {
+          topoLinks.push({ source: i, target: j, label: 'SRT' });
+        }
+      }
+    }
+  }
+
+  // ── Draw ──
+  function draw() {
+    var w = canvas.width / dpr;
+    var h = canvas.height / dpr;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+
+    // Camera transform
+    ctx.translate(w / 2, h / 2);
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.translate(-camera.x, -camera.y);
+
+    // Draw grid dots
+    drawGrid(w, h);
+
+    // Draw links
+    for (var l = 0; l < topoLinks.length; l++) {
+      var link = topoLinks[l];
+      var a = topoNodes[link.source];
+      var b = topoNodes[link.target];
+      if (!a || !b) continue;
+      drawLink(a, b, link.label);
+    }
+
+    // Draw nodes
+    for (var i = 0; i < topoNodes.length; i++) {
+      drawNode(topoNodes[i], topoNodes[i] === hoveredNode);
+    }
+
+    ctx.restore();
+
+    // Placeholder visibility
+    var ph = document.getElementById('placeholder');
+    ph.style.display = topoNodes.length === 0 ? 'block' : 'none';
+  }
+
+  function drawGrid(w, h) {
+    var spacing = 40;
+    var tl = screenToWorldFromCenter(-w / 2, -h / 2);
+    var br = screenToWorldFromCenter(w / 2, h / 2);
+
+    ctx.fillStyle = 'rgba(71, 85, 105, 0.15)';
+    var startX = Math.floor(tl.x / spacing) * spacing;
+    var startY = Math.floor(tl.y / spacing) * spacing;
+
+    for (var gx = startX; gx < br.x; gx += spacing) {
+      for (var gy = startY; gy < br.y; gy += spacing) {
+        ctx.beginPath();
+        ctx.arc(gx, gy, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function screenToWorldFromCenter(sx, sy) {
+    return { x: sx / camera.zoom + camera.x, y: sy / camera.zoom + camera.y };
+  }
+
+  function drawLink(a, b, label) {
+    var ax = a.x, ay = a.y, bx = b.x, by = b.y;
+
+    // Bezier curve
+    var mx = (ax + bx) / 2;
+    var my = (ay + by) / 2;
+    var dx = bx - ax;
+    var dy = by - ay;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var offset = Math.min(dist * 0.15, 40);
+    var nx = -dy / (dist || 1);
+    var ny = dx / (dist || 1);
+    var cx1 = mx + nx * offset;
+    var cy1 = my + ny * offset;
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.quadraticCurveTo(cx1, cy1, bx, by);
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2 / camera.zoom;
+    ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label at midpoint
+    if (label) {
+      var lx = (ax + 2 * cx1 + bx) / 4;
+      var ly = (ay + 2 * cy1 + by) / 4;
+      var fontSize = Math.max(10, 11 / camera.zoom);
+      ctx.font = '600 ' + fontSize + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = '#60a5fa';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      var tw = ctx.measureText(label).width + 10 / camera.zoom;
+      var th = fontSize + 6 / camera.zoom;
+      ctx.fillStyle = '#0f172a';
+      roundRect(ctx, lx - tw / 2, ly - th / 2, tw, th, 4 / camera.zoom);
+      ctx.fill();
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1 / camera.zoom;
+      roundRect(ctx, lx - tw / 2, ly - th / 2, tw, th, 4 / camera.zoom);
+      ctx.stroke();
+
+      ctx.fillStyle = '#60a5fa';
+      ctx.fillText(label, lx, ly);
+    }
+  }
+
+  function drawNode(node, hovered) {
+    var x = node.x - NODE_W / 2;
+    var y = node.y - NODE_H / 2;
+    var isOnline = node.status === 'online';
+    var borderColor = isOnline ? '#4ade80' : '#475569';
+    var bgColor = hovered ? '#253348' : '#1e293b';
+
+    // Shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 4;
+
+    // Background
+    ctx.fillStyle = bgColor;
+    roundRect(ctx, x, y, NODE_W, NODE_H, 10);
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Border
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = hovered ? 2.5 : 2;
+    roundRect(ctx, x, y, NODE_W, NODE_H, 10);
+    ctx.stroke();
+
+    // Online glow
+    if (isOnline) {
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.15)';
+      ctx.lineWidth = 6;
+      roundRect(ctx, x - 2, y - 2, NODE_W + 4, NODE_H + 4, 12);
+      ctx.stroke();
+    }
+
+    // Status dot
+    var dotX = x + 16;
+    var dotY = y + 18;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = isOnline ? '#4ade80' : '#64748b';
+    ctx.fill();
+    if (isOnline) {
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(74, 222, 128, 0.2)';
+      ctx.fill();
+    }
+
+    // Node name
+    ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#f1f5f9';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(truncate(node.name, 18), x + 28, y + 18);
+
+    // Status label
+    ctx.font = '500 10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = isOnline ? '#4ade80' : '#64748b';
+    ctx.textAlign = 'right';
+    ctx.fillText(isOnline ? 'ONLINE' : 'OFFLINE', x + NODE_W - 14, y + 18);
+
+    // Separator line
+    ctx.beginPath();
+    ctx.moveTo(x + 12, y + 34);
+    ctx.lineTo(x + NODE_W - 12, y + 34);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Flow count
+    var flowCount = (node.flows || []).length;
+    ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.textAlign = 'left';
+    ctx.fillText(flowCount + (flowCount === 1 ? ' flow' : ' flows'), x + 14, y + 50);
+
+    // Flow type icons
+    var flowTypes = getFlowTypes(node);
+    ctx.font = '500 10px -apple-system, BlinkMacSystemFont, sans-serif';
+    var tagX = x + 14;
+    var tagY = y + 68;
+
+    for (var t = 0; t < flowTypes.length && t < 4; t++) {
+      var ft = flowTypes[t];
+      var tw = ctx.measureText(ft.label).width + 12;
+      var th = 18;
+
+      ctx.fillStyle = ft.color + '18';
+      roundRect(ctx, tagX, tagY - th / 2, tw, th, 4);
+      ctx.fill();
+      ctx.strokeStyle = ft.color + '40';
+      ctx.lineWidth = 1;
+      roundRect(ctx, tagX, tagY - th / 2, tw, th, 4);
+      ctx.stroke();
+
+      ctx.fillStyle = ft.color;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ft.label, tagX + 6, tagY);
+
+      tagX += tw + 6;
+    }
+
+    if (flowTypes.length > 4) {
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('+' + (flowTypes.length - 4), tagX + 4, tagY);
+    }
+  }
+
+  function getFlowTypes(node) {
+    var types = [];
+    var seen = {};
+    var flows = node.flows || [];
+
+    for (var f = 0; f < flows.length; f++) {
+      var flow = flows[f];
+      var inputType = (flow.input && flow.input.input_type) || '';
+      var key = 'in:' + inputType;
+      if (inputType && !seen[key]) {
+        seen[key] = true;
+        types.push({
+          label: inputType.toUpperCase() + ' IN',
+          color: protocolColor(inputType)
+        });
+      }
+
+      var outputs = flow.outputs || [];
+      for (var o = 0; o < outputs.length; o++) {
+        var ot = outputs[o].output_type || '';
+        var okey = 'out:' + ot;
+        if (ot && !seen[okey]) {
+          seen[okey] = true;
+          types.push({
+            label: ot.toUpperCase() + ' OUT',
+            color: protocolColor(ot)
+          });
+        }
+      }
+    }
+
+    return types;
+  }
+
+  function protocolColor(proto) {
+    switch ((proto || '').toLowerCase()) {
+      case 'srt': return '#60a5fa';
+      case 'rtmp': return '#f97316';
+      case 'udp': return '#a78bfa';
+      case 'rtp': return '#2dd4bf';
+      case 'file': return '#94a3b8';
+      default: return '#94a3b8';
+    }
+  }
+
+  function truncate(str, max) {
+    if (!str) return '';
+    return str.length > max ? str.substring(0, max - 1) + '\u2026' : str;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+
+  // ── Hit testing ──
+  function nodeAtPoint(wx, wy) {
+    for (var i = topoNodes.length - 1; i >= 0; i--) {
+      var n = topoNodes[i];
+      if (wx >= n.x - NODE_W / 2 && wx <= n.x + NODE_W / 2 &&
+          wy >= n.y - NODE_H / 2 && wy <= n.y + NODE_H / 2) {
+        return n;
+      }
+    }
+    return null;
+  }
+
+  // ── Mouse interactions ──
+  canvas.addEventListener('mousedown', function (e) {
+    var w = screenToWorld(e.clientX, e.clientY);
+    var node = nodeAtPoint(w.x, w.y);
+
+    if (node) {
+      dragNode = node;
+      dragNode.pinned = true;
+      dragOffset.x = w.x - node.x;
+      dragOffset.y = w.y - node.y;
+      layoutStable = false;
+    } else {
+      isPanning = true;
+      panStart.x = e.clientX;
+      panStart.y = e.clientY;
+      panCameraStart.x = camera.x;
+      panCameraStart.y = camera.y;
+    }
+  });
+
+  canvas.addEventListener('mousemove', function (e) {
+    var w = screenToWorld(e.clientX, e.clientY);
+
+    if (dragNode) {
+      dragNode.x = w.x - dragOffset.x;
+      dragNode.y = w.y - dragOffset.y;
+      dragNode.vx = 0;
+      dragNode.vy = 0;
+      layoutStable = false;
+    } else if (isPanning) {
+      var dx = (e.clientX - panStart.x) / camera.zoom;
+      var dy = (e.clientY - panStart.y) / camera.zoom;
+      camera.x = panCameraStart.x - dx;
+      camera.y = panCameraStart.y - dy;
+    } else {
+      var newHovered = nodeAtPoint(w.x, w.y);
+      if (newHovered !== hoveredNode) {
+        hoveredNode = newHovered;
+        canvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
+      }
+    }
+  });
+
+  canvas.addEventListener('mouseup', function (e) {
+    if (dragNode) {
+      dragNode.pinned = false;
+      dragNode = null;
+    }
+    isPanning = false;
+  });
+
+  canvas.addEventListener('mouseleave', function () {
+    if (dragNode) { dragNode.pinned = false; dragNode = null; }
+    isPanning = false;
+    hoveredNode = null;
+  });
+
+  canvas.addEventListener('click', function (e) {
+    if (dragNode) return;
+    var w = screenToWorld(e.clientX, e.clientY);
+    var node = nodeAtPoint(w.x, w.y);
+    if (node && node.id) {
+      window.location.href = '/nodes/' + encodeURIComponent(node.id);
+    }
+  });
+
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    var newZoom = Math.min(Math.max(camera.zoom * zoomFactor, 0.2), 3);
+
+    // Zoom toward mouse position
+    var rect = container.getBoundingClientRect();
+    var mx = e.clientX - rect.left - rect.width / 2;
+    var my = e.clientY - rect.top - rect.height / 2;
+
+    var wx = mx / camera.zoom + camera.x;
+    var wy = my / camera.zoom + camera.y;
+
+    camera.zoom = newZoom;
+    camera.x = wx - mx / camera.zoom;
+    camera.y = wy - my / camera.zoom;
+  }, { passive: false });
+
+  // ── Toolbar ──
+  document.getElementById('btnZoomIn').addEventListener('click', function () {
+    camera.zoom = Math.min(camera.zoom * 1.3, 3);
+  });
+
+  document.getElementById('btnZoomOut').addEventListener('click', function () {
+    camera.zoom = Math.max(camera.zoom / 1.3, 0.2);
+  });
+
+  document.getElementById('btnFit').addEventListener('click', function () {
+    fitToView();
+  });
+
+  function fitToView() {
+    if (topoNodes.length === 0) {
+      camera.x = 0; camera.y = 0; camera.zoom = 1;
+      return;
+    }
+
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < topoNodes.length; i++) {
+      var n = topoNodes[i];
+      minX = Math.min(minX, n.x - NODE_W / 2);
+      minY = Math.min(minY, n.y - NODE_H / 2);
+      maxX = Math.max(maxX, n.x + NODE_W / 2);
+      maxY = Math.max(maxY, n.y + NODE_H / 2);
+    }
+
+    var rect = container.getBoundingClientRect();
+    var padding = 80;
+    var bw = maxX - minX + padding * 2;
+    var bh = maxY - minY + padding * 2;
+
+    camera.x = (minX + maxX) / 2;
+    camera.y = (minY + maxY) / 2;
+    camera.zoom = Math.min(rect.width / bw, rect.height / bh, 2);
+    camera.zoom = Math.max(camera.zoom, 0.2);
+  }
+
+  // ── Animation loop ──
+  function tick() {
+    if (!layoutStable || layoutIterations < 200) {
+      runLayoutStep();
+    }
+    draw();
+    animFrameId = requestAnimationFrame(tick);
+  }
+
+  tick();
+
+  // ── Process WebSocket data ──
+  function processNodes(wsNodes) {
+    var existingMap = {};
+    for (var i = 0; i < topoNodes.length; i++) {
+      existingMap[topoNodes[i].id] = topoNodes[i];
+    }
+
+    var newNodes = [];
+    var totalFlows = 0;
+
+    for (var i = 0; i < wsNodes.length; i++) {
+      var wn = wsNodes[i];
+      var key = wn.node_id || wn.id || wn.name;
+      var stats = wn.stats || {};
+      var flows = stats.flows || [];
+      totalFlows += flows.length;
+
+      var hasSrtInput = false;
+      var hasSrtOutput = false;
+
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        if (flow.input && (flow.input.input_type || '').toLowerCase() === 'srt') {
+          hasSrtInput = true;
+        }
+        var outputs = flow.outputs || [];
+        for (var o = 0; o < outputs.length; o++) {
+          if ((outputs[o].output_type || '').toLowerCase() === 'srt') {
+            hasSrtOutput = true;
+          }
+        }
+      }
+
+      var existing = existingMap[key];
+      if (existing) {
+        existing.name = wn.name || existing.name;
+        existing.status = wn.status || 'online';
+        existing.flows = flows;
+        existing.srtInput = hasSrtInput;
+        existing.srtOutput = hasSrtOutput;
+        newNodes.push(existing);
+        delete existingMap[key];
+      } else {
+        // Distribute new nodes in a circle
+        var angle = (i / wsNodes.length) * Math.PI * 2;
+        var radius = 150 + wsNodes.length * 30;
+        newNodes.push({
+          id: key,
+          name: wn.name || key,
+          status: wn.status || 'online',
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+          vx: 0,
+          vy: 0,
+          fx: 0,
+          fy: 0,
+          pinned: false,
+          flows: flows,
+          srtInput: hasSrtInput,
+          srtOutput: hasSrtOutput
+        });
+      }
+    }
+
+    topoNodes = newNodes;
+    computeLinks();
+
+    // Update stats
+    var online = 0;
+    for (var i = 0; i < topoNodes.length; i++) {
+      if (topoNodes[i].status === 'online') online++;
+    }
+
+    document.getElementById('statOnline').textContent = online;
+    document.getElementById('statTotal').textContent = topoNodes.length;
+    document.getElementById('statFlows').textContent = totalFlows;
+    document.getElementById('statLinks').textContent = topoLinks.length;
+
+    // Reset layout to allow convergence
+    layoutStable = false;
+    layoutIterations = 0;
+
+    // Auto-fit on first data
+    if (newNodes.length > 0 && Object.keys(existingMap).length === 0) {
+      setTimeout(function () { fitToView(); }, 300);
+    }
+  }
+
+  // ── Alarm badge ──
+  function fetchAlarmCount() {
+    fetch('/api/v1/events/count', { headers: authHeaders() })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+      .then(function (data) {
+        var count = typeof data === 'number' ? data : (data.count || 0);
+        var badge = document.getElementById('alarmBadge');
+        if (count > 0) {
+          badge.textContent = count > 99 ? '99+' : count;
+          badge.classList.remove('hidden');
+        } else {
+          badge.classList.add('hidden');
+        }
+      })
+      .catch(function () {});
+  }
+
+  fetchAlarmCount();
+
+  // ── WebSocket ──
+  var ws = null;
+  var wsRetryDelay = 1000;
+  var firstUpdate = true;
+
+  function connectWebSocket() {
+    var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + window.location.host + '/ws/dashboard';
+
+    ws = new WebSocket(url);
+
+    ws.onopen = function () {
+      wsRetryDelay = 1000;
+    };
+
+    ws.onmessage = function (evt) {
+      try {
+        var msg = JSON.parse(evt.data);
+        if (msg.type === 'dashboard_update' && Array.isArray(msg.nodes)) {
+          processNodes(msg.nodes);
+          if (firstUpdate) {
+            firstUpdate = false;
+            setTimeout(fitToView, 500);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    };
+
+    ws.onclose = function () {
+      setTimeout(function () {
+        wsRetryDelay = Math.min(wsRetryDelay * 2, 30000);
+        connectWebSocket();
+      }, wsRetryDelay);
+    };
+
+    ws.onerror = function () { ws.close(); };
+  }
+
+  connectWebSocket();
+
+  // ── Also fetch initial node list from REST API ──
+  function fetchInitialNodes() {
+    fetch('/api/v1/nodes', { headers: authHeaders() })
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (nodes) {
+        if (topoNodes.length === 0 && nodes.length > 0) {
+          var wsFormat = nodes.map(function (n) {
+            return {
+              node_id: n.id,
+              name: n.name,
+              status: n.status || 'offline',
+              stats: { flows: [] }
+            };
+          });
+          processNodes(wsFormat);
+          setTimeout(fitToView, 300);
+        }
+      })
+      .catch(function () {});
+  }
+
+  fetchInitialNodes();
+
+})();
+</script>
+</body>
+</html>

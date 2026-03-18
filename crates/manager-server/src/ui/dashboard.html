@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard - bilbycast manager</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    display: flex;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 256px;
+    min-width: 256px;
+    background: #1e293b;
+    border-right: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 20;
+  }
+
+  .sidebar-logo {
+    padding: 24px 20px 20px;
+    border-bottom: 1px solid #334155;
+  }
+
+  .sidebar-logo .logo-text {
+    font-size: 22px;
+    font-weight: 700;
+    color: #60a5fa;
+    letter-spacing: -0.5px;
+  }
+
+  .sidebar-logo .logo-sub {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 2px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    padding: 12px 0;
+    overflow-y: auto;
+  }
+
+  .nav-section-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 20px 20px 8px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    color: #94a3b8;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .nav-item:hover {
+    background: rgba(96, 165, 250, 0.06);
+    color: #e2e8f0;
+  }
+
+  .nav-item.active {
+    background: rgba(96, 165, 250, 0.1);
+    color: #60a5fa;
+    border-left-color: #60a5fa;
+  }
+
+  .nav-item svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .nav-item.active svg,
+  .nav-item:hover svg {
+    opacity: 1;
+  }
+
+  .sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #334155;
+    font-size: 12px;
+    color: #475569;
+  }
+
+  /* ── Main wrapper ── */
+  .main-wrapper {
+    margin-left: 256px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    height: 56px;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .topbar-search {
+    position: relative;
+    width: 320px;
+  }
+
+  .topbar-search svg {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    color: #64748b;
+  }
+
+  .topbar-search input {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px 12px 8px 36px;
+    font-size: 13px;
+    color: #e2e8f0;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .topbar-search input::placeholder { color: #64748b; }
+  .topbar-search input:focus { border-color: #60a5fa; }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .alarm-btn {
+    position: relative;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    color: #94a3b8;
+    transition: color 0.15s;
+  }
+
+  .alarm-btn:hover { color: #e2e8f0; }
+
+  .alarm-btn svg { width: 20px; height: 20px; }
+
+  .alarm-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: #ef4444;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    transform: translate(4px, -4px);
+  }
+
+  .alarm-badge.hidden { display: none; }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: background 0.15s;
+  }
+
+  .user-info:hover { background: rgba(255,255,255,0.05); }
+
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #3b82f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .user-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #e2e8f0;
+  }
+
+  /* ── Content ── */
+  .content {
+    flex: 1;
+    padding: 32px;
+  }
+
+  .page-header { margin-bottom: 28px; }
+
+  .page-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 4px;
+  }
+
+  .page-header p {
+    font-size: 14px;
+    color: #64748b;
+  }
+
+  /* ── Summary cards ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .summary-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.15s;
+  }
+
+  .summary-card:hover { border-color: #475569; }
+
+  .summary-card .card-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+  }
+
+  .summary-card .card-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1;
+  }
+
+  .summary-card .card-subtitle {
+    font-size: 12px;
+    color: #64748b;
+    margin-top: 6px;
+  }
+
+  .summary-card.green .card-value { color: #4ade80; }
+  .summary-card.green { border-color: rgba(74, 222, 128, 0.2); background: linear-gradient(135deg, #1e293b 0%, rgba(74, 222, 128, 0.04) 100%); }
+
+  .summary-card.red .card-value { color: #f87171; }
+  .summary-card.red { border-color: rgba(248, 113, 113, 0.2); background: linear-gradient(135deg, #1e293b 0%, rgba(248, 113, 113, 0.04) 100%); }
+
+  .summary-card.gray .card-value { color: #94a3b8; }
+
+  /* ── Node cards grid ── */
+  .nodes-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .nodes-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+
+  .nodes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+  }
+
+  .node-card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s, transform 0.2s;
+    cursor: pointer;
+  }
+
+  .node-card:hover {
+    border-color: #475569;
+    transform: translateY(-2px);
+  }
+
+  .node-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .node-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+
+  .status-dot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .status-dot .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .status-dot.online .dot { background: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.5); }
+  .status-dot.online { color: #4ade80; }
+
+  .status-dot.offline .dot { background: #64748b; }
+  .status-dot.offline { color: #64748b; }
+
+  .node-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .node-stat-label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .node-stat-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 1024px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-wrapper { margin-left: 0; }
+    .summary-grid { grid-template-columns: 1fr; }
+    .nodes-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-text">bilbycast</div>
+    <div class="logo-sub">manager</div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a href="/dashboard" class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+      </svg>
+      Dashboard
+    </a>
+    <a href="/topology" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/>
+      </svg>
+      Topology
+    </a>
+    <a href="/events" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </svg>
+      Events
+    </a>
+
+    <div class="nav-section-label">Administration</div>
+    <a href="/admin/users" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      Users
+    </a>
+    <a href="/admin/settings" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      Settings
+    </a>
+
+    <div class="nav-section-label">AI Assistant</div>
+    <a href="/ai/assistant" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="12" cy="15" r="2"/>
+      </svg>
+      AI Config
+    </a>
+    <a href="/ai/settings" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+      </svg>
+      AI Keys
+    </a>
+  </nav>
+
+  <div class="sidebar-footer">v0.1.0</div>
+</aside>
+
+<!-- Main -->
+<div class="main-wrapper">
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <input type="text" placeholder="Search nodes, events..." />
+    </div>
+    <div class="topbar-right">
+      <button class="alarm-btn" id="alarmBtn" title="Alarms" onclick="window.location.href='/events'">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span class="alarm-badge hidden" id="alarmBadge">0</span>
+      </button>
+      <div class="user-info">
+        <div class="user-avatar">A</div>
+        <span class="user-name">Admin</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <main class="content">
+    <div class="page-header">
+      <h1>Dashboard</h1>
+      <p>Overview of all edge nodes</p>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="card-label">Total Nodes</div>
+        <div class="card-value" id="totalNodes">0</div>
+        <div class="card-subtitle">Registered edge nodes</div>
+      </div>
+      <div class="summary-card green">
+        <div class="card-label">Online</div>
+        <div class="card-value" id="onlineNodes">0</div>
+        <div class="card-subtitle">Currently connected</div>
+      </div>
+      <div class="summary-card gray">
+        <div class="card-label">Offline</div>
+        <div class="card-value" id="offlineNodes">0</div>
+        <div class="card-subtitle">Not responding</div>
+      </div>
+      <div class="summary-card red">
+        <div class="card-label">Active Alarms</div>
+        <div class="card-value" id="activeAlarms">0</div>
+        <div class="card-subtitle">Requires attention</div>
+      </div>
+    </div>
+
+    <!-- Node cards -->
+    <div class="nodes-header">
+      <h2>Edge Nodes</h2>
+    </div>
+    <div class="nodes-grid" id="nodesGrid">
+      <!-- Placeholder cards rendered by JS -->
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Auth guard ──
+  var token = localStorage.getItem('token');
+  if (!token) {
+    window.location.href = '/login';
+    return;
+  }
+
+  // ── Helpers ──
+  var $ = function (id) { return document.getElementById(id); };
+
+  function authHeaders() {
+    return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  }
+
+  // ── Fetch alarm count ──
+  function fetchAlarmCount() {
+    fetch('/api/v1/events/count', { headers: authHeaders() })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r); })
+      .then(function (data) {
+        var count = typeof data === 'number' ? data : (data.count || 0);
+        updateAlarmBadge(count);
+        $('activeAlarms').textContent = count;
+      })
+      .catch(function () { /* silent */ });
+  }
+
+  function updateAlarmBadge(count) {
+    var badge = $('alarmBadge');
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  }
+
+  // ── Merged node store: API + WS data combined ──
+  var _knownNodes = {};
+
+  function renderNodes() {
+    var nodes = Object.keys(_knownNodes).map(function(k) { return _knownNodes[k]; });
+    var grid = $('nodesGrid');
+    var online = 0;
+    var offline = 0;
+    var seenIds = {};
+
+    nodes.forEach(function (node) {
+      var key = node.id || node.name;
+      seenIds[key] = true;
+      if (node.status === 'online') online++; else offline++;
+
+      var statusClass = node.status === 'online' ? 'online' : 'offline';
+      var statusLabel = node.status === 'online' ? 'Online' : 'Offline';
+
+      var existing = document.getElementById('node-' + key);
+      if (existing) {
+        // Update in place
+        var nameEl = existing.querySelector('.node-name');
+        if (nameEl) nameEl.textContent = node.name;
+        var dotEl = existing.querySelector('.status-dot');
+        if (dotEl) { dotEl.className = 'status-dot ' + statusClass; dotEl.innerHTML = '<span class="dot"></span>' + statusLabel; }
+        var vals = existing.querySelectorAll('.node-stat-value');
+        if (vals[0]) vals[0].textContent = node.flows != null ? node.flows : '--';
+        if (vals[1]) vals[1].textContent = node.bitrate || '--';
+        if (vals[2]) vals[2].textContent = node.uptime || '--';
+      } else {
+        // Create new card
+        var card = document.createElement('div');
+        card.className = 'node-card';
+        card.id = 'node-' + key;
+        card.onclick = function () { window.location.href = '/nodes/' + encodeURIComponent(key); };
+        card.innerHTML =
+          '<div class="node-card-top">' +
+            '<span class="node-name">' + escapeHtml(node.name) + '</span>' +
+            '<span class="status-dot ' + statusClass + '"><span class="dot"></span>' + statusLabel + '</span>' +
+          '</div>' +
+          '<div class="node-stats">' +
+            '<div><div class="node-stat-label">Flows</div><div class="node-stat-value">' + (node.flows != null ? node.flows : '--') + '</div></div>' +
+            '<div><div class="node-stat-label">Bitrate</div><div class="node-stat-value">' + (node.bitrate || '--') + '</div></div>' +
+            '<div><div class="node-stat-label">Uptime</div><div class="node-stat-value">' + (node.uptime || '--') + '</div></div>' +
+          '</div>';
+        grid.appendChild(card);
+      }
+    });
+
+    // Remove cards for nodes no longer present
+    var cards = grid.querySelectorAll('.node-card');
+    cards.forEach(function(c) {
+      var id = c.id.replace('node-', '');
+      if (!seenIds[id]) c.remove();
+    });
+
+    $('totalNodes').textContent = nodes.length;
+    $('onlineNodes').textContent = online;
+    $('offlineNodes').textContent = offline;
+  }
+
+  function escapeHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // ── Initial load: fetch nodes from API ──
+  function fetchNodes() {
+    fetch('/api/v1/nodes', { headers: authHeaders() })
+      .then(function(r) { return r.ok ? r.json() : []; })
+      .then(function(nodes) {
+        nodes.forEach(function(n) {
+          var key = n.id || n.name;
+          var health = n.last_health || {};
+          var existing = _knownNodes[key] || {};
+          _knownNodes[key] = {
+            id: n.id,
+            name: n.name,
+            status: existing.status || n.status,
+            flows: existing.flows != null ? existing.flows : (health.active_flows != null ? health.active_flows : '--'),
+            bitrate: existing.bitrate || '--',
+            uptime: existing.uptime || (n.last_seen_at ? formatUptime(n.created_at) : '--')
+          };
+        });
+        renderNodes();
+      })
+      .catch(function() { renderNodes(); });
+  }
+
+  function formatUptime(createdAt) {
+    try {
+      var diff = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
+      return formatUptimeSecs(diff);
+    } catch(e) { return '--'; }
+  }
+
+  function formatUptimeSecs(secs) {
+    if (secs == null || secs < 0) return '--';
+    if (secs < 60) return secs + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm';
+    if (secs < 86400) return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+    return Math.floor(secs / 86400) + 'd ' + Math.floor((secs % 86400) / 3600) + 'h';
+  }
+
+  function formatBitrate(bps) {
+    if (!bps || bps === 0) return '--';
+    if (bps >= 1000000) return (bps / 1000000).toFixed(1) + ' Mbps';
+    if (bps >= 1000) return (bps / 1000).toFixed(0) + ' kbps';
+    return bps + ' bps';
+  }
+
+  fetchNodes();
+  fetchAlarmCount();
+
+  // ── WebSocket for real-time updates ──
+  var ws = null;
+  var wsRetryDelay = 1000;
+
+  function connectWebSocket() {
+    var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + window.location.host + '/ws/dashboard';
+
+    ws = new WebSocket(url);
+
+    ws.onopen = function () {
+      wsRetryDelay = 1000;
+    };
+
+    ws.onmessage = function (evt) {
+      try {
+        var msg = JSON.parse(evt.data);
+
+        // Manager sends: { type: "dashboard_update", nodes: [...], online_count: N }
+        if (msg.type === 'dashboard_update' && Array.isArray(msg.nodes)) {
+          msg.nodes.forEach(function(n) {
+            var key = n.node_id || n.id || n.name;
+            var stats = n.stats || {};
+            var flows = stats.flows || [];
+            var totalBitrate = 0;
+            var activeFlows = 0;
+            if (Array.isArray(flows)) {
+              activeFlows = flows.length;
+              flows.forEach(function(f) { totalBitrate += (f.input && f.input.bitrate_bps) || 0; });
+            }
+            var existing = _knownNodes[key] || {};
+            _knownNodes[key] = {
+              id: key,
+              name: n.name || existing.name || key,
+              status: n.status || 'online',
+              flows: activeFlows,
+              bitrate: formatBitrate(totalBitrate),
+              uptime: n.uptime_secs != null ? formatUptimeSecs(n.uptime_secs) : (existing.uptime || '--')
+            };
+          });
+          renderNodes();
+        }
+      } catch (e) { /* ignore malformed messages */ }
+    };
+
+    ws.onclose = function () {
+      setTimeout(function () {
+        wsRetryDelay = Math.min(wsRetryDelay * 2, 30000);
+        connectWebSocket();
+      }, wsRetryDelay);
+    };
+
+    ws.onerror = function () {
+      ws.close();
+    };
+  }
+
+  connectWebSocket();
+})();
+</script>
+</body>
+</html>

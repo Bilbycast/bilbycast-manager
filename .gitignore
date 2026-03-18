@@ -1,0 +1,10 @@
+/target
+*.db
+*.db-shm
+*.db-wal
+.env
+node_modules/
+style/output.css
+.DS_Store
+.idea/
+.claude/
