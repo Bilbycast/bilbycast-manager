@@ -195,10 +195,12 @@
       </div>
 
       <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.5)"></div> Online</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> Offline</div>
-        <div class="legend-item"><div class="legend-line" style="border-color:#60a5fa"></div> SRT link (potential)</div>
-        <div class="legend-item"><div class="legend-line" style="border-color:#a78bfa;border-style:dotted"></div> Other protocol</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.5)"></div> Managed (Online)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> Managed (Offline)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border:2px dashed #f59e0b;box-sizing:border-box"></div> External / Unmanaged</div>
+        <div class="legend-item"><div class="legend-line" style="border-color:#60a5fa"></div> SRT</div>
+        <div class="legend-item"><div class="legend-line" style="border-color:#2dd4bf"></div> RTP/UDP</div>
+        <div class="legend-item"><div class="legend-line" style="border-color:#f97316;border-style:dotted"></div> RTMP</div>
       </div>
 
       <div class="canvas-toolbar">
@@ -349,37 +351,245 @@
     layoutIterations++;
   }
 
-  // ── Detect links between nodes ──
-  // Heuristic: if two online nodes both have SRT flows, draw a potential link
-  function computeLinks() {
-    topoLinks = [];
-    var srtNodes = [];
+  // ── External endpoint constants ──
+  var EXT_W = 160;
+  var EXT_H = 64;
 
+  // ── Extract external endpoints and real links from flow configs ──
+  function computeLinksAndExternals() {
+    topoLinks = [];
+    // Remove old external nodes
+    topoNodes = topoNodes.filter(function (n) { return !n.isExternal; });
+
+    var managedIPs = {};
+    // Build a map of managed node addresses for matching
     for (var i = 0; i < topoNodes.length; i++) {
       var n = topoNodes[i];
-      if (n.status === 'online' && (n.srtInput || n.srtOutput)) {
-        srtNodes.push(i);
+      if (n.apiAddr) managedIPs[n.apiAddr] = i;
+      if (n.monitorAddr) managedIPs[n.monitorAddr] = i;
+    }
+
+    var externalMap = {}; // key -> external node
+
+    function getOrCreateExternal(address, protocol, direction) {
+      // Normalize: strip 0.0.0.0 bind addresses, extract meaningful part
+      if (!address || address === '0.0.0.0:0') return null;
+
+      // If it's a bind address (0.0.0.0:port), create a generic endpoint
+      var label = address;
+      var key = protocol + ':' + address;
+
+      // For RTMP URLs, extract hostname
+      if (protocol === 'rtmp' && address.indexOf('://') > -1) {
+        try {
+          var parts = address.replace('rtmp://', '').replace('rtmps://', '').split('/');
+          label = parts[0]; // host:port
+          key = 'rtmp:' + label;
+        } catch(e) {}
+      }
+
+      if (externalMap[key]) return externalMap[key];
+
+      var ext = {
+        id: 'ext_' + key,
+        name: label,
+        status: 'external',
+        isExternal: true,
+        protocol: protocol,
+        direction: direction, // 'source' or 'destination'
+        x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,
+        pinned: false, flows: [],
+        srtInput: false, srtOutput: false
+      };
+      externalMap[key] = ext;
+      return ext;
+    }
+
+    // Scan all managed nodes' flows for external connections
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal) continue;
+      var flows = node.flows || [];
+
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        var input = flow.input || {};
+        var inputType = (input.input_type || '').toLowerCase();
+
+        // Check input for external sources
+        if (inputType === 'srt' && input.remote_addr) {
+          // SRT caller input: remote_addr is the source
+          if (!isLocalOrManaged(input.remote_addr, managedIPs)) {
+            var ext = getOrCreateExternal(input.remote_addr, 'srt', 'source');
+            if (ext) ext.srtOutput = true; // External is an SRT source
+          }
+        }
+        if (inputType === 'srt' && input.mode === 'listener' && input.local_addr) {
+          // SRT listener input: external callers connect to us (shown as generic source)
+          // We'll detect these from the stats if bitrate > 0
+        }
+        if (inputType === 'rtmp' && input.listen_addr) {
+          // RTMP input: external encoder pushes to us
+          // Only show if flow is receiving data
+          if (flow.state === 'Running' && input.bitrate_bps > 0) {
+            var ext = getOrCreateExternal('RTMP Publisher', 'rtmp', 'source');
+            if (ext) ext.name = 'RTMP Publisher';
+          }
+        }
+        if (inputType === 'rtp' && input.bind_addr) {
+          // RTP input: if receiving data, there's an external source
+        }
+
+        // Check outputs for external destinations
+        var outputs = flow.outputs || [];
+        for (var o = 0; o < outputs.length; o++) {
+          var out = outputs[o];
+          var outType = (out.output_type || '').toLowerCase();
+
+          if (outType === 'srt') {
+            if (out.mode === 'caller' && out.remote_addr) {
+              if (!isLocalOrManaged(out.remote_addr, managedIPs)) {
+                var ext = getOrCreateExternal(out.remote_addr, 'srt', 'destination');
+                if (ext) ext.srtInput = true;
+              }
+            }
+            if (out.mode === 'listener' && out.local_addr) {
+              // External callers pull from us
+            }
+          }
+
+          if (outType === 'rtp' && out.dest_addr) {
+            if (!isLocalOrManaged(out.dest_addr, managedIPs)) {
+              getOrCreateExternal(out.dest_addr, 'rtp', 'destination');
+            }
+          }
+
+          if (outType === 'rtmp' && out.dest_url) {
+            getOrCreateExternal(out.dest_url, 'rtmp', 'destination');
+          }
+
+          if (outType === 'hls' && out.ingest_url) {
+            getOrCreateExternal(out.ingest_url, 'hls', 'destination');
+          }
+
+          if (outType === 'webrtc' && out.whip_url) {
+            getOrCreateExternal(out.whip_url, 'webrtc', 'destination');
+          }
+        }
       }
     }
 
-    // Connect nodes that can plausibly talk to each other:
-    // nodes with SRT output -> nodes with SRT input
+    // Add external nodes and position them around the managed nodes
+    var extList = Object.values(externalMap);
+    for (var e = 0; e < extList.length; e++) {
+      var ext = extList[e];
+      // Position externals on the periphery
+      var angle = (e / Math.max(extList.length, 1)) * Math.PI * 2 + Math.PI / 4;
+      var radius = 350 + extList.length * 20;
+      ext.x = Math.cos(angle) * radius;
+      ext.y = Math.sin(angle) * radius;
+      topoNodes.push(ext);
+    }
+
+    // Now build links based on actual flow endpoints
     for (var i = 0; i < topoNodes.length; i++) {
-      if (topoNodes[i].status !== 'online' || !topoNodes[i].srtOutput) continue;
-      for (var j = 0; j < topoNodes.length; j++) {
-        if (i === j) continue;
-        if (topoNodes[j].status !== 'online' || !topoNodes[j].srtInput) continue;
-        // Check if we already have this link in reverse
-        var exists = false;
-        for (var k = 0; k < topoLinks.length; k++) {
-          if (topoLinks[k].source === j && topoLinks[k].target === i) { exists = true; break; }
-          if (topoLinks[k].source === i && topoLinks[k].target === j) { exists = true; break; }
+      var node = topoNodes[i];
+      if (node.isExternal) continue;
+      var flows = node.flows || [];
+
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        var input = flow.input || {};
+        var inputType = (input.input_type || '').toLowerCase();
+
+        // Input links: external → managed node
+        if (inputType === 'srt' && input.remote_addr) {
+          var extKey = 'srt:' + input.remote_addr;
+          var extIdx = findNodeIndex(externalMap[extKey]);
+          if (extIdx >= 0) {
+            addLink(extIdx, i, 'SRT', 'srt');
+          }
         }
-        if (!exists) {
-          topoLinks.push({ source: i, target: j, label: 'SRT' });
+
+        // Output links: managed node → target
+        var outputs = flow.outputs || [];
+        for (var o = 0; o < outputs.length; o++) {
+          var out = outputs[o];
+          var outType = (out.output_type || '').toLowerCase();
+          var targetIdx = -1;
+
+          if (outType === 'srt' && out.mode === 'caller' && out.remote_addr) {
+            // Check if target is a managed node
+            targetIdx = findManagedNodeByAddr(out.remote_addr);
+            if (targetIdx < 0) {
+              var extKey = 'srt:' + out.remote_addr;
+              targetIdx = findNodeIndex(externalMap[extKey]);
+            }
+            if (targetIdx >= 0 && targetIdx !== i) addLink(i, targetIdx, 'SRT', 'srt');
+          }
+
+          if (outType === 'rtp' && out.dest_addr) {
+            targetIdx = findManagedNodeByAddr(out.dest_addr);
+            if (targetIdx < 0) {
+              var extKey = 'rtp:' + out.dest_addr;
+              targetIdx = findNodeIndex(externalMap[extKey]);
+            }
+            if (targetIdx >= 0 && targetIdx !== i) addLink(i, targetIdx, 'RTP', 'rtp');
+          }
+
+          if (outType === 'rtmp' && out.dest_url) {
+            var host = out.dest_url.replace('rtmp://', '').replace('rtmps://', '').split('/')[0];
+            var extKey = 'rtmp:' + host;
+            targetIdx = findNodeIndex(externalMap[extKey]);
+            if (targetIdx >= 0) addLink(i, targetIdx, 'RTMP', 'rtmp');
+          }
+
+          if (outType === 'hls' && out.ingest_url) {
+            var extKey = 'hls:' + out.ingest_url;
+            targetIdx = findNodeIndex(externalMap[extKey]);
+            if (targetIdx >= 0) addLink(i, targetIdx, 'HLS', 'hls');
+          }
         }
       }
     }
+  }
+
+  function isLocalOrManaged(addr, managedIPs) {
+    // Check if address belongs to a managed node
+    if (managedIPs[addr]) return true;
+    // Check if it's a loopback or local address pointing to another managed node
+    var ip = addr.split(':')[0];
+    return ip === '127.0.0.1' || ip === 'localhost';
+  }
+
+  function findNodeIndex(node) {
+    if (!node) return -1;
+    for (var i = 0; i < topoNodes.length; i++) {
+      if (topoNodes[i] === node || topoNodes[i].id === node.id) return i;
+    }
+    return -1;
+  }
+
+  function findManagedNodeByAddr(addr) {
+    // Try to match an address to a managed node's API/monitor address
+    for (var i = 0; i < topoNodes.length; i++) {
+      if (topoNodes[i].isExternal) continue;
+      // Check if any of the node's SRT inputs match
+      var flows = topoNodes[i].flows || [];
+      for (var f = 0; f < flows.length; f++) {
+        var input = flows[f].input || {};
+        if (input.local_addr === addr || input.bind_addr === addr) return i;
+      }
+    }
+    return -1;
+  }
+
+  function addLink(sourceIdx, targetIdx, label, protocol) {
+    // Avoid duplicate links
+    for (var k = 0; k < topoLinks.length; k++) {
+      if (topoLinks[k].source === sourceIdx && topoLinks[k].target === targetIdx) return;
+    }
+    topoLinks.push({ source: sourceIdx, target: targetIdx, label: label, protocol: protocol });
   }
 
   // ── Draw ──
@@ -404,12 +614,15 @@
       var a = topoNodes[link.source];
       var b = topoNodes[link.target];
       if (!a || !b) continue;
-      drawLink(a, b, link.label);
+      drawLink(a, b, link.label, link.protocol);
     }
 
-    // Draw nodes
+    // Draw nodes (managed first, external on top)
     for (var i = 0; i < topoNodes.length; i++) {
-      drawNode(topoNodes[i], topoNodes[i] === hoveredNode);
+      if (!topoNodes[i].isExternal) drawNode(topoNodes[i], topoNodes[i] === hoveredNode);
+    }
+    for (var i = 0; i < topoNodes.length; i++) {
+      if (topoNodes[i].isExternal) drawExternalNode(topoNodes[i], topoNodes[i] === hoveredNode);
     }
 
     ctx.restore();
@@ -441,8 +654,11 @@
     return { x: sx / camera.zoom + camera.x, y: sy / camera.zoom + camera.y };
   }
 
-  function drawLink(a, b, label) {
+  function drawLink(a, b, label, protocol) {
     var ax = a.x, ay = a.y, bx = b.x, by = b.y;
+
+    var linkColor = protocolColor(protocol || 'srt');
+    var isExternal = (a.isExternal || b.isExternal);
 
     // Bezier curve
     var mx = (ax + bx) / 2;
@@ -459,11 +675,28 @@
     ctx.beginPath();
     ctx.moveTo(ax, ay);
     ctx.quadraticCurveTo(cx1, cy1, bx, by);
-    ctx.strokeStyle = '#60a5fa';
+    ctx.strokeStyle = linkColor;
     ctx.lineWidth = 2 / camera.zoom;
-    ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
+    if (isExternal) {
+      ctx.setLineDash([8 / camera.zoom, 4 / camera.zoom]);
+    } else {
+      ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
+    }
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Arrow head toward target
+    var arrowSize = 8 / camera.zoom;
+    var angle = Math.atan2(by - cy1, bx - cx1);
+    var arrowX = bx - Math.cos(angle) * 10;
+    var arrowY = by - Math.sin(angle) * 10;
+    ctx.beginPath();
+    ctx.moveTo(arrowX, arrowY);
+    ctx.lineTo(arrowX - arrowSize * Math.cos(angle - 0.4), arrowY - arrowSize * Math.sin(angle - 0.4));
+    ctx.lineTo(arrowX - arrowSize * Math.cos(angle + 0.4), arrowY - arrowSize * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = linkColor;
+    ctx.fill();
 
     // Label at midpoint
     if (label) {
@@ -471,7 +704,6 @@
       var ly = (ay + 2 * cy1 + by) / 4;
       var fontSize = Math.max(10, 11 / camera.zoom);
       ctx.font = '600 ' + fontSize + 'px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.fillStyle = '#60a5fa';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
@@ -485,7 +717,7 @@
       roundRect(ctx, lx - tw / 2, ly - th / 2, tw, th, 4 / camera.zoom);
       ctx.stroke();
 
-      ctx.fillStyle = '#60a5fa';
+      ctx.fillStyle = linkColor;
       ctx.fillText(label, lx, ly);
     }
   }
@@ -600,6 +832,90 @@
     }
   }
 
+  function drawExternalNode(node, hovered) {
+    var w = EXT_W;
+    var h = EXT_H;
+    var x = node.x - w / 2;
+    var y = node.y - h / 2;
+    var protoColor = protocolColor(node.protocol);
+
+    // Shadow
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+
+    // Background — darker, semi-transparent
+    ctx.fillStyle = hovered ? '#1a2332' : '#131c2a';
+    roundRect(ctx, x, y, w, h, 8);
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Dashed border in protocol color
+    ctx.strokeStyle = protoColor;
+    ctx.lineWidth = hovered ? 2 : 1.5;
+    ctx.setLineDash([5, 3]);
+    roundRect(ctx, x, y, w, h, 8);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // External icon (cloud/globe shape)
+    var iconX = x + 14;
+    var iconY = y + 16;
+    ctx.beginPath();
+    ctx.arc(iconX, iconY, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = protoColor;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Globe lines
+    ctx.beginPath();
+    ctx.moveTo(iconX - 7, iconY);
+    ctx.lineTo(iconX + 7, iconY);
+    ctx.moveTo(iconX, iconY - 7);
+    ctx.lineTo(iconX, iconY + 7);
+    ctx.strokeStyle = protoColor + '80';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    // Label "EXTERNAL" badge
+    ctx.font = '700 8px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = protoColor;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('EXTERNAL', x + w - 10, y + 16);
+
+    // Name
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#cbd5e1';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(truncate(node.name, 20), x + 28, y + 16);
+
+    // Separator
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 30);
+    ctx.lineTo(x + w - 8, y + 30);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    // Protocol + direction
+    var dirLabel = (node.direction === 'source' ? 'Source' : 'Destination');
+    ctx.font = '500 10px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'left';
+    ctx.fillText((node.protocol || '').toUpperCase() + ' ' + dirLabel, x + 10, y + 44);
+
+    // Protocol color dot
+    ctx.beginPath();
+    ctx.arc(x + w - 14, y + 44, 4, 0, Math.PI * 2);
+    ctx.fillStyle = protoColor;
+    ctx.fill();
+  }
+
   function getFlowTypes(node) {
     var types = [];
     var seen = {};
@@ -668,8 +984,10 @@
   function nodeAtPoint(wx, wy) {
     for (var i = topoNodes.length - 1; i >= 0; i--) {
       var n = topoNodes[i];
-      if (wx >= n.x - NODE_W / 2 && wx <= n.x + NODE_W / 2 &&
-          wy >= n.y - NODE_H / 2 && wy <= n.y + NODE_H / 2) {
+      var nw = n.isExternal ? EXT_W : NODE_W;
+      var nh = n.isExternal ? EXT_H : NODE_H;
+      if (wx >= n.x - nw / 2 && wx <= n.x + nw / 2 &&
+          wy >= n.y - nh / 2 && wy <= n.y + nh / 2) {
         return n;
       }
     }
@@ -737,7 +1055,7 @@
     if (dragNode) return;
     var w = screenToWorld(e.clientX, e.clientY);
     var node = nodeAtPoint(w.x, w.y);
-    if (node && node.id) {
+    if (node && node.id && !node.isExternal) {
       window.location.href = '/nodes/' + encodeURIComponent(node.id);
     }
   });
@@ -782,10 +1100,12 @@
     var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (var i = 0; i < topoNodes.length; i++) {
       var n = topoNodes[i];
-      minX = Math.min(minX, n.x - NODE_W / 2);
-      minY = Math.min(minY, n.y - NODE_H / 2);
-      maxX = Math.max(maxX, n.x + NODE_W / 2);
-      maxY = Math.max(maxY, n.y + NODE_H / 2);
+      var nw = n.isExternal ? EXT_W : NODE_W;
+      var nh = n.isExternal ? EXT_H : NODE_H;
+      minX = Math.min(minX, n.x - nw / 2);
+      minY = Math.min(minY, n.y - nh / 2);
+      maxX = Math.max(maxX, n.x + nw / 2);
+      maxY = Math.max(maxY, n.y + nh / 2);
     }
 
     var rect = container.getBoundingClientRect();
@@ -875,16 +1195,23 @@
     }
 
     topoNodes = newNodes;
-    computeLinks();
+    computeLinksAndExternals();
 
     // Update stats
     var online = 0;
+    var managedCount = 0;
+    var externalCount = 0;
     for (var i = 0; i < topoNodes.length; i++) {
-      if (topoNodes[i].status === 'online') online++;
+      if (topoNodes[i].isExternal) {
+        externalCount++;
+      } else {
+        managedCount++;
+        if (topoNodes[i].status === 'online') online++;
+      }
     }
 
     document.getElementById('statOnline').textContent = online;
-    document.getElementById('statTotal').textContent = topoNodes.length;
+    document.getElementById('statTotal').textContent = managedCount + (externalCount > 0 ? ' + ' + externalCount + ' ext' : '');
     document.getElementById('statFlows').textContent = totalFlows;
     document.getElementById('statLinks').textContent = topoLinks.length;
 
