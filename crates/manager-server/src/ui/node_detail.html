@@ -277,6 +277,12 @@
       </div>
       <div id="flowsList"></div>
     </div>
+
+    <!-- Tunnels container -->
+    <div class="section" id="tunnelsSection" style="display:none;">
+      <h2>IP Tunnels</h2>
+      <div id="tunnelsList"></div>
+    </div>
   </main>
 </div>
 
@@ -519,6 +525,60 @@
     ctx.fillText(text, x, y - 4);
   }
 
+  // ── Endpoint address box (IP:port) ──
+  function drawEndpointAddr(ctx, x, y, addr, mode, side, color) {
+    if (!addr) return;
+    var text = addr;
+    if (mode) text += ' (' + mode + ')';
+    ctx.font = '9px -apple-system,BlinkMacSystemFont,monospace';
+    var tw = ctx.measureText(text).width + 12;
+    var th = 20;
+    var boxX, lineStartX, lineEndX;
+
+    if (side === 'left') {
+      // Address box to the left of the node, connected by a short line
+      boxX = x - tw - 8;
+      lineStartX = boxX + tw;
+      lineEndX = x;
+    } else {
+      // Address box to the right of the node
+      boxX = x + 8;
+      lineStartX = x;
+      lineEndX = boxX;
+    }
+
+    // Short connecting line
+    ctx.beginPath();
+    ctx.moveTo(lineStartX, y);
+    ctx.lineTo(lineEndX, y);
+    ctx.strokeStyle = color || '#475569';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Address box background
+    var rgb = hexToRgb(color || '#475569');
+    drawRoundedRect(ctx, boxX, y - th / 2, tw, th, 4,
+      'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.08)',
+      'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.3)');
+
+    // Address text
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '9px -apple-system,BlinkMacSystemFont,monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, boxX + 6, y);
+  }
+
+  function getInputAddr(inp) {
+    return inp.bind_addr || inp.local_addr || inp.listen_addr || inp.remote_addr || '';
+  }
+
+  function getOutputAddr(out) {
+    return out.dest_addr || out.remote_addr || out.dest_url || out.ingest_url || out.whip_url || '';
+  }
+
   function bezierLength(x1, y1, x2, y2, steps) {
     steps = steps || 16;
     var len = 0;
@@ -641,6 +701,12 @@
         drawNode(ctx, il1.x, il1.y, layout.nodeW, layout.nodeH, inpLabel, 'Leg 1', leg1Color);
         drawNode(ctx, il2.x, il2.y, layout.nodeW, layout.nodeH, inpLabel, 'Leg 2', leg2Color);
 
+        // Draw input endpoint address boxes
+        var inAddr = getInputAddr(inp);
+        if (inAddr) {
+          drawEndpointAddr(ctx, il1.x, il1.y, inAddr, inp.mode, 'left', leg1Color);
+        }
+
         if (outs.length === 0) return;
 
         drawHub(ctx, layout.hubX, layout.hubY, inpColor);
@@ -671,6 +737,12 @@
         drawBitrateLabel(ctx, inMid.x, inMid.y, inp.bitrate_bps);
       } else {
         drawNode(ctx, layout.inputs[0].x, layout.inputs[0].y, layout.nodeW, layout.nodeH, inpLabel, inp.state || '', inpColor);
+
+        // Draw input endpoint address box
+        var inAddr2 = getInputAddr(inp);
+        if (inAddr2) {
+          drawEndpointAddr(ctx, layout.inputs[0].x, layout.inputs[0].y, inAddr2, inp.mode, 'left', inpColor);
+        }
 
         if (outs.length === 0) return;
 
@@ -714,6 +786,12 @@
         drawBitrateLabel(ctx, oMid.x, oMid.y, o.bitrate_bps);
 
         drawNode(ctx, ol.x, ol.y, layout.nodeW, layout.nodeH, oLabel, oSub, oColor);
+
+        // Draw output endpoint address box
+        var oAddr = getOutputAddr(o);
+        if (oAddr) {
+          drawEndpointAddr(ctx, ol.x + layout.nodeW, ol.y, oAddr, o.mode, 'right', oColor);
+        }
       }
     });
 
@@ -754,13 +832,23 @@
     html += '<span class="flow-badges">';
     html += '<span class="badge" style="background:rgba(' + hcRgb.r + ',' + hcRgb.g + ',' + hcRgb.b + ',0.15);color:' + hc + '">' + esc(f.health || 'Unknown') + '</span>';
     html += '<span class="badge" style="background:' + bcColor + ';color:' + bcText + '">' + esc(st) + '</span>';
+    var hasRedundancy = !!(inp.srt_leg2_stats || inp.redundancy_switches);
+    if (!hasRedundancy) { for (var rci = 0; rci < outs.length; rci++) { if (outs[rci].srt_leg2_stats) { hasRedundancy = true; break; } } }
+    if (hasRedundancy) { html += '<span class="badge" style="background:rgba(59,130,246,0.15);color:#60a5fa">2022-7</span>'; }
+    // Check if any outputs have tunnel config
+    var hasTunnel = false;
+    for (var ti = 0; ti < outs.length; ti++) { if (outs[ti].tunnel) { hasTunnel = true; break; } }
+    if (hasTunnel) { html += '<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Tunnel</span>'; }
     html += '</span></div>';
 
     // Visualization canvas container
     html += '<div class="flow-viz" id="viz-' + esc(f.flow_id) + '"></div>';
 
     // Input section
-    html += '<div class="flow-section"><div class="flow-section-title">Input (' + esc(inp.input_type || 'unknown') + ')</div>';
+    var inputRedundant = !!(inp.srt_leg2_stats || inp.redundancy_switches);
+    html += '<div class="flow-section"><div class="flow-section-title">Input (' + esc(inp.input_type || 'unknown') + ')' +
+      (inputRedundant ? ' <span style="background:rgba(59,130,246,0.15);color:#60a5fa;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;font-weight:600;">2022-7</span>' : '') +
+      '</div>';
     html += '<div class="stats-grid">';
     html += '<div class="stat"><div class="k">State</div><div class="v">' + esc(inp.state || '-') + '</div></div>';
     html += '<div class="stat"><div class="k">Packets</div><div class="v">' + fmt_num(inp.packets_received) + '</div></div>';
@@ -831,12 +919,16 @@
 
     // Outputs section
     if (outs.length > 0) {
-      html += '<div class="flow-section"><div class="flow-section-title">Outputs</div>';
+      var anyOutputRedundant = false;
+      for (var ri = 0; ri < outs.length; ri++) { if (outs[ri].srt_leg2_stats) { anyOutputRedundant = true; break; } }
+      html += '<div class="flow-section"><div class="flow-section-title">Outputs' +
+        (anyOutputRedundant ? ' <span style="background:rgba(59,130,246,0.15);color:#60a5fa;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;font-weight:600;">2022-7</span>' : '') +
+        '</div>';
       html += '<table class="outputs-table"><tr><th>Name</th><th>Type</th><th>State</th><th>Packets</th><th>Bytes</th><th>Bitrate</th><th>Dropped</th></tr>';
       for (var i = 0; i < outs.length; i++) {
         var o = outs[i];
         html += '<tr>';
-        html += '<td>' + esc(o.output_name || o.output_id) + '</td>';
+        html += '<td>' + esc(o.output_name || o.output_id) + (o.srt_leg2_stats ? ' <span style="color:#60a5fa;font-size:10px;">[2022-7]</span>' : '') + (o.tunnel ? ' <span style="color:#f59e0b;font-size:10px;">[Tunnel: ' + esc(o.tunnel.mode || '') + ']</span>' : '') + '</td>';
         html += '<td>' + esc(o.output_type || '-') + '</td>';
         html += '<td>' + esc(o.state || '-') + '</td>';
         html += '<td>' + fmt_num(o.packets_sent) + '</td>';
@@ -925,6 +1017,71 @@
     if (flows.length > 0 && flows[0].uptime_secs != null) {
       $('nodeUptime').textContent = fmt_uptime(flows[0].uptime_secs);
     }
+  }
+
+  // ── Render tunnels section ──
+
+  function renderTunnels(tunnels) {
+    var section = $('tunnelsSection');
+    var list = $('tunnelsList');
+    if (!tunnels || tunnels.length === 0) {
+      section.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    section.style.display = '';
+
+    var html = '';
+    for (var i = 0; i < tunnels.length; i++) {
+      var t = tunnels[i];
+      var stats = t.stats || {};
+      var stateColor = t.state === 'ready' ? '#22c55e' : (t.state === 'connecting' ? '#f59e0b' : '#ef4444');
+      var proto = (t.protocol || 'tcp').toUpperCase();
+      var dir = (t.direction || '').toLowerCase();
+      var dirLabel = dir === 'ingress' ? 'IN' : 'OUT';
+      var dirColor = dir === 'ingress' ? '#22d3ee' : '#f472b6';
+
+      html += '<div class="flow-card" style="border-left:3px solid #c084fc;">';
+      html += '<div class="flow-header">';
+      html += '<div class="flow-title">';
+      html += '<span class="flow-name" style="color:#c084fc;">' + esc(t.name || t.id) + '</span>';
+      html += '<span class="badge" style="background:rgba(192,132,252,0.15);color:#c084fc">' + proto + ' Tunnel</span>';
+      html += '<span class="badge" style="background:rgba(' + (dir === 'ingress' ? '34,211,238' : '244,114,182') + ',0.15);color:' + dirColor + '">' + dirLabel + '</span>';
+      html += '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + stateColor + ';margin-left:6px;" title="' + esc(t.state || 'unknown') + '"></span>';
+      html += '<span style="color:#64748b;font-size:11px;margin-left:4px;">' + esc(t.state || 'unknown') + '</span>';
+      html += '</div></div>';
+
+      // Tunnel details table
+      html += '<table class="flow-table"><thead><tr>';
+      html += '<th>Mode</th><th>Local Addr</th><th>Bytes Sent</th><th>Bytes Recv</th>';
+      if (proto === 'TCP') {
+        html += '<th>Conns Active</th><th>Conns Total</th>';
+      } else {
+        html += '<th>Pkts Sent</th><th>Pkts Recv</th>';
+      }
+      html += '</tr></thead><tbody><tr>';
+      html += '<td>' + esc(t.mode || '-') + '</td>';
+      html += '<td style="font-family:monospace;font-size:12px;">' + esc(t.local_addr || '-') + '</td>';
+      html += '<td>' + fmt_bytes(stats.bytes_sent || 0) + '</td>';
+      html += '<td>' + fmt_bytes(stats.bytes_received || 0) + '</td>';
+      if (proto === 'TCP') {
+        html += '<td>' + (stats.connections_active || 0) + '</td>';
+        html += '<td>' + (stats.connections_total || 0) + '</td>';
+      } else {
+        html += '<td>' + (stats.packets_sent || 0) + '</td>';
+        html += '<td>' + (stats.packets_received || 0) + '</td>';
+      }
+      html += '</tr></tbody></table>';
+      html += '</div>';
+    }
+    list.innerHTML = html;
+  }
+
+  function fmt_bytes(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+    return b + ' B';
   }
 
   // ── In-place update of a single flow card's text content ──
@@ -1166,6 +1323,8 @@
           if (myNode && myNode.stats) {
             var flows = Array.isArray(myNode.stats) ? myNode.stats : (myNode.stats.flows || []);
             renderFlows(flows);
+            var tunnels = myNode.stats.tunnels || [];
+            renderTunnels(tunnels);
           }
         }
       } catch(e) { /* ignore malformed messages */ }

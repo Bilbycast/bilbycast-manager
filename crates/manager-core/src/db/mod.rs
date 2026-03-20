@@ -3,6 +3,7 @@ pub mod nodes;
 pub mod events;
 pub mod settings;
 pub mod audit;
+pub mod tunnels;
 
 use sqlx::SqlitePool;
 

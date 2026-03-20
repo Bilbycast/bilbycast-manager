@@ -5,6 +5,7 @@ pub mod events;
 pub mod settings;
 pub mod ai;
 pub mod export;
+pub mod tunnels;
 
 use axum::Router;
 use axum::routing::{get, post, put, delete};
@@ -51,6 +52,15 @@ pub fn build_api_router(state: AppState) -> Router<AppState> {
         // Export / Import
         .route("/api/v1/export", get(export::export_data))
         .route("/api/v1/import", post(export::import_data))
+        // Tunnels
+        .route("/api/v1/tunnels", get(tunnels::list_tunnels).post(tunnels::create_tunnel))
+        .route(
+            "/api/v1/tunnels/{id}",
+            get(tunnels::get_tunnel)
+                .put(tunnels::update_tunnel)
+                .delete(tunnels::delete_tunnel),
+        )
+        .route("/api/v1/nodes/{id}/tunnels", get(tunnels::list_node_tunnels))
         // AI
         .route("/api/v1/ai/generate-config", post(ai::generate_config))
         .route("/api/v1/ai/analyze", post(ai::analyze_anomaly))

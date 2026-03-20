@@ -246,6 +246,30 @@
           <div class="form-group"><label>Passphrase (AES encryption)</label><input type="text" id="srtInputPassphrase" placeholder="Optional, 10-79 chars"/></div>
           <div class="form-group"><label>AES Key Length</label><select id="srtInputAesKeyLen"><option value="">Default (128-bit)</option><option value="16">AES-128</option><option value="24">AES-192</option><option value="32">AES-256</option></select></div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>SMPTE 2022-7 Redundancy</label>
+            <select id="srtInputRedundancy" onchange="toggleInputRedundancy()"><option value="off">Off</option><option value="on">Enabled (Dual-leg)</option></select>
+            <div class="hint">Hitless protection switching — merge two independent SRT legs</div>
+          </div>
+        </div>
+        <div id="srtInputRedundancyFields" style="display:none;">
+          <div style="border-left:3px solid #3b82f6; padding-left:14px; margin-top:8px;">
+            <div class="form-section-title" style="font-size:12px; color:#3b82f6;">Leg 2 Configuration</div>
+            <div class="form-row">
+              <div class="form-group"><label>Leg 2 Mode</label><select id="srtInputR_Mode"><option value="listener">Listener</option><option value="caller">Caller</option><option value="rendezvous">Rendezvous</option></select></div>
+              <div class="form-group"><label>Leg 2 Local Address</label><input type="text" id="srtInputR_LocalAddr" placeholder="0.0.0.0:9001"/></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Leg 2 Remote Address</label><input type="text" id="srtInputR_RemoteAddr" placeholder="remote-host:9001"/><div class="hint">Required for caller and rendezvous modes</div></div>
+              <div class="form-group"><label>Leg 2 Latency (ms)</label><input type="number" id="srtInputR_Latency" value="120" min="0"/></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Leg 2 Passphrase</label><input type="text" id="srtInputR_Passphrase" placeholder="Optional, 10-79 chars"/></div>
+              <div class="form-group"><label>Leg 2 AES Key Length</label><select id="srtInputR_AesKeyLen"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- RTP Input Fields -->
@@ -406,7 +430,36 @@ function updateOutputFields(idx) {
     '<div class="form-row"><div class="form-group"><label>Remote Address</label><input type="text" id="outSrtRemote-'+p+'" placeholder="remote:9000"/></div>' +
     '<div class="form-group"><label>Latency (ms)</label><input type="number" id="outSrtLatency-'+p+'" value="120"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Passphrase</label><input type="text" id="outSrtPass-'+p+'" placeholder="Optional"/></div>' +
-    '<div class="form-group"><label>AES Key Length</label><select id="outSrtAes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>';
+    '<div class="form-group"><label>AES Key Length</label><select id="outSrtAes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>NAT Tunnel</label>' +
+    '<select id="outSrtTunnel-'+p+'" onchange="toggleSrtTunnel(\''+p+'\')">' +
+    '<option value="none">None (direct SRT)</option>' +
+    '<option value="relay">Via Relay Tunnel (both behind NAT)</option>' +
+    '<option value="direct">Via Direct Tunnel (one side public)</option></select>' +
+    '<div class="hint">Use a tunnel when edge nodes cannot reach each other directly</div></div></div>' +
+    '<div id="outSrtTunnelFields-'+p+'" style="display:none;">' +
+    '<div style="border-left:3px solid #f59e0b; padding-left:14px; margin-top:8px;">' +
+    '<div style="font-size:12px; font-weight:600; color:#f59e0b; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">Tunnel Configuration</div>' +
+    '<div class="form-row"><div class="form-group"><label>Tunnel Name</label><input type="text" id="outSrtTunnelName-'+p+'" placeholder="e.g. venue-to-hub"/></div>' +
+    '<div class="form-group"><label>Destination Node</label><select id="outSrtTunnelDestNode-'+p+'"><option value="">Select node...</option></select></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Ingress Port (local)</label><input type="number" id="outSrtTunnelIngressPort-'+p+'" placeholder="e.g. 9000" min="1024" max="65535"/></div>' +
+    '<div class="form-group"><label>Egress Forward Address</label><input type="text" id="outSrtTunnelEgressAddr-'+p+'" placeholder="e.g. 127.0.0.1:9000"/></div></div>' +
+    '<div id="outSrtTunnelRelayField-'+p+'" class="form-row"><div class="form-group"><label>Relay Server Address</label><input type="text" id="outSrtTunnelRelayAddr-'+p+'" placeholder="e.g. relay.example.com:4433"/></div></div>' +
+    '</div></div>' +
+    '<div class="form-row"><div class="form-group"><label>SMPTE 2022-7 Redundancy</label>' +
+    '<select id="outSrtRedundancy-'+p+'" onchange="toggleOutputRedundancy(\''+p+'\')">' +
+    '<option value="off">Off</option><option value="on">Enabled (Dual-leg)</option></select>' +
+    '<div class="hint">Duplicate packets to two independent SRT legs for hitless protection</div></div></div>' +
+    '<div id="outSrtRedundancyFields-'+p+'" style="display:none;">' +
+    '<div style="border-left:3px solid #3b82f6; padding-left:14px; margin-top:8px;">' +
+    '<div style="font-size:12px; font-weight:600; color:#3b82f6; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">Leg 2 Configuration</div>' +
+    '<div class="form-row"><div class="form-group"><label>Leg 2 Mode</label><select id="outSrtR_Mode-'+p+'"><option value="caller">Caller</option><option value="listener">Listener</option><option value="rendezvous">Rendezvous</option></select></div>' +
+    '<div class="form-group"><label>Leg 2 Local Address</label><input type="text" id="outSrtR_Local-'+p+'" placeholder="0.0.0.0:0"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Leg 2 Remote Address</label><input type="text" id="outSrtR_Remote-'+p+'" placeholder="remote:9001"/></div>' +
+    '<div class="form-group"><label>Leg 2 Latency (ms)</label><input type="number" id="outSrtR_Latency-'+p+'" value="120"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Leg 2 Passphrase</label><input type="text" id="outSrtR_Pass-'+p+'" placeholder="Optional"/></div>' +
+    '<div class="form-group"><label>Leg 2 AES Key Length</label><select id="outSrtR_Aes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>' +
+    '</div></div>';
   } else if (type === 'rtp') {
     h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><input type="text" id="outRtpDest-'+p+'" placeholder="192.168.1.100:5004"/></div>' +
     '<div class="form-group"><label>DSCP</label><input type="number" id="outRtpDscp-'+p+'" value="46" min="0" max="63"/></div></div>' +
@@ -442,6 +495,13 @@ function buildFlowConfig() {
     if (val('srtInputRemoteAddr')) inp.remote_addr = val('srtInputRemoteAddr');
     if (val('srtInputPassphrase')) inp.passphrase = val('srtInputPassphrase');
     var aes = val('srtInputAesKeyLen'); if (aes) inp.aes_key_len = parseInt(aes);
+    if (val('srtInputRedundancy') === 'on') {
+      var r = { mode: val('srtInputR_Mode'), local_addr: val('srtInputR_LocalAddr'), latency_ms: parseInt(val('srtInputR_Latency'))||120 };
+      if (val('srtInputR_RemoteAddr')) r.remote_addr = val('srtInputR_RemoteAddr');
+      if (val('srtInputR_Passphrase')) r.passphrase = val('srtInputR_Passphrase');
+      var ra = val('srtInputR_AesKeyLen'); if (ra) r.aes_key_len = parseInt(ra);
+      inp.redundancy = r;
+    }
     config.input = inp;
   } else {
     var inp = { type: 'rtp', bind_addr: val('rtpInputBindAddr') };
@@ -465,6 +525,24 @@ function buildFlowConfig() {
       var opit = parseInt(val('outSrtPeerIdle-'+idx)); if (opit && opit !== 30) out.peer_idle_timeout_secs = opit;
       if (val('outSrtPass-'+idx)) out.passphrase = val('outSrtPass-'+idx);
       var a = val('outSrtAes-'+idx); if (a) out.aes_key_len = parseInt(a);
+      if (val('outSrtRedundancy-'+idx) === 'on') {
+        var r = { mode: val('outSrtR_Mode-'+idx), local_addr: val('outSrtR_Local-'+idx) || '0.0.0.0:0', latency_ms: parseInt(val('outSrtR_Latency-'+idx))||120 };
+        if (val('outSrtR_Remote-'+idx)) r.remote_addr = val('outSrtR_Remote-'+idx);
+        if (val('outSrtR_Pass-'+idx)) r.passphrase = val('outSrtR_Pass-'+idx);
+        var ra = val('outSrtR_Aes-'+idx); if (ra) r.aes_key_len = parseInt(ra);
+        out.redundancy = r;
+      }
+      var tunnelMode = val('outSrtTunnel-'+idx);
+      if (tunnelMode !== 'none' && tunnelMode) {
+        out.tunnel = {
+          mode: tunnelMode,
+          name: val('outSrtTunnelName-'+idx) || ('tunnel-' + out.id),
+          dest_node_id: val('outSrtTunnelDestNode-'+idx),
+          ingress_port: parseInt(val('outSrtTunnelIngressPort-'+idx)) || 0,
+          egress_forward_addr: val('outSrtTunnelEgressAddr-'+idx),
+          relay_addr: tunnelMode === 'relay' ? val('outSrtTunnelRelayAddr-'+idx) : undefined
+        };
+      }
     } else if (otype === 'rtp') {
       out.dest_addr = val('outRtpDest-'+idx); out.dscp = parseInt(val('outRtpDscp-'+idx))||46;
       var fc = ival('outRtpFecCols-'+idx), fr = ival('outRtpFecRows-'+idx);
@@ -690,6 +768,24 @@ function buildOutputConfig(p) {
     var opit2 = parseInt(val('outSrtPeerIdle-'+p)); if (opit2 && opit2 !== 30) out.peer_idle_timeout_secs = opit2;
     if (val('outSrtPass-'+p)) out.passphrase = val('outSrtPass-'+p);
     var a = val('outSrtAes-'+p); if (a) out.aes_key_len = parseInt(a);
+    if (val('outSrtRedundancy-'+p) === 'on') {
+      var r = { mode: val('outSrtR_Mode-'+p), local_addr: val('outSrtR_Local-'+p) || '0.0.0.0:0', latency_ms: parseInt(val('outSrtR_Latency-'+p))||120 };
+      if (val('outSrtR_Remote-'+p)) r.remote_addr = val('outSrtR_Remote-'+p);
+      if (val('outSrtR_Pass-'+p)) r.passphrase = val('outSrtR_Pass-'+p);
+      var ra = val('outSrtR_Aes-'+p); if (ra) r.aes_key_len = parseInt(ra);
+      out.redundancy = r;
+    }
+    var tunnelMode = val('outSrtTunnel-'+p);
+    if (tunnelMode !== 'none' && tunnelMode) {
+      out.tunnel = {
+        mode: tunnelMode,
+        name: val('outSrtTunnelName-'+p) || ('tunnel-' + out.id),
+        dest_node_id: val('outSrtTunnelDestNode-'+p),
+        ingress_port: parseInt(val('outSrtTunnelIngressPort-'+p)) || 0,
+        egress_forward_addr: val('outSrtTunnelEgressAddr-'+p),
+        relay_addr: tunnelMode === 'relay' ? val('outSrtTunnelRelayAddr-'+p) : undefined
+      };
+    }
   } else if (otype === 'rtp') {
     out.dest_addr = val('outRtpDest-'+p); out.dscp = parseInt(val('outRtpDscp-'+p))||46;
     var fc = ival('outRtpFecCols-'+p), fr = ival('outRtpFecRows-'+p);
@@ -720,6 +816,51 @@ function submitAddOutput() {
       closeAddOutputModal();
     }
   });
+}
+
+function toggleInputRedundancy() {
+  var enabled = val('srtInputRedundancy') === 'on';
+  document.getElementById('srtInputRedundancyFields').style.display = enabled ? '' : 'none';
+}
+
+function toggleOutputRedundancy(p) {
+  var enabled = val('outSrtRedundancy-'+p) === 'on';
+  var el = document.getElementById('outSrtRedundancyFields-'+p);
+  if (el) el.style.display = enabled ? '' : 'none';
+}
+
+function toggleSrtTunnel(p) {
+  var mode = val('outSrtTunnel-' + p);
+  var tunnelFields = document.getElementById('outSrtTunnelFields-' + p);
+  var relayField = document.getElementById('outSrtTunnelRelayField-' + p);
+  if (mode === 'none') {
+    if (tunnelFields) tunnelFields.style.display = 'none';
+  } else {
+    if (tunnelFields) tunnelFields.style.display = '';
+    if (relayField) relayField.style.display = (mode === 'relay') ? '' : 'none';
+    loadNodesForTunnel(p);
+  }
+}
+
+function loadNodesForTunnel(p) {
+  var sel = document.getElementById('outSrtTunnelDestNode-' + p);
+  if (!sel || sel.options.length > 1) return; // already loaded
+  var token = localStorage.getItem('token');
+  fetch('/api/v1/nodes', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var nodes = data.nodes || data || [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].id === window._nodeId) continue; // skip current node
+      var opt = document.createElement('option');
+      opt.value = nodes[i].id;
+      opt.textContent = nodes[i].name + ' (' + (nodes[i].status || 'unknown') + ')';
+      sel.appendChild(opt);
+    }
+  })
+  .catch(function() {});
 }
 
 function aiGenerate() {
