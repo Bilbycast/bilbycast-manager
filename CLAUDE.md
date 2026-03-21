@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-bilbycast-manager is a full-stack Rust application for centralized management of distributed media transport (broadcast) edge nodes. It combines an Axum REST/WebSocket backend, Leptos frontend (served as static HTML), and SQLite database. The architecture is designed to be extensible to manage additional network module types beyond edge nodes.
+bilbycast-manager is a full-stack Rust application for centralized management of distributed network devices. It combines an Axum REST/WebSocket backend, static HTML frontend with vanilla JavaScript, and SQLite database. The architecture uses a **device driver pattern** (`DeviceDriver` trait + `DriverRegistry`) to support multiple device types — currently bilbycast-edge transport nodes, with the ability to add relay servers, encoders, decoders, and third-party devices as compile-time drivers. All manager-to-device communication uses WebSocket (devices connect outbound to the manager), enabling management of devices behind firewalls/NAT.
 
 ## Build & Run Commands
 
@@ -46,7 +46,7 @@ manager-ui ──→ manager-core ←── manager-server
 (frontend)      (business logic)    (HTTP/WS/CLI)
 ```
 
-- **manager-core** (`crates/manager-core/`) — Domain models, database operations, auth, crypto, AI providers. Framework-agnostic — no Axum or web dependency. This is the extension point for new module types.
+- **manager-core** (`crates/manager-core/`) — Domain models, database operations, auth, crypto, AI providers, **device drivers**. Framework-agnostic — no Axum or web dependency. The `drivers/` module contains the `DeviceDriver` trait and `DriverRegistry`, plus implementations: `EdgeDriver` (edge transport nodes) and `RelayDriver` (relay servers).
 - **manager-server** (`crates/manager-server/`) — Axum HTTP server, API handlers, auth middleware, WebSocket hubs, CLI entry point. Assembles router from public + authenticated + WS + UI routes.
 - **manager-ui** (`crates/manager-ui/`) — Leptos components compiled to static HTML via `include_str!()`. Pages, layouts, and reusable card components.
 
@@ -57,13 +57,14 @@ Defined in `manager-server/src/app_state.rs`. Passed to all handlers via Axum's 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `db` | `SqlitePool` | Database connection pool |
-| `node_hub` | `Arc<NodeHub>` | WebSocket hub for edge node connections |
+| `node_hub` | `Arc<NodeHub>` | WebSocket hub for all device node connections |
 | `jwt_secret` | `Vec<u8>` | JWT signing key |
 | `master_key` | `[u8; 32]` | AES-256-GCM master encryption key |
 | `browser_stats_tx` | `broadcast::Sender<String>` | Real-time stats to browser dashboard |
 | `config` | `Arc<RwLock<ServerConfig>>` | Live server configuration |
+| `driver_registry` | `Arc<DriverRegistry>` | Registry of device drivers (edge, relay, etc.) |
 
-When adding new managed module types (e.g., relay nodes, encoders), add their hub to AppState following the NodeHub pattern.
+When adding new managed device types, implement the `DeviceDriver` trait in `manager-core/src/drivers/` and register the driver at startup in `main.rs`. The hub, API, and DB handle all device types generically.
 
 ### Request Lifecycle
 
@@ -95,13 +96,16 @@ HTTP Request → CorsLayer → TraceLayer → Router
 2. **Registration flow:** Token lookup → generate secret → encrypt with master_key → store in DB → return `register_ack` with credentials
 3. **Reconnection flow:** Decrypt stored secret → compare → return `auth_ok`
 4. **Main loop:** `tokio::select!` over socket recv (stats/health/events from node) and mpsc recv (commands to node)
-5. **State:** Each connected node tracked as `ConnectedNode` in `DashMap<String, ConnectedNode>` with cached config, stats, health
+5. **State:** Each connected node tracked as `ConnectedNode` in `DashMap<String, ConnectedNode>` with `device_type`, cached config, stats, health
 6. **Anti-bruteforce:** `NodeAuthLimiter` — 5 failures per 60s window per node_id
+7. **Driver-aware broadcast:** Dashboard updates include `device_type` and `driver_metrics` extracted by the node's registered driver
+
+**Communication:** All manager→node communication uses WebSocket commands (nodes connect outbound to manager). No direct HTTP calls to nodes — this enables management of devices behind firewalls/NAT.
 
 **Message protocol** (`manager-core/src/models/ws_protocol.rs`): JSON envelope `{"msg_type": "...", "payload": {...}}`
 
 - Node → Manager: `stats`, `health`, `event`, `config_response`, `command_ack`, `pong`
-- Manager → Node: `command` with `CommandAction` enum (GetConfig, UpdateConfig, CreateFlow, DeleteFlow, StartFlow, StopFlow, etc.)
+- Manager → Node: `command` with action payload (GetConfig, UpdateConfig, CreateFlow, DeleteFlow, StartFlow, StopFlow, etc.)
 
 **Browser Dashboard** (`ws/browser.rs`) — One-way broadcast of aggregated node stats to all connected browsers via `broadcast::channel(256)`. Currently has no authentication.
 
@@ -174,16 +178,32 @@ Optional:
 
 See `.env.example` for a template.
 
-## Extensibility Guide — Adding New Network Module Types
+## Extensibility Guide — Adding New Device Types (Driver Pattern)
 
-The current architecture manages "nodes" (edge transport devices). To add a new module type (e.g., relay servers, encoders, decoders, monitoring probes):
+The architecture uses a **device driver pattern** for managing different types of network devices. All device types share the same hub, DB schema, API routes, and WebSocket protocol. Device-specific behavior is encapsulated in drivers.
 
-1. **Models** (`manager-core/src/models/`): Add `new_module.rs` with status enum, domain struct, create/update DTOs. Follow the `node.rs` pattern.
-2. **Database** (`manager-core/src/db/`): Add `new_module.rs` with CRUD operations + `*Row` mapping structs. Add a migration in `/migrations/`.
-3. **WebSocket hub** (if real-time): Add `new_module_hub.rs` in `manager-server/src/ws/` following `node_hub.rs` pattern. Add the hub to `AppState`.
-4. **API handlers** (`manager-server/src/api/`): Add `new_module.rs` with CRUD + command endpoints. Register routes in `api/mod.rs` under the authenticated router.
-5. **WS protocol** (`models/ws_protocol.rs`): Add message types for the new module if it communicates via WebSocket.
-6. **UI** (`manager-ui/src/`): Add page(s) and card component. Register route in `app.rs`.
-7. **Export** (`manager-core/src/export.rs`): Add to `ExportData` struct and `export_all()` function.
+### Currently registered drivers:
+- **EdgeDriver** (`edge.rs`) — bilbycast-edge transport nodes. Commands: get_config, update_config, create/update/delete/start/stop/restart_flow, add/remove_output
+- **RelayDriver** (`relay.rs`) — bilbycast-relay servers. Commands: get_config, disconnect_edge, close_tunnel, list_tunnels, list_edges
 
-Each module type should be self-contained within its own files across crates, communicating through AppState and the database.
+### To add a new device type (e.g., encoder, decoder):
+
+1. **Driver** (`manager-core/src/drivers/new_device.rs`): Implement the `DeviceDriver` trait:
+   - `device_type()` / `display_name()` — identifiers
+   - `extract_metrics()` — parse device stats for dashboard display
+   - `supported_commands()` / `validate_command()` — device-specific commands
+   - `ai_context()` — protocol docs for AI assistant
+2. **Register** in `manager-server/src/main.rs`: `registry.register(Arc::new(NewDeviceDriver::new()));`
+3. **Create nodes** with `device_type: "new_device"` via the existing `POST /api/v1/nodes` API
+4. **UI** (`manager-server/src/ui/`): Add device-specific page if needed. The existing node config page works for any device type.
+
+That's it. The hub, DB, auth, API routes, WebSocket protocol, events, export, and audit logging all work automatically for any registered device type. The `nodes` table has a `device_type` column, and `GET /api/v1/nodes?device_type=relay` supports filtering.
+
+### Key files:
+- `manager-core/src/drivers/mod.rs` — `DeviceDriver` trait, `DriverRegistry`, shared types
+- `manager-core/src/drivers/edge.rs` — Edge transport node driver
+- `manager-core/src/drivers/relay.rs` — Relay server driver
+- `GET /api/v1/device-types` — Lists all registered drivers with capabilities
+
+### UI device-type awareness:
+The dashboard, topology, node detail, and node config pages all read `device_type` from the WebSocket broadcast and render device-specific views. Relay nodes show purple accent styling, tunnel-focused displays, and hide edge-specific sections (flows, AI config generation).

@@ -237,6 +237,9 @@
   .content {
     flex: 1;
     padding: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
   }
 
   .page-header { margin-bottom: 28px; }
@@ -548,7 +551,7 @@
   <main class="content">
     <div class="page-header">
       <h1>Dashboard</h1>
-      <p>Overview of all edge nodes</p>
+      <p>Overview of all managed devices</p>
     </div>
 
     <!-- Summary cards -->
@@ -556,7 +559,7 @@
       <div class="summary-card">
         <div class="card-label">Total Nodes</div>
         <div class="card-value" id="totalNodes">0</div>
-        <div class="card-subtitle">Registered edge nodes</div>
+        <div class="card-subtitle">Registered devices</div>
       </div>
       <div class="summary-card green">
         <div class="card-label">Online</div>
@@ -577,7 +580,7 @@
 
     <!-- Node cards -->
     <div class="nodes-header">
-      <h2>Edge Nodes</h2>
+      <h2>Devices</h2>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#94a3b8;cursor:pointer;">
         <input type="checkbox" id="hideOffline" style="accent-color:#3b82f6;"> Hide offline nodes
       </label>
@@ -689,15 +692,19 @@
         card.className = 'node-card';
         card.id = 'node-' + key;
         card.onclick = function () { window.location.href = '/nodes/' + encodeURIComponent(key); };
+        var isRelay = node.device_type === 'relay';
+        var typeBadge = isRelay ? '<span style="background:rgba(192,132,252,0.15);color:#c084fc;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;text-transform:uppercase;">Relay</span>' : '';
+        var label1 = isRelay ? 'Tunnels' : 'Flows';
+        var label2 = isRelay ? 'Edges' : 'Bitrate';
         card.innerHTML =
           '<div class="node-card-top">' +
-            '<span class="node-name">' + escapeHtml(node.name) + '</span>' +
+            '<span class="node-name">' + escapeHtml(node.name) + typeBadge + '</span>' +
             '<span class="status-dot ' + statusClass + '"><span class="dot"></span>' + statusLabel + '</span>' +
             deleteBtn +
           '</div>' +
           '<div class="node-stats">' +
-            '<div><div class="node-stat-label">Flows</div><div class="node-stat-value">' + (node.flows != null ? node.flows : '--') + '</div></div>' +
-            '<div><div class="node-stat-label">Bitrate</div><div class="node-stat-value">' + (node.bitrate || '--') + '</div></div>' +
+            '<div><div class="node-stat-label">' + label1 + '</div><div class="node-stat-value">' + (node.flows != null ? node.flows : '--') + '</div></div>' +
+            '<div><div class="node-stat-label">' + label2 + '</div><div class="node-stat-value">' + (node.bitrate || '--') + '</div></div>' +
             '<div><div class="node-stat-label">Uptime</div><div class="node-stat-value">' + (node.uptime || '--') + '</div></div>' +
           '</div>';
         grid.appendChild(card);
@@ -796,22 +803,44 @@
           msg.nodes.forEach(function(n) {
             var key = n.node_id || n.id || n.name;
             var stats = n.stats || {};
-            var flows = stats.flows || [];
-            var totalBitrate = 0;
-            var activeFlows = 0;
-            if (Array.isArray(flows)) {
-              activeFlows = flows.length;
-              flows.forEach(function(f) { totalBitrate += (f.input && f.input.bitrate_bps) || 0; });
-            }
+            var deviceType = n.device_type || 'edge';
+            var isRelay = deviceType === 'relay';
             var existing = _knownNodes[key] || {};
-            _knownNodes[key] = {
-              id: key,
-              name: n.name || existing.name || key,
-              status: n.status || 'online',
-              flows: activeFlows,
-              bitrate: formatBitrate(totalBitrate),
-              uptime: n.uptime_secs != null ? formatUptimeSecs(n.uptime_secs) : (existing.uptime || '--')
-            };
+
+            if (isRelay) {
+              // Relay: show tunnels and total bandwidth
+              var activeTunnels = stats.active_tunnels || 0;
+              var totalBytesIn = stats.total_bytes_ingress || 0;
+              var totalBytesOut = stats.total_bytes_egress || 0;
+              var connEdges = stats.connected_edges || 0;
+              _knownNodes[key] = {
+                id: key,
+                name: n.name || existing.name || key,
+                status: n.status || 'online',
+                device_type: 'relay',
+                flows: activeTunnels + ' tunnels',
+                bitrate: connEdges + ' edges',
+                uptime: n.uptime_secs != null ? formatUptimeSecs(n.uptime_secs) : (existing.uptime || '--')
+              };
+            } else {
+              // Edge: show flows and bitrate
+              var flows = stats.flows || [];
+              var totalBitrate = 0;
+              var activeFlows = 0;
+              if (Array.isArray(flows)) {
+                activeFlows = flows.length;
+                flows.forEach(function(f) { totalBitrate += (f.input && f.input.bitrate_bps) || 0; });
+              }
+              _knownNodes[key] = {
+                id: key,
+                name: n.name || existing.name || key,
+                status: n.status || 'online',
+                device_type: 'edge',
+                flows: activeFlows,
+                bitrate: formatBitrate(totalBitrate),
+                uptime: n.uptime_secs != null ? formatUptimeSecs(n.uptime_secs) : (existing.uptime || '--')
+              };
+            }
           });
           renderNodes();
         }

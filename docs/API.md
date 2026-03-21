@@ -33,8 +33,9 @@ Authorization: Bearer <token>
 
 | Method | Path                          | Description                              |
 |--------|-------------------------------|------------------------------------------|
-| GET    | `/api/v1/nodes`               | List all registered nodes                |
-| POST   | `/api/v1/nodes`               | Register a new node (returns reg token)  |
+| GET    | `/api/v1/nodes`               | List all registered nodes (`?device_type=edge` or `?device_type=relay` to filter) |
+| POST   | `/api/v1/nodes`               | Register a new node (set `device_type` to `"edge"` or `"relay"`, returns reg token) |
+| GET    | `/api/v1/device-types`        | List all registered device drivers and their capabilities |
 | GET    | `/api/v1/nodes/{id}`          | Get node by ID                           |
 | PUT    | `/api/v1/nodes/{id}`          | Update node metadata                     |
 | DELETE | `/api/v1/nodes/{id}`          | Delete node                              |
@@ -95,7 +96,7 @@ Real-time updates for browser-based dashboards. Receives JSON messages containin
 
 ### `/ws/node`
 
-Edge node connection endpoint. Nodes must send an `auth` message as the first WebSocket frame containing either:
+Device node connection endpoint (edge nodes and relay servers). Nodes must send an `auth` message as the first WebSocket frame containing either:
 
 - `registration_token` for first-time registration, or
 - `node_id` + `node_secret` for reconnection
@@ -103,6 +104,10 @@ Edge node connection endpoint. Nodes must send an `auth` message as the first We
 Message types from nodes: `stats`, `health`, `event`, `config_response`, `command_ack`, `pong`.
 
 Message types from manager: `ping`, `command`, `register_ack`, `auth_ok`, `auth_error`.
+
+**Edge commands** (via `POST /api/v1/nodes/{id}/command`): `get_config`, `update_config`, `create_flow`, `update_flow`, `delete_flow`, `start_flow`, `stop_flow`, `restart_flow`, `add_output`, `remove_output`.
+
+**Relay commands** (via `POST /api/v1/nodes/{id}/command`): `get_config`, `disconnect_edge` (requires `edge_id`), `close_tunnel` (requires `tunnel_id`), `list_tunnels`, `list_edges`.
 
 ---
 

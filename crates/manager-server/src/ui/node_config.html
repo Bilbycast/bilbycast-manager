@@ -36,7 +36,7 @@
   .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #fff; }
   .user-name { font-size: 13px; font-weight: 500; }
 
-  .content { flex: 1; padding: 32px; }
+  .content { flex: 1; padding: 32px; max-width: 1400px; margin: 0 auto; width: 100%; }
   .page-header { margin-bottom: 28px; }
   .page-header h1 { font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
   .page-header p { font-size: 14px; color: #64748b; }
@@ -110,6 +110,13 @@
   .json-preview { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: #94a3b8; white-space: pre-wrap; max-height: 300px; overflow-y: auto; display: none; margin-top: 16px; }
   .json-preview.visible { display: block; }
 
+  /* ── JSON syntax highlighting ── */
+  .json-key { color: #7dd3fc; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fbbf24; }
+  .json-bool { color: #c084fc; }
+  .json-null { color: #94a3b8; font-style: italic; }
+
   .ai-section { display: flex; gap: 12px; align-items: flex-end; }
   .ai-section .input-group { flex: 1; }
   .ai-section label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
@@ -120,6 +127,84 @@
   .toast { position: fixed; bottom: 24px; right: 24px; background: #22c55e; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; z-index: 200; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
   .toast.error { background: #ef4444; }
   .toast.visible { display: block; }
+
+  .tunnel-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid rgba(51,65,85,0.5); border-left: 3px solid #c084fc; padding-left: 14px; margin-left: -24px; padding-right: 0; margin-right: 0; margin-left: 0; }
+  .tunnel-item:last-child { border-bottom: none; }
+  .tunnel-badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 6px; }
+  .tunnel-badge.proto { background: rgba(192,132,252,0.15); color: #c084fc; }
+  .tunnel-badge.mode { background: rgba(96,165,250,0.15); color: #60a5fa; }
+  .tunnel-badge.status-active { background: rgba(74,222,128,0.15); color: #4ade80; }
+  .tunnel-badge.status-pending { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .tunnel-badge.status-error { background: rgba(248,113,113,0.15); color: #f87171; }
+  .tunnel-badge.status-disabled { background: rgba(100,116,139,0.15); color: #64748b; }
+  .tunnel-badge.role-ingress { background: rgba(34,211,238,0.15); color: #22d3ee; }
+  .tunnel-badge.role-egress { background: rgba(244,114,182,0.15); color: #f472b6; }
+
+  /* ── Flow card (rich display from live stats) ── */
+  .flow-card {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 10px;
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .flow-card .flow-header {
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #21262d; background: #161b22;
+  }
+  .flow-card .flow-name { font-size: 15px; font-weight: 600; color: #f0f6fc; font-family: -apple-system, BlinkMacSystemFont, monospace; margin-bottom: 0; }
+  .flow-badges { display: flex; gap: 6px; align-items: center; }
+  .badge {
+    padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; font-family: -apple-system, BlinkMacSystemFont, monospace;
+  }
+  .flow-card .flow-section { padding: 12px 16px; border-bottom: 1px solid #21262d; }
+  .flow-card .flow-section:last-child { border-bottom: none; }
+  .flow-section-label {
+    font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 8px; font-family: -apple-system, BlinkMacSystemFont, monospace;
+  }
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px;
+  }
+  .stat { display: flex; flex-direction: column; }
+  .stat .k { font-size: 11px; color: #8b949e; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .stat .v { font-size: 14px; color: #c9d1d9; font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .outputs-table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .outputs-table th {
+    text-align: left; color: #8b949e; font-weight: 500; padding: 6px 8px;
+    font-size: 11px; text-transform: uppercase; border-bottom: 1px solid #21262d;
+  }
+  .outputs-table td { padding: 6px 8px; color: #c9d1d9; border-top: 1px solid #21262d; }
+  .outputs-table tr:first-child td { border-top: none; }
+  .flow-card .flow-actions-bar {
+    padding: 10px 16px; display: flex; gap: 8px; background: #161b22;
+    border-top: 1px solid #21262d;
+  }
+
+  /* ── Tunnel card (rich display from live stats) ── */
+  .tunnel-card {
+    background: #0d1117; border: 1px solid #30363d; border-left: 3px solid #c084fc;
+    border-radius: 10px; margin-bottom: 12px; overflow: hidden;
+  }
+  .tunnel-card .tunnel-header {
+    padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #21262d; background: #161b22;
+  }
+  .tunnel-card .tunnel-name { font-size: 14px; font-weight: 600; color: #f0f6fc; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .tunnel-card .tunnel-section { padding: 12px 16px; }
+
+  /* ── Full-width disconnection warning banner ── */
+  .disconnect-banner {
+    display: none; background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%);
+    color: #fef2f2; padding: 10px 24px; font-size: 14px; font-weight: 600;
+    text-align: center; align-items: center; justify-content: center; gap: 10px;
+    border-bottom: 2px solid #ef4444; animation: banner-pulse 2s ease-in-out infinite; z-index: 100;
+  }
+  .disconnect-banner.visible { display: flex; }
+  .disconnect-banner svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .disconnect-banner .banner-sub { font-weight: 400; font-size: 12px; color: #fca5a5; margin-left: 8px; }
+  @keyframes banner-pulse {
+    0%, 100% { background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%); }
+    50% { background: linear-gradient(90deg, #7f1d1d 0%, #991b1b 50%, #7f1d1d 100%); }
+  }
 
   @media (max-width: 768px) { .sidebar { display: none; } .main-wrapper { margin-left: 0; } .form-row { grid-template-columns: 1fr; } }
 </style>
@@ -143,6 +228,11 @@
 </aside>
 
 <div class="main-wrapper">
+  <div class="disconnect-banner" id="disconnectBanner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span>Server connection lost &mdash; live data is not updating</span>
+    <span class="banner-sub" id="bannerDetail">Reconnecting...</span>
+  </div>
   <header class="topbar">
     <div class="topbar-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -164,8 +254,51 @@
       <p id="pageDesc">Configure flows and streaming pipelines</p>
     </div>
 
-    <!-- Flows Section -->
-    <div class="section">
+    <!-- Full Config (Raw JSON) -->
+    <div class="section" id="rawConfigSection">
+      <div class="section-header">
+        <h2>Node Configuration</h2>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-secondary" id="refreshConfigBtn" onclick="loadConfig()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Refresh
+          </button>
+          <button class="btn-primary" id="saveConfigBtn" onclick="saveConfig()" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Configuration
+          </button>
+        </div>
+      </div>
+      <div id="configLoading" style="text-align:center;padding:24px;color:#64748b;">
+        <p>Loading configuration from node...</p>
+      </div>
+      <div id="configNotConnected" style="text-align:center;padding:24px;color:#94a3b8;display:none;">
+        <p style="color:#f59e0b;margin-bottom:8px;">Node is not connected or did not respond.</p>
+        <p style="font-size:13px;">The node may be offline. You can paste config JSON below to edit and push, or wait for the node to reconnect.</p>
+      </div>
+      <div id="configEditorWrap" style="display:none;">
+        <div id="configViewMode">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+            <button class="btn-secondary" onclick="enterEditMode()" style="padding:6px 14px;font-size:12px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Edit
+            </button>
+          </div>
+          <pre id="configHighlighted" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:16px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;line-height:1.6;overflow:auto;max-height:600px;margin:0;tab-size:2;"></pre>
+        </div>
+        <div id="configEditMode" style="display:none;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px;gap:8px;">
+            <button class="btn-secondary" onclick="exitEditMode()" style="padding:6px 14px;font-size:12px;">Cancel</button>
+          </div>
+          <textarea id="configEditor" spellcheck="false" style="width:100%;min-height:400px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:16px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:#e2e8f0;outline:none;resize:vertical;line-height:1.6;tab-size:2;" oninput="onConfigEdited()"></textarea>
+          <div id="configError" style="color:#f87171;font-size:12px;margin-top:8px;display:none;"></div>
+          <p style="font-size:11px;color:#475569;margin-top:8px;">Edit the JSON configuration directly. Changes are sent to the node when you click Save.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Flows Section (hidden for relay nodes) -->
+    <div class="section" id="flowsSection">
       <div class="section-header">
         <h2>Flows</h2>
         <button class="btn-primary" id="newFlowBtn" onclick="openNewFlowModal()">
@@ -182,8 +315,26 @@
       </div>
     </div>
 
-    <!-- AI Config Generation -->
-    <div class="section">
+    <!-- Tunnels Section -->
+    <div class="section" id="tunnelsSection">
+      <div class="section-header">
+        <h2>IP Tunnels</h2>
+        <button class="btn-primary" onclick="openTunnelModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Tunnel
+        </button>
+      </div>
+      <div id="tunnelsList">
+        <div class="flows-empty" id="tunnelsEmpty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg>
+          <p>No tunnels active</p>
+          <span>Tunnel data is loaded from the live node connection. If the node is offline, tunnels won't appear here.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Config Generation (hidden for relay nodes) -->
+    <div class="section" id="aiSection">
       <div class="section-header"><h2>AI Config Generation</h2></div>
       <div class="ai-section">
         <div class="input-group">
@@ -304,7 +455,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeFlowModal()">Cancel</button>
-      <button class="btn-primary" onclick="applyFlow()">Apply to Node</button>
+      <button class="btn-primary" id="flowSubmitBtn" onclick="applyFlow()">Apply to Node</button>
     </div>
   </div>
 </div>
@@ -337,6 +488,78 @@
   </div>
 </div>
 
+<!-- Tunnel Create/Edit Modal -->
+<div class="modal-overlay" id="tunnelModal">
+  <div class="modal" style="width:640px;">
+    <div class="modal-header">
+      <h2 id="tunnelModalTitle">New Tunnel</h2>
+      <button class="modal-close" onclick="closeTunnelModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="tunEditId"/>
+      <div class="form-section-title">Tunnel Details</div>
+      <div class="form-row">
+        <div class="form-group"><label>Tunnel Name</label><input type="text" id="tunName" placeholder="e.g. studio-to-venue"/></div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select id="tunProtocol"><option value="udp">UDP</option><option value="tcp">TCP</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Mode</label>
+          <select id="tunMode" onchange="toggleTunnelMode()">
+            <option value="relay">Relay (both behind NAT)</option>
+            <option value="direct">Direct (one side has public IP)</option>
+          </select>
+          <div class="hint">Relay routes through a bilbycast-relay server; Direct connects edge-to-edge</div>
+        </div>
+        <div class="form-group" id="tunStatusGroup" style="display:none;">
+          <label>Status</label>
+          <select id="tunStatus"><option value="pending">Pending</option><option value="active">Active</option><option value="disabled">Disabled</option></select>
+        </div>
+      </div>
+
+      <hr class="form-divider"/>
+      <div class="form-section-title">Ingress (Entry Point)</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ingress Node</label>
+          <select id="tunIngressNode"><option value="">Select node...</option></select>
+        </div>
+        <div class="form-group"><label>Listen Port</label><input type="number" id="tunIngressPort" placeholder="e.g. 9000" min="1024" max="65535"/></div>
+      </div>
+
+      <hr class="form-divider"/>
+      <div class="form-section-title">Egress (Exit Point)</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Egress Node</label>
+          <select id="tunEgressNode"><option value="">Select node...</option></select>
+        </div>
+        <div class="form-group"><label>Forward Address</label><input type="text" id="tunEgressAddr" placeholder="e.g. 127.0.0.1:5004"/><div class="hint">Where egress node forwards tunnel traffic</div></div>
+      </div>
+
+      <div id="tunRelayRow">
+        <hr class="form-divider"/>
+        <div class="form-section-title">Relay Server</div>
+        <div class="form-row full">
+          <div class="form-group"><label>Relay Server Address</label><input type="text" id="tunRelayAddr" placeholder="e.g. relay.example.com:4433"/><div class="hint">Required for relay mode</div></div>
+        </div>
+      </div>
+
+      <hr class="form-divider"/>
+      <div class="form-row full">
+        <div class="form-group"><label>Associated Flow IDs (optional)</label><input type="text" id="tunFlowIds" placeholder="Comma-separated, e.g. flow-1, flow-2"/><div class="hint">Link this tunnel to specific flows for reference</div></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeTunnelModal()">Cancel</button>
+      <button class="btn-primary" id="tunSubmitBtn" onclick="submitTunnel()">Create Tunnel</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -352,16 +575,29 @@
   }
   window._nodeId = nodeId;
 
-  // Fetch node name from API
+  window._deviceType = 'edge'; // default
+
+  // Fetch node name and device_type from API
   fetch('/api/v1/nodes/' + encodeURIComponent(nodeId), {
     headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
   })
   .then(function(r) { return r.ok ? r.json() : null; })
   .then(function(node) {
     if (node && node.name) {
+      window._deviceType = node.device_type || 'edge';
+      var isRelay = window._deviceType === 'relay';
+      var typeLabel = isRelay ? 'Relay Server' : 'Edge Node';
       document.getElementById('pageTitle').textContent = node.name + ' \u2014 Configuration';
-      document.getElementById('pageDesc').textContent = 'Configure flows and streaming pipelines for ' + node.name;
+      document.getElementById('pageDesc').textContent = 'Configure ' + typeLabel.toLowerCase() + ' ' + node.name;
       document.title = node.name + ' - Configuration - bilbycast manager';
+
+      // Hide edge-specific sections for relay nodes
+      if (isRelay) {
+        var flowsSection = document.getElementById('flowsSection');
+        if (flowsSection) flowsSection.style.display = 'none';
+        var aiSection = document.getElementById('aiSection');
+        if (aiSection) aiSection.style.display = 'none';
+      }
     } else {
       document.getElementById('pageTitle').textContent = 'Node Configuration';
       document.getElementById('pageDesc').textContent = 'ID: ' + nodeId;
@@ -370,23 +606,480 @@
   .catch(function() {
     document.getElementById('pageTitle').textContent = 'Node Configuration';
   });
+
+  // Load config on page load (tunnels come via WebSocket)
+  loadConfig();
 })();
 
+var _currentConfig = null;
+var _configDirty = false;
+
+function loadConfig() {
+  var token = localStorage.getItem('token');
+  document.getElementById('configLoading').style.display = '';
+  document.getElementById('configNotConnected').style.display = 'none';
+  document.getElementById('configEditorWrap').style.display = 'none';
+  document.getElementById('saveConfigBtn').style.display = 'none';
+
+  fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/config', {
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+  })
+  .then(function(r) {
+    if (r.status === 404) return null;
+    if (r.status === 502) return '__disconnected__';
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
+  .then(function(config) {
+    document.getElementById('configLoading').style.display = 'none';
+    if (config === '__disconnected__' || config === null) {
+      document.getElementById('configNotConnected').style.display = '';
+      document.getElementById('configEditorWrap').style.display = '';
+      // Go straight to edit mode for paste
+      document.getElementById('configViewMode').style.display = 'none';
+      document.getElementById('configEditMode').style.display = '';
+      document.getElementById('configEditor').value = '';
+      document.getElementById('configEditor').placeholder = 'Paste edge node JSON config here to edit and push changes...';
+      return;
+    }
+    _currentConfig = config;
+    _configDirty = false;
+    var jsonStr = JSON.stringify(config, null, 2);
+    document.getElementById('configEditorWrap').style.display = '';
+    document.getElementById('configEditor').value = jsonStr;
+    // Show highlighted view
+    document.getElementById('configViewMode').style.display = '';
+    document.getElementById('configEditMode').style.display = 'none';
+    document.getElementById('configHighlighted').innerHTML = syntaxHighlightJson(jsonStr);
+
+    // Render flows and tunnels from config
+    renderConfigFlowsFromConfig(config);
+    renderConfigTunnelsFromConfig(config);
+  })
+  .catch(function(e) {
+    document.getElementById('configLoading').style.display = 'none';
+    document.getElementById('configNotConnected').style.display = '';
+    document.getElementById('configEditorWrap').style.display = '';
+    document.getElementById('configViewMode').style.display = 'none';
+    document.getElementById('configEditMode').style.display = '';
+    document.getElementById('configEditor').value = '';
+  });
+}
+
+function syntaxHighlightJson(json) {
+  var s = json
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return s.replace(
+    /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+    function(match) {
+      var cls = 'json-number';  // number
+      if (/^"/.test(match)) {
+        if (/:$/.test(match)) {
+          cls = 'json-key';     // key
+        } else {
+          cls = 'json-string';  // string value
+        }
+      } else if (/true|false/.test(match)) {
+        cls = 'json-bool';     // boolean
+      } else if (/null/.test(match)) {
+        cls = 'json-null';     // null
+      }
+      return '<span class="' + cls + '">' + match + '</span>';
+    }
+  );
+}
+
+function enterEditMode() {
+  document.getElementById('configViewMode').style.display = 'none';
+  document.getElementById('configEditMode').style.display = '';
+  if (_currentConfig) {
+    document.getElementById('configEditor').value = JSON.stringify(_currentConfig, null, 2);
+  }
+  document.getElementById('configEditor').focus();
+}
+
+function exitEditMode() {
+  document.getElementById('configEditMode').style.display = 'none';
+  document.getElementById('configViewMode').style.display = '';
+  document.getElementById('saveConfigBtn').style.display = 'none';
+  _configDirty = false;
+  if (_currentConfig) {
+    document.getElementById('configEditor').value = JSON.stringify(_currentConfig, null, 2);
+  }
+}
+
+function onConfigEdited() {
+  _configDirty = true;
+  document.getElementById('saveConfigBtn').style.display = '';
+  // Validate JSON
+  var editor = document.getElementById('configEditor');
+  var errEl = document.getElementById('configError');
+  try {
+    JSON.parse(editor.value);
+    errEl.style.display = 'none';
+    editor.style.borderColor = '#334155';
+  } catch(e) {
+    errEl.textContent = 'Invalid JSON: ' + e.message;
+    errEl.style.display = '';
+    editor.style.borderColor = '#f87171';
+  }
+}
+
+function saveConfig() {
+  var editor = document.getElementById('configEditor');
+  var parsed;
+  try {
+    parsed = JSON.parse(editor.value);
+  } catch(e) {
+    showToast('Invalid JSON: ' + e.message, true);
+    return;
+  }
+
+  var token = localStorage.getItem('token');
+  document.getElementById('saveConfigBtn').disabled = true;
+  document.getElementById('saveConfigBtn').textContent = 'Saving...';
+
+  fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify(parsed)
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
+  .then(function(data) {
+    if (data.sent) {
+      _currentConfig = parsed;
+      _configDirty = false;
+      showToast('Configuration saved and sent to node');
+      document.getElementById('saveConfigBtn').style.display = 'none';
+      // Reload config after a short delay to get the node's response
+      setTimeout(loadConfig, 2000);
+    } else {
+      showToast('Failed to save: ' + (data.error || 'Unknown error'), true);
+    }
+  })
+  .catch(function(e) {
+    showToast('Error saving config: ' + e.message, true);
+  })
+  .finally(function() {
+    var btn = document.getElementById('saveConfigBtn');
+    btn.disabled = false;
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Configuration';
+  });
+}
+
+function renderConfigFlowsFromConfig(config) {
+  var flows = [];
+  if (config && Array.isArray(config.flows)) {
+    flows = config.flows;
+  }
+  if (flows.length === 0) return;
+
+  var emptyEl = document.getElementById('flowsEmpty');
+  var listEl = document.getElementById('flowsList');
+  emptyEl.style.display = 'none';
+
+  // Remove existing cards/items
+  var items = listEl.querySelectorAll('.flow-card,.flow-item');
+  for (var r = 0; r < items.length; r++) items[r].remove();
+
+  var html = '';
+  for (var i = 0; i < flows.length; i++) {
+    var f = flows[i];
+    var flowName = f.name || f.id || 'Unknown';
+    var flowId = f.id || '';
+    var enabled = f.enabled !== false;
+    var inp = f.input || {};
+    var inputType = (inp.type || 'unknown').toUpperCase();
+    var outs = f.outputs || [];
+    var stateLabel = enabled ? 'Enabled' : 'Disabled';
+    var stateColor = enabled ? 'background:#0d419d;color:#58a6ff' : 'background:#272c33;color:#8b949e';
+
+    html += '<div class="flow-card" data-flow-id="' + esc(flowId) + '" id="flow-card-' + esc(flowId) + '">';
+    // Header
+    html += '<div class="flow-header">';
+    html += '<span class="flow-name">' + esc(flowName) + '</span>';
+    html += '<span class="flow-badges">';
+    html += '<span class="badge" style="' + stateColor + '">' + esc(stateLabel) + '</span>';
+    html += '</span></div>';
+
+    // Input section
+    var inputMode = inp.mode ? ' (' + inp.mode + ')' : '';
+    var inputAddr = inp.mode === 'caller' ? (inp.remote_addr || '') : (inp.local_addr || '');
+    html += '<div class="flow-section"><div class="flow-section-label">Input (' + esc(inputType) + inputMode + ')</div>';
+    html += '<div class="stats-grid">';
+    if (inputAddr) html += '<div class="stat"><div class="k">Address</div><div class="v">' + esc(inputAddr) + '</div></div>';
+    if (inp.latency_ms) html += '<div class="stat"><div class="k">Latency</div><div class="v">' + inp.latency_ms + ' ms</div></div>';
+    html += '<div class="stat"><div class="k">Bitrate</div><div class="v" style="color:#8b949e">Awaiting live data</div></div>';
+    html += '</div></div>';
+
+    // Outputs section
+    if (outs.length > 0) {
+      html += '<div class="flow-section"><div class="flow-section-label">Outputs</div>';
+      html += '<table class="outputs-table"><tr><th>Name</th><th>Type</th><th>Mode</th><th>Address</th></tr>';
+      for (var oi = 0; oi < outs.length; oi++) {
+        var o = outs[oi];
+        var oType = (o.type || 'unknown').toUpperCase();
+        var oMode = o.mode || '-';
+        var oAddr = o.dest_addr || o.local_addr || o.remote_addr || '-';
+        html += '<tr><td>' + esc(o.name || o.id) + '</td><td>' + esc(oType) + '</td><td>' + esc(oMode) + '</td><td>' + esc(oAddr) + '</td></tr>';
+      }
+      html += '</table></div>';
+    }
+
+    // Actions
+    html += '<div class="flow-actions-bar">';
+    html += '<button class="action-btn" onclick="editFlow(\'' + esc(flowId) + '\')">Edit</button>';
+    html += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
+    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+  listEl.insertAdjacentHTML('beforeend', html);
+}
+
+function renderConfigTunnelsFromConfig(config) {
+  var tunnels = [];
+  if (config && Array.isArray(config.tunnels)) {
+    tunnels = config.tunnels;
+  }
+  if (tunnels.length === 0) return;
+
+  var emptyEl = document.getElementById('tunnelsEmpty');
+  var listEl = document.getElementById('tunnelsList');
+  emptyEl.style.display = 'none';
+
+  var items = listEl.querySelectorAll('.tunnel-card,.tunnel-item');
+  for (var r = 0; r < items.length; r++) items[r].remove();
+
+  var html = '';
+  for (var i = 0; i < tunnels.length; i++) {
+    var t = tunnels[i];
+    var proto = (t.protocol || 'tcp').toUpperCase();
+    var dir = (t.direction || 'egress').toLowerCase();
+    var mode = t.mode || 'direct';
+    var dirClass = dir === 'ingress' ? 'role-ingress' : 'role-egress';
+    var localAddr = t.local_addr || t.direct_listen_addr || '-';
+
+    html += '<div class="tunnel-card" data-tunnel-id="' + esc(t.id) + '">';
+    html += '<div class="tunnel-header">';
+    html += '<span class="tunnel-name">' + esc(t.name || t.id) + '</span>';
+    html += '<span class="flow-badges">';
+    html += '<span class="tunnel-badge proto">' + esc(proto) + '</span>';
+    html += '<span class="tunnel-badge mode">' + esc(mode) + '</span>';
+    html += '<span class="tunnel-badge ' + dirClass + '">' + esc(dir) + '</span>';
+    html += '<span class="badge" style="background:#272c33;color:#8b949e">CONFIG</span>';
+    html += '</span></div>';
+    html += '<div class="tunnel-section"><div class="stats-grid">';
+    html += '<div class="stat"><div class="k">Local Address</div><div class="v">' + esc(localAddr) + '</div></div>';
+    if (t.peer_addr) html += '<div class="stat"><div class="k">Peer Address</div><div class="v">' + esc(t.peer_addr) + '</div></div>';
+    if (t.relay_addr) html += '<div class="stat"><div class="k">Relay</div><div class="v">' + esc(t.relay_addr) + '</div></div>';
+    html += '</div></div></div>';
+  }
+  listEl.insertAdjacentHTML('beforeend', html);
+}
+
+function editFlowInEditor(flowId) {
+  // Scroll to the config editor and highlight the flow
+  var editor = document.getElementById('configEditor');
+  var wrap = document.getElementById('configEditorWrap');
+  if (wrap.style.display === 'none') return;
+
+  editor.focus();
+  var text = editor.value;
+  // Find the flow in the JSON text
+  var searchStr = '"id": "' + flowId + '"';
+  var idx = text.indexOf(searchStr);
+  if (idx === -1) {
+    searchStr = '"id":"' + flowId + '"';
+    idx = text.indexOf(searchStr);
+  }
+  if (idx >= 0) {
+    editor.setSelectionRange(idx, idx + searchStr.length);
+    // Scroll to the selection
+    var linesBefore = text.substring(0, idx).split('\n').length;
+    var lineHeight = 19; // approximate
+    editor.scrollTop = Math.max(0, (linesBefore - 3) * lineHeight);
+  }
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 var outputCounter = 0;
+var _flowEditMode = false;
 
 function openNewFlowModal() {
+  _flowEditMode = false;
   document.getElementById('flowModal').classList.add('open');
   document.getElementById('modalTitle').textContent = 'New Flow';
+  document.getElementById('flowSubmitBtn').textContent = 'Apply to Node';
   document.getElementById('flowId').value = '';
+  document.getElementById('flowId').disabled = false;
   document.getElementById('flowName').value = '';
+  document.getElementById('flowEnabled').value = 'true';
+  document.getElementById('inputType').value = 'srt';
   document.getElementById('outputsContainer').innerHTML = '';
+  // Reset SRT input fields
+  document.getElementById('srtInputMode').value = 'listener';
+  document.getElementById('srtInputLocalAddr').value = '';
+  document.getElementById('srtInputRemoteAddr').value = '';
+  document.getElementById('srtInputLatency').value = '120';
+  document.getElementById('srtInputPeerIdleTimeout').value = '30';
+  document.getElementById('srtInputPassphrase').value = '';
+  document.getElementById('srtInputAesKeyLen').value = '';
+  document.getElementById('srtInputRedundancy').value = 'off';
+  document.getElementById('srtInputRedundancyFields').style.display = 'none';
+  // Reset RTP input fields
+  document.getElementById('rtpInputBindAddr').value = '';
+  document.getElementById('rtpInputInterface').value = '';
+  document.getElementById('rtpInputFecCols').value = '';
+  document.getElementById('rtpInputFecRows').value = '';
   outputCounter = 0;
   addOutput(); // start with one output
   updateInputFields();
 }
 
+function editFlow(flowId) {
+  // Find the flow in the current config
+  var flow = null;
+  if (_currentConfig && Array.isArray(_currentConfig.flows)) {
+    for (var i = 0; i < _currentConfig.flows.length; i++) {
+      if (_currentConfig.flows[i].id === flowId) { flow = _currentConfig.flows[i]; break; }
+    }
+  }
+  // Also try live flows
+  if (!flow && _liveFlows) {
+    for (var j = 0; j < _liveFlows.length; j++) {
+      if (_liveFlows[j].flow_id === flowId) { flow = _liveFlows[j]; break; }
+    }
+  }
+  if (!flow) { showToast('Flow not found in config. Try refreshing.', true); return; }
+
+  _flowEditMode = true;
+  document.getElementById('flowModal').classList.add('open');
+  document.getElementById('modalTitle').textContent = 'Edit Flow';
+  document.getElementById('flowSubmitBtn').textContent = 'Save Changes';
+
+  // Populate basic info
+  document.getElementById('flowId').value = flow.id || '';
+  document.getElementById('flowId').disabled = true; // Can't change ID
+  document.getElementById('flowName').value = flow.name || '';
+  document.getElementById('flowEnabled').value = (flow.enabled !== false) ? 'true' : 'false';
+
+  // Populate input
+  var inp = flow.input || {};
+  var itype = inp.type || 'srt';
+  document.getElementById('inputType').value = itype;
+  updateInputFields();
+
+  if (itype === 'srt') {
+    document.getElementById('srtInputMode').value = inp.mode || 'listener';
+    document.getElementById('srtInputLocalAddr').value = inp.local_addr || '';
+    document.getElementById('srtInputRemoteAddr').value = inp.remote_addr || '';
+    document.getElementById('srtInputLatency').value = inp.latency_ms || 120;
+    document.getElementById('srtInputPeerIdleTimeout').value = inp.peer_idle_timeout_secs || 30;
+    document.getElementById('srtInputPassphrase').value = inp.passphrase || '';
+    document.getElementById('srtInputAesKeyLen').value = inp.aes_key_len ? String(inp.aes_key_len) : '';
+    if (inp.redundancy) {
+      document.getElementById('srtInputRedundancy').value = 'on';
+      document.getElementById('srtInputRedundancyFields').style.display = '';
+      var r = inp.redundancy;
+      document.getElementById('srtInputR_Mode').value = r.mode || 'listener';
+      document.getElementById('srtInputR_LocalAddr').value = r.local_addr || '';
+      document.getElementById('srtInputR_RemoteAddr').value = r.remote_addr || '';
+      document.getElementById('srtInputR_Latency').value = r.latency_ms || 120;
+      document.getElementById('srtInputR_Passphrase').value = r.passphrase || '';
+      document.getElementById('srtInputR_AesKeyLen').value = r.aes_key_len ? String(r.aes_key_len) : '';
+    } else {
+      document.getElementById('srtInputRedundancy').value = 'off';
+      document.getElementById('srtInputRedundancyFields').style.display = 'none';
+    }
+  } else if (itype === 'rtp') {
+    document.getElementById('rtpInputBindAddr').value = inp.bind_addr || '';
+    document.getElementById('rtpInputInterface').value = inp.interface_addr || '';
+    if (inp.fec_decode) {
+      document.getElementById('rtpInputFecCols').value = inp.fec_decode.columns || '';
+      document.getElementById('rtpInputFecRows').value = inp.fec_decode.rows || '';
+    } else {
+      document.getElementById('rtpInputFecCols').value = '';
+      document.getElementById('rtpInputFecRows').value = '';
+    }
+  }
+
+  // Populate outputs
+  document.getElementById('outputsContainer').innerHTML = '';
+  outputCounter = 0;
+  var outs = flow.outputs || [];
+  for (var oi = 0; oi < outs.length; oi++) {
+    addOutput();
+    populateOutput(outputCounter, outs[oi]);
+  }
+  if (outs.length === 0) {
+    addOutput();
+  }
+}
+
+function populateOutput(idx, out) {
+  var otype = out.type || 'srt';
+  document.getElementById('outType-' + idx).value = otype;
+  document.getElementById('outId-' + idx).value = out.id || '';
+  document.getElementById('outName-' + idx).value = out.name || '';
+  updateOutputFields(idx);
+
+  if (otype === 'srt') {
+    document.getElementById('outSrtMode-' + idx).value = out.mode || 'caller';
+    document.getElementById('outSrtLocal-' + idx).value = out.local_addr || '0.0.0.0:0';
+    document.getElementById('outSrtRemote-' + idx).value = out.remote_addr || '';
+    document.getElementById('outSrtLatency-' + idx).value = out.latency_ms || 120;
+    document.getElementById('outSrtPass-' + idx).value = out.passphrase || '';
+    var aesEl = document.getElementById('outSrtAes-' + idx);
+    if (aesEl) aesEl.value = out.aes_key_len ? String(out.aes_key_len) : '';
+    if (out.redundancy) {
+      var redEl = document.getElementById('outSrtRedundancy-' + idx);
+      if (redEl) { redEl.value = 'on'; toggleOutputRedundancy(String(idx)); }
+      var r = out.redundancy;
+      var modeEl = document.getElementById('outSrtR_Mode-' + idx);
+      if (modeEl) modeEl.value = r.mode || 'caller';
+      var localEl = document.getElementById('outSrtR_Local-' + idx);
+      if (localEl) localEl.value = r.local_addr || '0.0.0.0:0';
+      var remoteEl = document.getElementById('outSrtR_Remote-' + idx);
+      if (remoteEl) remoteEl.value = r.remote_addr || '';
+      var latEl = document.getElementById('outSrtR_Latency-' + idx);
+      if (latEl) latEl.value = r.latency_ms || 120;
+      var passEl = document.getElementById('outSrtR_Pass-' + idx);
+      if (passEl) passEl.value = r.passphrase || '';
+      var aesEl2 = document.getElementById('outSrtR_Aes-' + idx);
+      if (aesEl2) aesEl2.value = r.aes_key_len ? String(r.aes_key_len) : '';
+    }
+  } else if (otype === 'rtp') {
+    document.getElementById('outRtpDest-' + idx).value = out.dest_addr || '';
+    document.getElementById('outRtpDscp-' + idx).value = out.dscp != null ? out.dscp : 46;
+    if (out.fec_encode) {
+      document.getElementById('outRtpFecCols-' + idx).value = out.fec_encode.columns || '';
+      document.getElementById('outRtpFecRows-' + idx).value = out.fec_encode.rows || '';
+    }
+  } else if (otype === 'rtmp') {
+    document.getElementById('outRtmpUrl-' + idx).value = out.dest_url || '';
+    document.getElementById('outRtmpKey-' + idx).value = out.stream_key || '';
+    document.getElementById('outRtmpReconnect-' + idx).value = out.reconnect_delay_secs || 5;
+  } else if (otype === 'hls') {
+    document.getElementById('outHlsUrl-' + idx).value = out.ingest_url || '';
+    document.getElementById('outHlsDur-' + idx).value = out.segment_duration_secs || 2;
+    document.getElementById('outHlsMax-' + idx).value = out.max_segments || 5;
+  } else if (otype === 'webrtc') {
+    document.getElementById('outWhipUrl-' + idx).value = out.whip_url || '';
+    document.getElementById('outWhipToken-' + idx).value = out.bearer_token || '';
+    document.getElementById('outWhipVonly-' + idx).value = out.video_only ? 'true' : 'false';
+  }
+}
+
 function closeFlowModal() {
   document.getElementById('flowModal').classList.remove('open');
+  document.getElementById('flowId').disabled = false;
+  _flowEditMode = false;
 }
 
 function updateInputFields() {
@@ -585,17 +1278,28 @@ function applyFlow() {
   if (config.outputs.length === 0) { showToast('At least one output is required', true); return; }
 
   var token = localStorage.getItem('token');
+  var action;
+  if (_flowEditMode) {
+    action = { type: 'update_flow', flow_id: config.id, flow: config };
+  } else {
+    action = { type: 'create_flow', flow: config };
+  }
+
   fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/command', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-    body: JSON.stringify({ action: { type: 'create_flow', flow: config } })
+    body: JSON.stringify({ action: action })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.sent) {
-      showToast('Flow "' + config.name + '" sent to node');
+      var verb = _flowEditMode ? 'updated' : 'created';
+      showToast('Flow "' + config.name + '" ' + verb + ' on node');
       closeFlowModal();
-      addFlowToList(config);
+      document.getElementById('flowId').disabled = false;
+      if (!_flowEditMode) addFlowToList(config);
+      // Reload config to reflect changes
+      setTimeout(loadConfig, 1500);
     } else {
       showToast('Failed: ' + (data.error || 'Unknown error'), true);
     }
@@ -612,16 +1316,41 @@ function addFlowToList(config) {
 // ── Escape HTML ──
 function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+// ── Formatting helpers ──
+function fmt_bitrate(bps) {
+  if (!bps) return '0 bps';
+  if (bps >= 1e9) return (bps / 1e9).toFixed(2) + ' Gbps';
+  if (bps >= 1e6) return (bps / 1e6).toFixed(2) + ' Mbps';
+  if (bps >= 1e3) return (bps / 1e3).toFixed(1) + ' Kbps';
+  return bps + ' bps';
+}
+function fmt_bytes(b) {
+  if (!b) return '0 B';
+  if (b >= 1e12) return (b / 1e12).toFixed(2) + ' TB';
+  if (b >= 1e9) return (b / 1e9).toFixed(2) + ' GB';
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  if (b >= 1e3) return (b / 1e3).toFixed(1) + ' KB';
+  return b + ' B';
+}
+function fmt_num(n) {
+  if (n === undefined || n === null) return '0';
+  return n.toLocaleString();
+}
+
 // ── WebSocket for live flow data ──
 var _ws = null;
 var _wsRetry = 1000;
 var _liveFlows = [];
+var _liveTunnels = [];
 
 function connectConfigWs() {
   var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   _ws = new WebSocket(proto + '//' + location.host + '/ws/dashboard');
 
-  _ws.onopen = function() { _wsRetry = 1000; };
+  _ws.onopen = function() {
+    _wsRetry = 1000;
+    document.getElementById('disconnectBanner').classList.remove('visible');
+  };
 
   _ws.onmessage = function(evt) {
     try {
@@ -632,78 +1361,299 @@ function connectConfigWs() {
           if (msg.nodes[i].node_id === window._nodeId) { myNode = msg.nodes[i]; break; }
         }
         if (myNode && myNode.stats) {
-          var flows = Array.isArray(myNode.stats) ? myNode.stats : (myNode.stats.flows || []);
+          var statsObj = myNode.stats;
+          var flows = Array.isArray(statsObj) ? statsObj : (statsObj.flows || []);
           _liveFlows = flows;
-          renderConfigFlows(flows);
+          renderLiveFlows(flows);
+
+          var tunnels = statsObj.tunnels || [];
+          _liveTunnels = tunnels;
+          renderLiveTunnels(tunnels);
         }
       }
     } catch(e) { /* ignore */ }
   };
 
   _ws.onclose = function() {
+    document.getElementById('disconnectBanner').classList.add('visible');
+    document.getElementById('bannerDetail').textContent = 'Attempting to reconnect...';
     setTimeout(function() {
       _wsRetry = Math.min(_wsRetry * 2, 30000);
       connectConfigWs();
     }, _wsRetry);
   };
 
-  _ws.onerror = function() { _ws.close(); };
+  _ws.onerror = function() {
+    document.getElementById('disconnectBanner').classList.add('visible');
+    document.getElementById('bannerDetail').textContent = 'Server may be down';
+    _ws.close();
+  };
 }
 
 connectConfigWs();
 
-// ── Render flows in the config page ──
-function renderConfigFlows(flows) {
-  var emptyEl = document.getElementById('flowsEmpty');
+// ── Render flows from live WebSocket stats ──
+function renderLiveFlows(flows) {
   var listEl = document.getElementById('flowsList');
 
   if (!flows || flows.length === 0) {
-    emptyEl.style.display = '';
-    // Remove any flow-item elements but keep the empty placeholder
-    var items = listEl.querySelectorAll('.flow-item');
-    for (var r = 0; r < items.length; r++) items[r].remove();
+    var existing = listEl.querySelectorAll('.flow-card');
+    if (existing.length === 0) {
+      document.getElementById('flowsEmpty').style.display = '';
+    }
+    return;
+  }
+
+  document.getElementById('flowsEmpty').style.display = 'none';
+
+  for (var i = 0; i < flows.length; i++) {
+    var f = flows[i];
+    var flowId = f.flow_id || '';
+    if (!flowId) continue;
+
+    var existingCard = document.getElementById('flow-card-' + flowId);
+    if (existingCard) {
+      // Update existing card in-place
+      updateFlowCard(existingCard, f);
+    } else {
+      // Build new card
+      var html = buildLiveFlowCard(f);
+      listEl.insertAdjacentHTML('beforeend', html);
+    }
+  }
+}
+
+function buildLiveFlowCard(f) {
+  var flowId = f.flow_id || '';
+  var flowName = f.flow_name || flowId;
+  var state = f.state || 'unknown';
+  var isRunning = state.toLowerCase() === 'running';
+  var stateLabel = isRunning ? 'Running' : (state.charAt(0).toUpperCase() + state.slice(1));
+  var stateColor = isRunning ? 'background:#0d419d;color:#58a6ff' : 'background:#5c1a1a;color:#f85149';
+  if (state.toLowerCase() === 'stopped' || state.toLowerCase() === 'idle') stateColor = 'background:#272c33;color:#8b949e';
+  var inp = f.input || {};
+  var outs = f.outputs || [];
+
+  var html = '<div class="flow-card" data-flow-id="' + esc(flowId) + '" id="flow-card-' + esc(flowId) + '">';
+
+  // Header
+  html += '<div class="flow-header">';
+  html += '<span class="flow-name">' + esc(flowName) + '</span>';
+  html += '<span class="flow-badges">';
+  if (f.health) {
+    var hc = f.health === 'Healthy' ? '#3fb950' : (f.health === 'Warning' ? '#d29922' : '#f85149');
+    html += '<span class="badge" style="background:rgba(' + hexToRgbStr(hc) + ',0.15);color:' + hc + '">' + esc(f.health) + '</span>';
+  }
+  html += '<span class="badge" style="' + stateColor + '">' + esc(stateLabel) + '</span>';
+  html += '</span></div>';
+
+  // Input section
+  var inputType = (inp.input_type || inp.type || 'unknown').toUpperCase();
+  var inputMode = inp.mode ? ' / ' + inp.mode : '';
+  var inputAddr = inp.remote_addr || inp.local_addr || '';
+  html += '<div class="flow-section"><div class="flow-section-label">Input (' + esc(inputType + inputMode) + ')' +
+    (inputAddr ? ' &mdash; ' + esc(inputAddr) : '') + '</div>';
+  html += '<div class="stats-grid" id="flow-input-stats-' + esc(flowId) + '">';
+  html += '<div class="stat"><div class="k">State</div><div class="v">' + esc(inp.state || '-') + '</div></div>';
+  html += '<div class="stat"><div class="k">Bitrate</div><div class="v">' + fmt_bitrate(inp.bitrate_bps) + '</div></div>';
+  html += '<div class="stat"><div class="k">Packets</div><div class="v">' + fmt_num(inp.packets_received) + '</div></div>';
+  html += '<div class="stat"><div class="k">Bytes</div><div class="v">' + fmt_bytes(inp.bytes_received) + '</div></div>';
+  html += '<div class="stat"><div class="k">Lost</div><div class="v">' + fmt_num(inp.packets_lost) + '</div></div>';
+  if (inp.packets_recovered_fec) html += '<div class="stat"><div class="k">FEC Recovered</div><div class="v">' + fmt_num(inp.packets_recovered_fec) + '</div></div>';
+  html += '</div></div>';
+
+  // Outputs section
+  if (outs.length > 0) {
+    html += '<div class="flow-section"><div class="flow-section-label">Outputs (' + outs.length + ')</div>';
+    html += '<table class="outputs-table" id="flow-outputs-table-' + esc(flowId) + '">';
+    html += '<tr><th>Name</th><th>Type</th><th>State</th><th>Bitrate</th><th>Packets</th><th>Bytes</th><th>Dropped</th></tr>';
+    for (var oi = 0; oi < outs.length; oi++) {
+      var o = outs[oi];
+      html += '<tr>';
+      html += '<td>' + esc(o.output_name || o.output_id) + '</td>';
+      html += '<td>' + esc((o.output_type || '-').toUpperCase()) + '</td>';
+      html += '<td>' + esc(o.state || '-') + '</td>';
+      html += '<td>' + fmt_bitrate(o.bitrate_bps) + '</td>';
+      html += '<td>' + fmt_num(o.packets_sent) + '</td>';
+      html += '<td>' + fmt_bytes(o.bytes_sent) + '</td>';
+      html += '<td>' + fmt_num(o.packets_dropped) + '</td>';
+      html += '</tr>';
+    }
+    html += '</table></div>';
+  }
+
+  // Actions bar
+  html += '<div class="flow-actions-bar">';
+  html += '<button class="action-btn" onclick="editFlow(\'' + esc(flowId) + '\')">Edit</button>';
+  if (isRunning) {
+    html += '<button class="action-btn" onclick="stopFlow(\'' + esc(flowId) + '\')">Stop</button>';
+  } else {
+    html += '<button class="action-btn" onclick="startFlow(\'' + esc(flowId) + '\')">Start</button>';
+  }
+  html += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
+  html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function updateFlowCard(card, f) {
+  var flowId = f.flow_id || '';
+  var inp = f.input || {};
+  var outs = f.outputs || [];
+  var state = f.state || 'unknown';
+  var isRunning = state.toLowerCase() === 'running';
+  var stateLabel = isRunning ? 'Running' : (state.charAt(0).toUpperCase() + state.slice(1));
+  var stateColor = isRunning ? 'background:#0d419d;color:#58a6ff' : 'background:#5c1a1a;color:#f85149';
+  if (state.toLowerCase() === 'stopped' || state.toLowerCase() === 'idle') stateColor = 'background:#272c33;color:#8b949e';
+
+  // Update badges
+  var badgesEl = card.querySelector('.flow-badges');
+  if (badgesEl) {
+    var bhtml = '';
+    if (f.health) {
+      var hc = f.health === 'Healthy' ? '#3fb950' : (f.health === 'Warning' ? '#d29922' : '#f85149');
+      bhtml += '<span class="badge" style="background:rgba(' + hexToRgbStr(hc) + ',0.15);color:' + hc + '">' + esc(f.health) + '</span>';
+    }
+    bhtml += '<span class="badge" style="' + stateColor + '">' + esc(stateLabel) + '</span>';
+    badgesEl.innerHTML = bhtml;
+  }
+
+  // Update input stats
+  var inputStats = document.getElementById('flow-input-stats-' + flowId);
+  if (inputStats) {
+    var ish = '';
+    ish += '<div class="stat"><div class="k">State</div><div class="v">' + esc(inp.state || '-') + '</div></div>';
+    ish += '<div class="stat"><div class="k">Bitrate</div><div class="v">' + fmt_bitrate(inp.bitrate_bps) + '</div></div>';
+    ish += '<div class="stat"><div class="k">Packets</div><div class="v">' + fmt_num(inp.packets_received) + '</div></div>';
+    ish += '<div class="stat"><div class="k">Bytes</div><div class="v">' + fmt_bytes(inp.bytes_received) + '</div></div>';
+    ish += '<div class="stat"><div class="k">Lost</div><div class="v">' + fmt_num(inp.packets_lost) + '</div></div>';
+    if (inp.packets_recovered_fec) ish += '<div class="stat"><div class="k">FEC Recovered</div><div class="v">' + fmt_num(inp.packets_recovered_fec) + '</div></div>';
+    inputStats.innerHTML = ish;
+  }
+
+  // Update outputs table
+  var outTable = document.getElementById('flow-outputs-table-' + flowId);
+  if (outTable && outs.length > 0) {
+    var oth = '<tr><th>Name</th><th>Type</th><th>State</th><th>Bitrate</th><th>Packets</th><th>Bytes</th><th>Dropped</th></tr>';
+    for (var oi = 0; oi < outs.length; oi++) {
+      var o = outs[oi];
+      oth += '<tr>';
+      oth += '<td>' + esc(o.output_name || o.output_id) + '</td>';
+      oth += '<td>' + esc((o.output_type || '-').toUpperCase()) + '</td>';
+      oth += '<td>' + esc(o.state || '-') + '</td>';
+      oth += '<td>' + fmt_bitrate(o.bitrate_bps) + '</td>';
+      oth += '<td>' + fmt_num(o.packets_sent) + '</td>';
+      oth += '<td>' + fmt_bytes(o.bytes_sent) + '</td>';
+      oth += '<td>' + fmt_num(o.packets_dropped) + '</td>';
+      oth += '</tr>';
+    }
+    outTable.innerHTML = oth;
+  }
+
+  // Update actions
+  var actionsBar = card.querySelector('.flow-actions-bar');
+  if (actionsBar) {
+    var ahtml = '<button class="action-btn" onclick="editFlow(\'' + esc(flowId) + '\')">Edit</button>';
+    if (isRunning) {
+      ahtml += '<button class="action-btn" onclick="stopFlow(\'' + esc(flowId) + '\')">Stop</button>';
+    } else {
+      ahtml += '<button class="action-btn" onclick="startFlow(\'' + esc(flowId) + '\')">Start</button>';
+    }
+    ahtml += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
+    ahtml += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
+    actionsBar.innerHTML = ahtml;
+  }
+}
+
+function hexToRgbStr(hex) {
+  var r = parseInt(hex.slice(1,3), 16);
+  var g = parseInt(hex.slice(3,5), 16);
+  var b = parseInt(hex.slice(5,7), 16);
+  return r + ',' + g + ',' + b;
+}
+
+// ── Render tunnels from live WebSocket stats ──
+function renderLiveTunnels(tunnels) {
+  var listEl = document.getElementById('tunnelsList');
+  var emptyEl = document.getElementById('tunnelsEmpty');
+
+  // Normalize relay tunnel format
+  var isRelay = window._deviceType === 'relay';
+  if (isRelay && tunnels) {
+    tunnels = tunnels.map(function(t) {
+      if (t.tunnel_id && !t.id) {
+        var s = t.stats || {};
+        return {
+          id: t.tunnel_id,
+          name: (t.protocol || 'TCP').toUpperCase() + ': ' + (t.ingress_edge_id || '?') + ' \u2194 ' + (t.egress_edge_id || '?'),
+          protocol: t.protocol,
+          direction: 'relay',
+          mode: 'relay',
+          state: t.status || 'unknown',
+          local_addr: (t.ingress_edge_id || '') + ' \u2192 ' + (t.egress_edge_id || ''),
+          stats: {
+            bytes_sent: s.bytes_ingress || 0,
+            bytes_received: s.bytes_egress || 0,
+            packets_sent: s.tcp_streams_total || 0,
+            packets_received: s.udp_datagrams_total || 0,
+            send_errors: 0
+          }
+        };
+      }
+      return t;
+    });
+  }
+
+  // Remove old tunnel cards (but preserve config-rendered tunnel-cards)
+  var oldLive = listEl.querySelectorAll('.tunnel-card[data-live="true"]');
+  for (var r = 0; r < oldLive.length; r++) oldLive[r].remove();
+
+  if (!tunnels || tunnels.length === 0) {
+    // Only show empty if no config tunnels exist either
+    var configCards = listEl.querySelectorAll('.tunnel-card:not([data-live="true"])');
+    if (configCards.length === 0) {
+      emptyEl.style.display = '';
+    }
     return;
   }
 
   emptyEl.style.display = 'none';
+  // Also remove any config-rendered tunnel cards since live data is more complete
+  var configCards = listEl.querySelectorAll('.tunnel-card');
+  for (var c = 0; c < configCards.length; c++) configCards[c].remove();
 
-  // Build HTML for all flows
   var html = '';
-  for (var i = 0; i < flows.length; i++) {
-    var f = flows[i];
-    var flowName = f.flow_name || f.flow_id || 'Unknown';
-    var flowId = f.flow_id || '';
-    var state = f.state || 'unknown';
-    var isRunning = (state.toLowerCase() === 'running');
-    var stateClass = isRunning ? 'running' : 'stopped';
-    var stateLabel = isRunning ? 'Running' : (state.charAt(0).toUpperCase() + state.slice(1));
+  for (var i = 0; i < tunnels.length; i++) {
+    var t = tunnels[i];
+    var proto = (t.protocol || 'tcp').toUpperCase();
+    var dir = (t.direction || 'unknown').toLowerCase();
+    var mode = t.mode || 'direct';
+    var tState = t.state || 'unknown';
+    var dirClass = dir === 'ingress' ? 'role-ingress' : 'role-egress';
+    var stateColor = tState === 'ready' || tState === 'active' ? 'status-active' : (tState === 'connecting' ? 'status-pending' : (tState === 'error' ? 'status-error' : 'status-disabled'));
+    var stats = t.stats || {};
 
-    var inp = f.input || {};
-    var inputType = (inp.input_type || inp.type || 'unknown').toUpperCase();
-    var outs = f.outputs || [];
-    var outputTypes = [];
-    for (var oi = 0; oi < outs.length; oi++) {
-      outputTypes.push((outs[oi].output_type || outs[oi].type || 'unknown').toUpperCase());
-    }
-    var pipelineDesc = inputType + ' \u2192 ' + (outputTypes.length > 0 ? outputTypes.join(', ') : 'No outputs');
+    html += '<div class="tunnel-card" data-tunnel-id="' + esc(t.id) + '" data-live="true">';
+    html += '<div class="tunnel-header">';
+    html += '<span class="tunnel-name">' + esc(t.name || t.id) + '</span>';
+    html += '<span class="flow-badges">';
+    html += '<span class="tunnel-badge proto">' + esc(proto) + '</span>';
+    html += '<span class="tunnel-badge mode">' + esc(mode) + '</span>';
+    html += '<span class="tunnel-badge ' + dirClass + '">' + esc(dir) + '</span>';
+    html += '<span class="tunnel-badge ' + stateColor + '">' + esc(tState) + '</span>';
+    html += '</span></div>';
 
-    html += '<div class="flow-item" data-flow-id="' + esc(flowId) + '">';
-    html += '<div><div class="flow-name">' + esc(flowName) + '</div>';
-    html += '<div class="flow-desc">' + esc(pipelineDesc) + '</div></div>';
-    html += '<div style="display:flex;align-items:center;gap:12px;">';
-    html += '<div class="flow-status ' + stateClass + '"><span class="dot"></span>' + esc(stateLabel) + '</div>';
-    html += '<div class="flow-actions">';
-    if (isRunning) {
-      html += '<button class="action-btn" onclick="stopFlow(\'' + esc(flowId) + '\')">Stop</button>';
-    }
-    html += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
-    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
+    html += '<div class="tunnel-section"><div class="stats-grid">';
+    if (t.local_addr) html += '<div class="stat"><div class="k">Local Address</div><div class="v">' + esc(t.local_addr) + '</div></div>';
+    html += '<div class="stat"><div class="k">Bytes Sent</div><div class="v">' + fmt_bytes(stats.bytes_sent) + '</div></div>';
+    html += '<div class="stat"><div class="k">Bytes Received</div><div class="v">' + fmt_bytes(stats.bytes_received) + '</div></div>';
+    if (stats.packets_sent) html += '<div class="stat"><div class="k">Pkts Sent</div><div class="v">' + fmt_num(stats.packets_sent) + '</div></div>';
+    if (stats.packets_received) html += '<div class="stat"><div class="k">Pkts Received</div><div class="v">' + fmt_num(stats.packets_received) + '</div></div>';
+    if (stats.connections_active !== undefined) html += '<div class="stat"><div class="k">Connections</div><div class="v">' + stats.connections_active + ' / ' + fmt_num(stats.connections_total) + '</div></div>';
+    if (stats.send_errors) html += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="color:#f85149">' + fmt_num(stats.send_errors) + '</div></div>';
     html += '</div></div></div>';
   }
-
-  // Keep the empty placeholder in the DOM (hidden) and replace flow items
-  var items = listEl.querySelectorAll('.flow-item');
-  for (var ri = 0; ri < items.length; ri++) items[ri].remove();
   listEl.insertAdjacentHTML('beforeend', html);
 }
 
@@ -731,6 +1681,13 @@ function stopFlow(flowId) {
   sendNodeCommand({ type: 'stop_flow', flow_id: flowId }, function(err) {
     if (err) { showToast('Failed to stop flow: ' + err, true); }
     else { showToast('Stop command sent for flow "' + flowId + '"'); }
+  });
+}
+
+function startFlow(flowId) {
+  sendNodeCommand({ type: 'start_flow', flow_id: flowId }, function(err) {
+    if (err) { showToast('Failed to start flow: ' + err, true); }
+    else { showToast('Start command sent for flow "' + flowId + '"'); }
   });
 }
 
@@ -905,6 +1862,266 @@ function aiGenerate() {
     } else {
       showToast('AI error: ' + (data.error || 'Unknown'), true);
     }
+  })
+  .catch(function(e) { showToast('Error: ' + e.message, true); });
+}
+
+// ═══════════════════════════════════════════════════════
+// Tunnel Management
+// ═══════════════════════════════════════════════════════
+
+var _tunnels = [];
+var _tunnelNodesLoaded = false;
+
+function loadTunnels() {
+  var token = localStorage.getItem('token');
+  fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/tunnels', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    _tunnels = data.tunnels || [];
+    renderTunnels(_tunnels);
+  })
+  .catch(function() {});
+}
+
+function renderTunnels(tunnels) {
+  var emptyEl = document.getElementById('tunnelsEmpty');
+  var listEl = document.getElementById('tunnelsList');
+  var items = listEl.querySelectorAll('.tunnel-item');
+  for (var i = 0; i < items.length; i++) items[i].remove();
+
+  if (!tunnels || tunnels.length === 0) {
+    emptyEl.style.display = '';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  var html = '';
+  for (var i = 0; i < tunnels.length; i++) {
+    var t = tunnels[i];
+    var isIngress = (t.ingress_node_id === window._nodeId);
+    var role = isIngress ? 'Ingress' : 'Egress';
+    var roleClass = isIngress ? 'role-ingress' : 'role-egress';
+    var peerName = isIngress
+      ? (t.egress_node_name || t.egress_node_id)
+      : (t.ingress_node_name || t.ingress_node_id);
+    var status = t.status || 'pending';
+    var proto = (t.protocol || 'udp').toUpperCase();
+    var mode = t.mode || 'relay';
+
+    html += '<div class="tunnel-item">';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div class="flow-name">' + esc(t.name) + '</div>';
+    html += '<div style="margin-top:4px;">';
+    html += '<span class="tunnel-badge proto">' + esc(proto) + '</span>';
+    html += '<span class="tunnel-badge mode">' + esc(mode) + '</span>';
+    html += '<span class="tunnel-badge status-' + esc(status) + '">' + esc(status) + '</span>';
+    html += '<span class="tunnel-badge ' + roleClass + '">' + esc(role) + '</span>';
+    html += '</div>';
+    html += '<div class="flow-desc" style="margin-top:4px;">';
+    html += 'Peer: ' + esc(peerName) + ' &mdash; Port ' + t.ingress_listen_port + ' &rarr; ' + esc(t.egress_forward_addr);
+    if (t.relay_addr) html += ' &mdash; Relay: ' + esc(t.relay_addr);
+    html += '</div>';
+    html += '</div>';
+    html += '<div class="flow-actions" style="flex-shrink:0;">';
+    html += '<button class="action-btn" onclick="editTunnel(\'' + esc(t.id) + '\')">Edit</button>';
+    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteTunnel(\'' + esc(t.id) + '\',\'' + esc(t.name).replace(/'/g, "\\'") + '\')">Delete</button>';
+    html += '</div></div>';
+  }
+  listEl.insertAdjacentHTML('beforeend', html);
+}
+
+function openTunnelModal() {
+  document.getElementById('tunEditId').value = '';
+  document.getElementById('tunnelModalTitle').textContent = 'New Tunnel';
+  document.getElementById('tunSubmitBtn').textContent = 'Create Tunnel';
+  document.getElementById('tunName').value = '';
+  document.getElementById('tunProtocol').value = 'udp';
+  document.getElementById('tunProtocol').disabled = false;
+  document.getElementById('tunMode').value = 'relay';
+  document.getElementById('tunMode').disabled = false;
+  document.getElementById('tunIngressNode').disabled = false;
+  document.getElementById('tunEgressNode').disabled = false;
+  document.getElementById('tunIngressPort').value = '';
+  document.getElementById('tunEgressAddr').value = '';
+  document.getElementById('tunRelayAddr').value = '';
+  document.getElementById('tunFlowIds').value = '';
+  document.getElementById('tunStatusGroup').style.display = 'none';
+  toggleTunnelMode();
+  loadNodesForTunnelModal();
+  document.getElementById('tunnelModal').classList.add('open');
+}
+
+function closeTunnelModal() {
+  document.getElementById('tunnelModal').classList.remove('open');
+}
+
+function toggleTunnelMode() {
+  var mode = val('tunMode');
+  document.getElementById('tunRelayRow').style.display = (mode === 'relay') ? '' : 'none';
+}
+
+function loadNodesForTunnelModal() {
+  if (_tunnelNodesLoaded) return;
+  var token = localStorage.getItem('token');
+  fetch('/api/v1/nodes', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var nodes = data.nodes || data || [];
+    var ingressSel = document.getElementById('tunIngressNode');
+    var egressSel = document.getElementById('tunEgressNode');
+    // Clear existing options except the first placeholder
+    while (ingressSel.options.length > 1) ingressSel.remove(1);
+    while (egressSel.options.length > 1) egressSel.remove(1);
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var label = n.name + ' (' + (n.status || 'unknown') + ')';
+      ingressSel.appendChild(new Option(label, n.id));
+      egressSel.appendChild(new Option(label, n.id));
+    }
+    // Default ingress to current node
+    ingressSel.value = window._nodeId;
+    _tunnelNodesLoaded = true;
+  })
+  .catch(function() {});
+}
+
+function editTunnel(tunnelId) {
+  var t = null;
+  for (var i = 0; i < _tunnels.length; i++) {
+    if (_tunnels[i].id === tunnelId) { t = _tunnels[i]; break; }
+  }
+  if (!t) { showToast('Tunnel not found', true); return; }
+
+  loadNodesForTunnelModal();
+
+  document.getElementById('tunEditId').value = t.id;
+  document.getElementById('tunnelModalTitle').textContent = 'Edit Tunnel';
+  document.getElementById('tunSubmitBtn').textContent = 'Save Changes';
+  document.getElementById('tunName').value = t.name || '';
+  document.getElementById('tunProtocol').value = t.protocol || 'udp';
+  document.getElementById('tunProtocol').disabled = true;
+  document.getElementById('tunMode').value = t.mode || 'relay';
+  document.getElementById('tunMode').disabled = true;
+  document.getElementById('tunIngressPort').value = t.ingress_listen_port || '';
+  document.getElementById('tunEgressAddr').value = t.egress_forward_addr || '';
+  document.getElementById('tunRelayAddr').value = t.relay_addr || '';
+  document.getElementById('tunFlowIds').value = (t.associated_flow_ids || []).join(', ');
+
+  // Show status dropdown in edit mode
+  document.getElementById('tunStatusGroup').style.display = '';
+  document.getElementById('tunStatus').value = t.status || 'pending';
+
+  // Disable node selects in edit mode (not in UpdateTunnelRequest)
+  setTimeout(function() {
+    document.getElementById('tunIngressNode').value = t.ingress_node_id;
+    document.getElementById('tunIngressNode').disabled = true;
+    document.getElementById('tunEgressNode').value = t.egress_node_id;
+    document.getElementById('tunEgressNode').disabled = true;
+  }, 100);
+
+  toggleTunnelMode();
+  document.getElementById('tunnelModal').classList.add('open');
+}
+
+function submitTunnel() {
+  var editId = val('tunEditId');
+  var token = localStorage.getItem('token');
+  var name = val('tunName');
+
+  if (!name) { showToast('Tunnel name is required', true); return; }
+
+  if (editId) {
+    // Update existing tunnel
+    var body = {
+      name: name,
+      status: val('tunStatus') || undefined,
+      ingress_listen_port: parseInt(val('tunIngressPort')) || undefined,
+      egress_forward_addr: val('tunEgressAddr') || undefined,
+      relay_addr: val('tunRelayAddr') || undefined
+    };
+    var flowIds = val('tunFlowIds');
+    if (flowIds) {
+      body.associated_flow_ids = flowIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+
+    fetch('/api/v1/tunnels/' + encodeURIComponent(editId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { showToast('Error: ' + data.error, true); return; }
+      showToast('Tunnel updated successfully');
+      closeTunnelModal();
+      loadTunnels();
+    })
+    .catch(function(e) { showToast('Error: ' + e.message, true); });
+
+  } else {
+    // Create new tunnel
+    var protocol = val('tunProtocol');
+    var mode = val('tunMode');
+    var ingressNode = val('tunIngressNode');
+    var egressNode = val('tunEgressNode');
+    var ingressPort = parseInt(val('tunIngressPort'));
+    var egressAddr = val('tunEgressAddr');
+    var relayAddr = val('tunRelayAddr');
+
+    if (!ingressNode) { showToast('Select an ingress node', true); return; }
+    if (!egressNode) { showToast('Select an egress node', true); return; }
+    if (!ingressPort || ingressPort < 1024 || ingressPort > 65535) { showToast('Ingress port must be 1024-65535', true); return; }
+    if (!egressAddr) { showToast('Egress forward address is required', true); return; }
+    if (mode === 'relay' && !relayAddr) { showToast('Relay server address is required for relay mode', true); return; }
+
+    var body = {
+      name: name,
+      protocol: protocol,
+      mode: mode,
+      ingress_node_id: ingressNode,
+      ingress_listen_port: ingressPort,
+      egress_node_id: egressNode,
+      egress_forward_addr: egressAddr
+    };
+    if (relayAddr) body.relay_addr = relayAddr;
+    var flowIds = val('tunFlowIds');
+    if (flowIds) {
+      body.associated_flow_ids = flowIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+
+    fetch('/api/v1/tunnels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { showToast('Error: ' + data.error, true); return; }
+      showToast('Tunnel "' + name + '" created');
+      closeTunnelModal();
+      loadTunnels();
+    })
+    .catch(function(e) { showToast('Error: ' + e.message, true); });
+  }
+}
+
+function deleteTunnel(tunnelId, tunnelName) {
+  if (!confirm('Are you sure you want to delete tunnel "' + tunnelName + '"?')) return;
+  var token = localStorage.getItem('token');
+  fetch('/api/v1/tunnels/' + encodeURIComponent(tunnelId), {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + token }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.error) { showToast('Error: ' + data.error, true); return; }
+    showToast('Tunnel deleted');
+    loadTunnels();
   })
   .catch(function(e) { showToast('Error: ' + e.message, true); });
 }

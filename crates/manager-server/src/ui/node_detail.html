@@ -55,7 +55,7 @@
   .user-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
 
   /* ── Content ── */
-  .content { flex: 1; padding: 32px; }
+  .content { flex: 1; padding: 32px; max-width: 1400px; margin: 0 auto; width: 100%; }
   .page-header { margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
   .page-header div h1 { font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
   .page-header div p { font-size: 14px; color: #64748b; }
@@ -78,7 +78,7 @@
 
   /* ── Info cards ── */
   .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
-  .info-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+  .info-card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; min-width: 0; }
   .info-card .card-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
   .info-card .card-value { font-size: 20px; font-weight: 700; color: #f1f5f9; }
   .info-card .card-value.online { color: #4ade80; }
@@ -146,10 +146,20 @@
   .outputs-table tr:first-child td { border-top: none; }
   .outputs-table tr:hover td { background: rgba(88, 166, 255, 0.04); }
 
-  /* ── WS status ── */
-  .ws-status { position: fixed; bottom: 16px; right: 16px; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; z-index: 30; display: none; }
-  .ws-status.disconnected { display: block; background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
-  .ws-status.connected { display: none; }
+  /* ── Full-width disconnection warning banner ── */
+  .disconnect-banner {
+    display: none; background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%);
+    color: #fef2f2; padding: 10px 24px; font-size: 14px; font-weight: 600;
+    text-align: center; align-items: center; justify-content: center; gap: 10px;
+    border-bottom: 2px solid #ef4444; animation: banner-pulse 2s ease-in-out infinite; z-index: 100;
+  }
+  .disconnect-banner.visible { display: flex; }
+  .disconnect-banner svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .disconnect-banner .banner-sub { font-weight: 400; font-size: 12px; color: #fca5a5; margin-left: 8px; }
+  @keyframes banner-pulse {
+    0%, 100% { background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%); }
+    50% { background: linear-gradient(90deg, #7f1d1d 0%, #991b1b 50%, #7f1d1d 100%); }
+  }
 
   /* ── Responsive ── */
   @media (max-width: 1024px) { .info-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -205,6 +215,11 @@
 
 <!-- Main -->
 <div class="main-wrapper">
+  <div class="disconnect-banner" id="disconnectBanner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span>Server connection lost &mdash; live data is not updating</span>
+    <span class="banner-sub" id="bannerDetail">Reconnecting...</span>
+  </div>
   <header class="topbar">
     <div class="topbar-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -254,7 +269,7 @@
         <div class="card-value" id="nodeUptime">--</div>
       </div>
       <div class="info-card">
-        <div class="card-label">Active Flows</div>
+        <div class="card-label" data-label="flows">Active Flows</div>
         <div class="card-value" id="nodeFlows">--</div>
       </div>
       <div class="info-card">
@@ -267,8 +282,8 @@
       </div>
     </div>
 
-    <!-- Flows container -->
-    <div class="section">
+    <!-- Flows container (hidden for relay nodes) -->
+    <div class="section" id="flowsDetailSection">
       <h2>Flows</h2>
       <div class="flows-placeholder" id="flowsPlaceholder">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -1196,9 +1211,9 @@
     var stateRgb = hexToRgb(stateColor);
     var proto = (t.protocol || 'tcp').toUpperCase();
     var dir = (t.direction || '').toLowerCase();
-    var dirLabel = dir === 'ingress' ? 'INGRESS' : 'EGRESS';
-    var dirColor = dir === 'ingress' ? C_CYAN : C_PINK;
-    var dirBg = dir === 'ingress' ? '34,211,238' : '244,114,182';
+    var dirLabel = dir === 'ingress' ? 'INGRESS' : (dir === 'relay' ? 'RELAY' : 'EGRESS');
+    var dirColor = dir === 'ingress' ? C_CYAN : (dir === 'relay' ? '#c084fc' : C_PINK);
+    var dirBg = dir === 'ingress' ? '34,211,238' : (dir === 'relay' ? '192,132,252' : '244,114,182');
 
     var html = '<div class="flow-card" id="tunnel-card-' + esc(t.id) + '" style="border-left:3px solid #c084fc;">';
 
@@ -1230,20 +1245,37 @@
   function buildTunnelStatsHTML(t) {
     var stats = t.stats || {};
     var proto = (t.protocol || 'tcp').toUpperCase();
+    var isRelayTunnel = (t.direction || '').toLowerCase() === 'relay';
     var errStyle = (stats.send_errors > 0) ? 'color:' + C_RED : '';
     var rate = tunnelBytesRate.get(t.id) || 0;
     var h = '';
-    h += '<div class="stat"><div class="k">Local Address</div><div class="v" style="font-size:12px;">' + esc(t.local_addr || '-') + '</div></div>';
-    h += '<div class="stat"><div class="k">Throughput</div><div class="v">' + fmt_bitrate(rate) + '</div></div>';
-    h += '<div class="stat"><div class="k">Bytes Sent</div><div class="v">' + fmt_bytes(stats.bytes_sent || 0) + '</div></div>';
-    h += '<div class="stat"><div class="k">Bytes Received</div><div class="v">' + fmt_bytes(stats.bytes_received || 0) + '</div></div>';
-    if (proto === 'TCP') {
-      h += '<div class="stat"><div class="k">Connections Active</div><div class="v">' + fmt_num(stats.connections_active || 0) + '</div></div>';
-      h += '<div class="stat"><div class="k">Connections Total</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
+
+    if (isRelayTunnel) {
+      h += '<div class="stat"><div class="k">Endpoints</div><div class="v" style="font-size:12px;">' + esc(t.local_addr || '-') + '</div></div>';
+    } else {
+      h += '<div class="stat"><div class="k">Local Address</div><div class="v" style="font-size:12px;">' + esc(t.local_addr || '-') + '</div></div>';
     }
-    h += '<div class="stat"><div class="k">Packets Sent</div><div class="v">' + fmt_num(stats.packets_sent || 0) + '</div></div>';
-    h += '<div class="stat"><div class="k">Packets Received</div><div class="v">' + fmt_num(stats.packets_received || 0) + '</div></div>';
-    h += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="' + errStyle + '">' + fmt_num(stats.send_errors || 0) + '</div></div>';
+    h += '<div class="stat"><div class="k">Throughput</div><div class="v">' + fmt_bitrate(rate) + '</div></div>';
+
+    if (isRelayTunnel) {
+      h += '<div class="stat"><div class="k">Bytes Ingress</div><div class="v">' + fmt_bytes(stats.bytes_sent || 0) + '</div></div>';
+      h += '<div class="stat"><div class="k">Bytes Egress</div><div class="v">' + fmt_bytes(stats.bytes_received || 0) + '</div></div>';
+      if (proto === 'TCP') {
+        h += '<div class="stat"><div class="k">TCP Streams</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
+      } else {
+        h += '<div class="stat"><div class="k">UDP Datagrams</div><div class="v">' + fmt_num(stats.packets_received || 0) + '</div></div>';
+      }
+    } else {
+      h += '<div class="stat"><div class="k">Bytes Sent</div><div class="v">' + fmt_bytes(stats.bytes_sent || 0) + '</div></div>';
+      h += '<div class="stat"><div class="k">Bytes Received</div><div class="v">' + fmt_bytes(stats.bytes_received || 0) + '</div></div>';
+      if (proto === 'TCP') {
+        h += '<div class="stat"><div class="k">Connections Active</div><div class="v">' + fmt_num(stats.connections_active || 0) + '</div></div>';
+        h += '<div class="stat"><div class="k">Connections Total</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
+      }
+      h += '<div class="stat"><div class="k">Packets Sent</div><div class="v">' + fmt_num(stats.packets_sent || 0) + '</div></div>';
+      h += '<div class="stat"><div class="k">Packets Received</div><div class="v">' + fmt_num(stats.packets_received || 0) + '</div></div>';
+      h += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="' + errStyle + '">' + fmt_num(stats.send_errors || 0) + '</div></div>';
+    }
     return h;
   }
 
@@ -1253,13 +1285,41 @@
     var section = $('tunnelsSection');
     var list = $('tunnelsList');
     if (!tunnels || tunnels.length === 0) {
-      section.style.display = 'none';
+      if (window._deviceType !== 'relay') {
+        section.style.display = 'none';
+      }
       list.innerHTML = '';
       currentTunnelIds = [];
       tunnelVizStates.clear();
       return;
     }
     section.style.display = '';
+
+    // Normalize relay tunnel format to edge tunnel format
+    var isRelay = window._deviceType === 'relay';
+    if (isRelay) {
+      tunnels = tunnels.map(function(t) {
+        var s = t.stats || {};
+        return {
+          id: t.tunnel_id || t.id,
+          name: (t.protocol || 'TCP').toUpperCase() + ': ' + (t.ingress_edge_id || '?') + ' \u2194 ' + (t.egress_edge_id || '?'),
+          protocol: t.protocol,
+          direction: 'relay',
+          mode: 'relay',
+          state: t.status || t.state || 'unknown',
+          local_addr: (t.ingress_edge_id || '') + ' \u2192 ' + (t.egress_edge_id || ''),
+          stats: {
+            bytes_sent: s.bytes_ingress || 0,
+            bytes_received: s.bytes_egress || 0,
+            packets_sent: s.tcp_streams_total || 0,
+            packets_received: s.udp_datagrams_total || 0,
+            send_errors: 0,
+            connections_active: 0,
+            connections_total: s.tcp_streams_total || 0
+          }
+        };
+      });
+    }
 
     // Compute throughput rates
     var now = performance.now() / 1000;
@@ -1496,20 +1556,43 @@
 
   // ── Fetch node info from REST API ──
 
+  window._deviceType = 'edge';
+
   function fetchNodeInfo() {
     fetch('/api/v1/nodes/' + encodeURIComponent(nodeId), { headers: authHeaders() })
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(node) {
         if (!node) return;
+        window._deviceType = node.device_type || 'edge';
+        var isRelay = window._deviceType === 'relay';
+
         $('nodeName').textContent = node.name;
         document.title = node.name + ' - bilbycast manager';
         var statusEl = $('nodeStatus');
         statusEl.textContent = node.status.charAt(0).toUpperCase() + node.status.slice(1);
         statusEl.className = 'card-value ' + (node.status === 'online' ? 'online' : 'offline');
         $('nodeVersion').textContent = node.software_version || '--';
+
+        // For relay nodes: hide flows section, always show tunnels
+        if (isRelay) {
+          var flowsSec = $('flowsDetailSection');
+          if (flowsSec) flowsSec.style.display = 'none';
+          var tunSec = $('tunnelsSection');
+          if (tunSec) tunSec.style.display = '';
+          // Update the "Active Flows" card label to show tunnel info instead
+          var flowsLabel = document.querySelector('[data-label="flows"]');
+          if (flowsLabel) flowsLabel.textContent = 'Tunnels';
+        }
+
         if (node.last_health) {
-          if ($('nodeFlows').textContent === '--') {
-            $('nodeFlows').textContent = (node.last_health.active_flows || 0) + ' active';
+          if (isRelay) {
+            if ($('nodeFlows').textContent === '--') {
+              $('nodeFlows').textContent = (node.last_health.active_tunnels || 0) + ' active';
+            }
+          } else {
+            if ($('nodeFlows').textContent === '--') {
+              $('nodeFlows').textContent = (node.last_health.active_flows || 0) + ' active';
+            }
           }
           if ($('nodeUptime').textContent === '--') {
             $('nodeUptime').textContent = fmt_uptime(node.last_health.uptime_secs);
@@ -1560,6 +1643,7 @@
     ws.onopen = function() {
       wsRetry = 1000;
       wsStatusEl.className = 'ws-status connected';
+      document.getElementById('disconnectBanner').classList.remove('visible');
     };
 
     ws.onmessage = function(evt) {
@@ -1571,10 +1655,22 @@
             if (msg.nodes[i].node_id === nodeId) { myNode = msg.nodes[i]; break; }
           }
           if (myNode && myNode.stats) {
+            var isRelay = window._deviceType === 'relay';
             var flows = Array.isArray(myNode.stats) ? myNode.stats : (myNode.stats.flows || []);
-            renderFlows(flows);
+            if (!isRelay) {
+              renderFlows(flows);
+            }
             var tunnels = myNode.stats.tunnels || [];
             renderTunnels(tunnels);
+            // For relay nodes, update the counter card with tunnel/edge info
+            if (isRelay) {
+              var activeTunnels = myNode.stats.active_tunnels || tunnels.length;
+              var connEdges = myNode.stats.connected_edges || 0;
+              $('nodeFlows').textContent = activeTunnels + ' tunnels, ' + connEdges + ' edges';
+              if (myNode.stats.uptime_secs) {
+                $('nodeUptime').textContent = fmt_uptime(myNode.stats.uptime_secs);
+              }
+            }
           }
         }
       } catch(e) { /* ignore malformed messages */ }
@@ -1583,13 +1679,19 @@
     ws.onclose = function() {
       wsStatusEl.className = 'ws-status disconnected';
       wsStatusEl.textContent = 'Reconnecting...';
+      document.getElementById('disconnectBanner').classList.add('visible');
+      document.getElementById('bannerDetail').textContent = 'Attempting to reconnect...';
       setTimeout(function() {
         wsRetry = Math.min(wsRetry * 2, 30000);
         connectWs();
       }, wsRetry);
     };
 
-    ws.onerror = function() { ws.close(); };
+    ws.onerror = function() {
+      document.getElementById('disconnectBanner').classList.add('visible');
+      document.getElementById('bannerDetail').textContent = 'Server may be down';
+      ws.close();
+    };
   }
 
   connectWs();

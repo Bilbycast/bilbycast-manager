@@ -14,7 +14,7 @@ mod ws;
 use app_state::AppState;
 
 #[derive(Parser)]
-#[command(name = "bilbycast-manager", about = "Bilbycast Edge Node Manager")]
+#[command(name = "bilbycast-manager", about = "Bilbycast Network Device Manager")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -213,6 +213,12 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
         node_auth_limiter.clone(),
     ));
 
+    // Build device driver registry
+    let mut driver_registry = manager_core::drivers::DriverRegistry::new();
+    driver_registry.register(Arc::new(manager_core::drivers::edge::EdgeDriver::new()));
+    driver_registry.register(Arc::new(manager_core::drivers::relay::RelayDriver::new()));
+    let driver_registry = Arc::new(driver_registry);
+
     let state = AppState {
         db: pool,
         node_hub,
@@ -220,6 +226,7 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
         master_key,
         browser_stats_tx: browser_tx,
         config: Arc::new(RwLock::new(server_config.clone())),
+        driver_registry,
     };
 
     let app = build_router(state);

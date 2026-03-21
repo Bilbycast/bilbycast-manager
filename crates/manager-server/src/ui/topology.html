@@ -104,6 +104,21 @@
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
   .legend-line { width: 24px; height: 0; border-top: 2px dashed; }
 
+  /* ── Full-width disconnection warning banner ── */
+  .disconnect-banner {
+    display: none; background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%);
+    color: #fef2f2; padding: 10px 24px; font-size: 14px; font-weight: 600;
+    text-align: center; align-items: center; justify-content: center; gap: 10px;
+    border-bottom: 2px solid #ef4444; animation: banner-pulse 2s ease-in-out infinite; z-index: 100;
+  }
+  .disconnect-banner.visible { display: flex; }
+  .disconnect-banner svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .disconnect-banner .banner-sub { font-weight: 400; font-size: 12px; color: #fca5a5; margin-left: 8px; }
+  @keyframes banner-pulse {
+    0%, 100% { background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%); }
+    50% { background: linear-gradient(90deg, #7f1d1d 0%, #991b1b 50%, #7f1d1d 100%); }
+  }
+
   @media (max-width: 768px) {
     .sidebar { display: none; }
     .main-wrapper { margin-left: 0; }
@@ -155,6 +170,11 @@
 
 <!-- Main -->
 <div class="main-wrapper">
+  <div class="disconnect-banner" id="disconnectBanner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span>Server connection lost &mdash; live data is not updating</span>
+    <span class="banner-sub" id="bannerDetail">Reconnecting...</span>
+  </div>
   <header class="topbar">
     <div class="topbar-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -176,7 +196,7 @@
     <div class="page-header">
       <div class="page-header-left">
         <h1>Network Topology</h1>
-        <p>Live visual map of edge nodes and their connections</p>
+        <p>Live visual map of edge nodes, relay servers, and their connections</p>
       </div>
       <div class="topology-stats">
         <div class="topo-stat online"><span class="val" id="statOnline">0</span> online</div>
@@ -195,8 +215,9 @@
       </div>
 
       <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.5)"></div> Managed (Online)</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> Managed (Offline)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,0.5)"></div> Edge Node (Online)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#c084fc;box-shadow:0 0 6px rgba(192,132,252,0.5)"></div> Relay Server (Online)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div> Offline</div>
         <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border:2px dashed #f59e0b;box-sizing:border-box"></div> External / Unmanaged</div>
         <div class="legend-item"><div class="legend-line" style="border-color:#60a5fa"></div> SRT</div>
         <div class="legend-item"><div class="legend-line" style="border-color:#2dd4bf"></div> RTP/UDP</div>
@@ -517,14 +538,45 @@
     }
 
     // Build tunnel links between managed nodes
-    // Match egress tunnels on one node with ingress tunnels on another by tunnel ID
+    // 1. Direct tunnels: match egress tunnel on one edge with ingress tunnel on another by tunnel ID
+    // 2. Relay tunnels: relay node knows ingress_edge_id and egress_edge_id, draw edge → relay → edge
     for (var i = 0; i < topoNodes.length; i++) {
       var ni = topoNodes[i];
       if (ni.isExternal) continue;
+
+      if (ni.isRelay) {
+        // Relay node: draw links from relay to each connected edge
+        var relayTunnels = ni.tunnels || [];
+        for (var rt = 0; rt < relayTunnels.length; rt++) {
+          var rtun = relayTunnels[rt];
+          var proto = (rtun.protocol || 'tcp').toUpperCase();
+          var ingressEdgeId = rtun.ingress_edge_id;
+          var egressEdgeId = rtun.egress_edge_id;
+
+          // Find the edge nodes by matching their edge_id to the relay's tunnel endpoints
+          // Edge nodes have tunnel mode=relay matching this tunnel ID
+          if (ingressEdgeId) {
+            var ingressIdx = findManagedNodeByEdgeId(ingressEdgeId);
+            if (ingressIdx >= 0 && ingressIdx !== i) {
+              addLink(ingressIdx, i, proto + ' via Relay', 'tunnel');
+            }
+          }
+          if (egressEdgeId) {
+            var egressIdx = findManagedNodeByEdgeId(egressEdgeId);
+            if (egressIdx >= 0 && egressIdx !== i) {
+              addLink(i, egressIdx, proto + ' via Relay', 'tunnel');
+            }
+          }
+        }
+        continue;
+      }
+
+      // Edge node: direct tunnels only (mode != relay)
       var tunnelsI = ni.tunnels || [];
       for (var ti = 0; ti < tunnelsI.length; ti++) {
         var tunI = tunnelsI[ti];
         if ((tunI.direction || '').toLowerCase() !== 'egress') continue;
+        if ((tunI.mode || '').toLowerCase() === 'relay') continue; // handled by relay node above
         // Find the matching ingress tunnel on another node
         for (var j = 0; j < topoNodes.length; j++) {
           if (j === i || topoNodes[j].isExternal) continue;
@@ -538,6 +590,32 @@
           }
         }
       }
+    }
+
+    // Helper: find a managed node by edge_id (for relay tunnel matching)
+    // The relay's tunnel has ingress_edge_id/egress_edge_id which are the edge's relay_edge_id
+    // We need to match these to actual topology nodes
+    function findManagedNodeByEdgeId(edgeId) {
+      for (var k = 0; k < topoNodes.length; k++) {
+        if (topoNodes[k].isExternal || topoNodes[k].isRelay) continue;
+        // Check if this edge has relay tunnels with matching relay_edge_id
+        var eTunnels = topoNodes[k].tunnels || [];
+        for (var et = 0; et < eTunnels.length; et++) {
+          if ((eTunnels[et].mode || '').toLowerCase() === 'relay') {
+            // The edge's relay_edge_id is what the relay sees as the edge's identity
+            // Try matching by node name pattern or relay_edge_id in config
+            // Simplest: the relay sees edge-3/edge-4 which may match the node name
+            if (topoNodes[k].name && topoNodes[k].name.toLowerCase() === edgeId.toLowerCase()) {
+              return k;
+            }
+          }
+        }
+        // Also try matching by node name directly (relay uses edge_id from auth)
+        if (topoNodes[k].name && topoNodes[k].name.toLowerCase() === edgeId.toLowerCase()) {
+          return k;
+        }
+      }
+      return -1;
     }
 
     // Now build links based on actual flow endpoints
@@ -877,7 +955,11 @@
     var x = node.x - NODE_W / 2;
     var y = node.y - nh / 2;
     var isOnline = node.status === 'online';
-    var borderColor = isOnline ? '#4ade80' : '#475569';
+    var isRelay = node.isRelay;
+    var accentColor = isRelay ? '#c084fc' : '#4ade80';
+    var accentGlow = isRelay ? 'rgba(192, 132, 252, 0.15)' : 'rgba(74, 222, 128, 0.15)';
+    var accentDotGlow = isRelay ? 'rgba(192, 132, 252, 0.2)' : 'rgba(74, 222, 128, 0.2)';
+    var borderColor = isOnline ? accentColor : '#475569';
     var bgColor = hovered ? '#253348' : '#1e293b';
 
     // Shadow
@@ -902,7 +984,7 @@
 
     // Online glow
     if (isOnline) {
-      ctx.strokeStyle = 'rgba(74, 222, 128, 0.15)';
+      ctx.strokeStyle = accentGlow;
       ctx.lineWidth = 6;
       roundRect(ctx, x - 2, y - 2, NODE_W + 4, nh + 4, 12);
       ctx.stroke();
@@ -913,12 +995,12 @@
     var dotY = y + 18;
     ctx.beginPath();
     ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
-    ctx.fillStyle = isOnline ? '#4ade80' : '#64748b';
+    ctx.fillStyle = isOnline ? accentColor : '#64748b';
     ctx.fill();
     if (isOnline) {
       ctx.beginPath();
       ctx.arc(dotX, dotY, 8, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(74, 222, 128, 0.2)';
+      ctx.fillStyle = accentDotGlow;
       ctx.fill();
     }
 
@@ -929,9 +1011,27 @@
     ctx.textBaseline = 'middle';
     ctx.fillText(truncate(node.name, 24), x + 28, y + 18);
 
+    // Device type badge for relay nodes
+    if (isRelay) {
+      var badgeLabel = 'RELAY';
+      ctx.font = '700 8px -apple-system, BlinkMacSystemFont, sans-serif';
+      var bw = ctx.measureText(badgeLabel).width + 8;
+      var bx = x + 28 + ctx.measureText(truncate(node.name, 24)).width + 6;
+      ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif'; // re-measure with correct font
+      bx = x + 28 + ctx.measureText(truncate(node.name, 24)).width + 6;
+      ctx.font = '700 8px -apple-system, BlinkMacSystemFont, sans-serif';
+      bw = ctx.measureText(badgeLabel).width + 8;
+      ctx.fillStyle = 'rgba(192, 132, 252, 0.2)';
+      roundRect(ctx, bx, y + 11, bw, 14, 3);
+      ctx.fill();
+      ctx.fillStyle = '#c084fc';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(badgeLabel, bx + 4, y + 18);
+    }
+
     // Status label
     ctx.font = '500 10px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillStyle = isOnline ? '#4ade80' : '#64748b';
+    ctx.fillStyle = isOnline ? accentColor : '#64748b';
     ctx.textAlign = 'right';
     ctx.fillText(isOnline ? 'ONLINE' : 'OFFLINE', x + NODE_W - 14, y + 18);
 
@@ -948,12 +1048,22 @@
     var hasEndpoints = ep.inputs.length + ep.outputs.length > 0;
 
     if (!hasEndpoints) {
-      // Fallback: show flow count and type tags (original behavior)
-      var flowCount = (node.flows || []).length;
-      ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.textAlign = 'left';
-      ctx.fillText(flowCount + (flowCount === 1 ? ' flow' : ' flows'), x + 14, y + 50);
+      // Fallback: show summary info
+      if (isRelay) {
+        // Relay: show tunnel count and connected edges
+        var tunCount = (node.tunnels || []).length;
+        var edgeCount = (node.edges || []).length;
+        ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.textAlign = 'left';
+        ctx.fillText(tunCount + (tunCount === 1 ? ' tunnel' : ' tunnels') + ', ' + edgeCount + (edgeCount === 1 ? ' edge' : ' edges'), x + 14, y + 50);
+      } else {
+        var flowCount = (node.flows || []).length;
+        ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillStyle = '#e2e8f0';
+        ctx.textAlign = 'left';
+        ctx.fillText(flowCount + (flowCount === 1 ? ' flow' : ' flows'), x + 14, y + 50);
+      }
 
       var flowTypes = getFlowTypes(node);
       ctx.font = '500 10px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -1208,6 +1318,41 @@
   function getEndpoints(node) {
     var inputs = [];
     var outputs = [];
+
+    // Relay nodes: show each tunnel as a bidirectional pair (ingress in, egress out)
+    if (node.isRelay) {
+      var relayTunnels = node.tunnels || [];
+      for (var rt = 0; rt < relayTunnels.length; rt++) {
+        var rtun = relayTunnels[rt];
+        var proto = (rtun.protocol || 'tcp').toUpperCase();
+        var tunnelColor = protocolColor('tunnel');
+        var status = rtun.status || '';
+        if (rtun.ingress_edge_id) {
+          inputs.push({
+            protocol: proto.toLowerCase() + '-tunnel',
+            addr: rtun.ingress_edge_id,
+            mode: 'relay',
+            color: tunnelColor,
+            flowName: proto + ' from ' + rtun.ingress_edge_id,
+            isTunnel: true,
+            tunnelState: status
+          });
+        }
+        if (rtun.egress_edge_id) {
+          outputs.push({
+            protocol: proto.toLowerCase() + '-tunnel',
+            addr: rtun.egress_edge_id,
+            mode: 'relay',
+            color: tunnelColor,
+            outputName: proto + ' to ' + rtun.egress_edge_id,
+            isTunnel: true,
+            tunnelState: status
+          });
+        }
+      }
+      return { inputs: inputs, outputs: outputs };
+    }
+
     var flows = node.flows || [];
 
     for (var f = 0; f < flows.length; f++) {
@@ -1522,12 +1667,21 @@
         }
       }
 
+      var deviceType = wn.device_type || 'edge';
+      var isRelay = deviceType === 'relay';
+
+      // For relay nodes, extract edges list from stats
+      var edges = stats.edges || [];
+
       var existing = existingMap[key];
       if (existing) {
         existing.name = wn.name || existing.name;
         existing.status = wn.status || 'online';
+        existing.device_type = deviceType;
+        existing.isRelay = isRelay;
         existing.flows = flows;
         existing.tunnels = tunnels;
+        existing.edges = edges;
         existing.srtInput = hasSrtInput;
         existing.srtOutput = hasSrtOutput;
         newNodes.push(existing);
@@ -1540,6 +1694,8 @@
           id: key,
           name: wn.name || key,
           status: wn.status || 'online',
+          device_type: deviceType,
+          isRelay: isRelay,
           x: Math.cos(angle) * radius,
           y: Math.sin(angle) * radius,
           vx: 0,
@@ -1549,6 +1705,7 @@
           pinned: false,
           flows: flows,
           tunnels: tunnels,
+          edges: edges,
           srtInput: hasSrtInput,
           srtOutput: hasSrtOutput
         });
@@ -1623,6 +1780,7 @@
 
     ws.onopen = function () {
       wsRetryDelay = 1000;
+      document.getElementById('disconnectBanner').classList.remove('visible');
     };
 
     ws.onmessage = function (evt) {
@@ -1639,13 +1797,19 @@
     };
 
     ws.onclose = function () {
+      document.getElementById('disconnectBanner').classList.add('visible');
+      document.getElementById('bannerDetail').textContent = 'Attempting to reconnect...';
       setTimeout(function () {
         wsRetryDelay = Math.min(wsRetryDelay * 2, 30000);
         connectWebSocket();
       }, wsRetryDelay);
     };
 
-    ws.onerror = function () { ws.close(); };
+    ws.onerror = function () {
+      document.getElementById('disconnectBanner').classList.add('visible');
+      document.getElementById('bannerDetail').textContent = 'Server may be down';
+      ws.close();
+    };
   }
 
   connectWebSocket();
