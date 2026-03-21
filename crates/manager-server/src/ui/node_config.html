@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Node Configuration - bilbycast manager</title>
 <style>
@@ -207,6 +210,19 @@
   }
 
   @media (max-width: 768px) { .sidebar { display: none; } .main-wrapper { margin-left: 0; } .form-row { grid-template-columns: 1fr; } }
+  .cert-warn-banner {
+    display: none;
+    background: linear-gradient(90deg, #92400e 0%, #b45309 50%, #92400e 100%);
+    color: #fef3c7;
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+        border-bottom: 2px solid #f59e0b;
+  }
+  .cert-warn-banner.visible { display: block; }
+  .cert-warn-banner a { color: #fde68a; text-decoration: underline; }
+
 </style>
 </head>
 <body>
@@ -228,6 +244,7 @@
 </aside>
 
 <div class="main-wrapper">
+<div class="cert-warn-banner" id="certWarnBanner">This server is using a self-signed TLS certificate. <a href="/admin/settings">Configure a proper certificate</a> for production use.</div>
   <div class="disconnect-banner" id="disconnectBanner">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     <span>Server connection lost &mdash; live data is not updating</span>
@@ -565,8 +582,26 @@
 <script>
 (function(){
   'use strict';
-  var token = localStorage.getItem('token');
-  if (!token) { window.location.href = '/login'; return; }
+  function getCookie(name) {
+    var match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? match[1] : null;
+  }
+    fetch("/health").then(function(r){return r.json()}).then(function(d){if(d.self_signed_cert){var b=document.getElementById("certWarnBanner");if(b)b.classList.add("visible")}}).catch(function(){});
+
+  
+  function authHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    var csrf = getCookie('csrf_token');
+    if (csrf) h['X-CSRF-Token'] = csrf;
+    return h;
+  }
+
+  function apiFetch(url, opts) {
+    return fetch(url, opts).then(function(r) {
+      if (r.status === 401) { window.location.href = "/login"; }
+      return r;
+    });
+  }
 
   var pathParts = window.location.pathname.split('/');
   var nodeId = decodeURIComponent(pathParts[2] || '');
@@ -579,7 +614,7 @@
 
   // Fetch node name and device_type from API
   fetch('/api/v1/nodes/' + encodeURIComponent(nodeId), {
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+    headers: authHeaders()
   })
   .then(function(r) { return r.ok ? r.json() : null; })
   .then(function(node) {
@@ -615,14 +650,13 @@ var _currentConfig = null;
 var _configDirty = false;
 
 function loadConfig() {
-  var token = localStorage.getItem('token');
   document.getElementById('configLoading').style.display = '';
   document.getElementById('configNotConnected').style.display = 'none';
   document.getElementById('configEditorWrap').style.display = 'none';
   document.getElementById('saveConfigBtn').style.display = 'none';
 
   fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/config', {
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+    headers: authHeaders()
   })
   .then(function(r) {
     if (r.status === 404) return null;
@@ -737,13 +771,12 @@ function saveConfig() {
     return;
   }
 
-  var token = localStorage.getItem('token');
   document.getElementById('saveConfigBtn').disabled = true;
   document.getElementById('saveConfigBtn').textContent = 'Saving...';
 
   fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/config', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    headers: authHeaders(),
     body: JSON.stringify(parsed)
   })
   .then(function(r) {
@@ -1277,7 +1310,6 @@ function applyFlow() {
   if (!config.name) { showToast('Flow Name is required', true); return; }
   if (config.outputs.length === 0) { showToast('At least one output is required', true); return; }
 
-  var token = localStorage.getItem('token');
   var action;
   if (_flowEditMode) {
     action = { type: 'update_flow', flow_id: config.id, flow: config };
@@ -1287,7 +1319,7 @@ function applyFlow() {
 
   fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/command', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    headers: authHeaders(),
     body: JSON.stringify({ action: action })
   })
   .then(function(r) { return r.json(); })
@@ -1659,10 +1691,9 @@ function renderLiveTunnels(tunnels) {
 
 // ── Send command to node ──
 function sendNodeCommand(action, callback) {
-  var token = localStorage.getItem('token');
   fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/command', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    headers: authHeaders(),
     body: JSON.stringify({ action: action })
   })
   .then(function(r) { return r.json(); })
@@ -1802,9 +1833,8 @@ function toggleSrtTunnel(p) {
 function loadNodesForTunnel(p) {
   var sel = document.getElementById('outSrtTunnelDestNode-' + p);
   if (!sel || sel.options.length > 1) return; // already loaded
-  var token = localStorage.getItem('token');
   fetch('/api/v1/nodes', {
-    headers: { 'Authorization': 'Bearer ' + token }
+    headers: authHeaders()
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
@@ -1824,12 +1854,11 @@ function aiGenerate() {
   var prompt = val('aiPrompt');
   if (!prompt) { showToast('Enter a description first', true); return; }
 
-  var token = localStorage.getItem('token');
   showToast('Generating config with AI...');
 
   fetch('/api/v1/ai/generate-config', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    headers: authHeaders(),
     body: JSON.stringify({
       prompt: prompt,
       provider: 'openai',
@@ -1874,9 +1903,8 @@ var _tunnels = [];
 var _tunnelNodesLoaded = false;
 
 function loadTunnels() {
-  var token = localStorage.getItem('token');
   fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/tunnels', {
-    headers: { 'Authorization': 'Bearer ' + token }
+    headers: authHeaders()
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
@@ -1965,9 +1993,8 @@ function toggleTunnelMode() {
 
 function loadNodesForTunnelModal() {
   if (_tunnelNodesLoaded) return;
-  var token = localStorage.getItem('token');
   fetch('/api/v1/nodes', {
-    headers: { 'Authorization': 'Bearer ' + token }
+    headers: authHeaders()
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
@@ -2030,7 +2057,6 @@ function editTunnel(tunnelId) {
 
 function submitTunnel() {
   var editId = val('tunEditId');
-  var token = localStorage.getItem('token');
   var name = val('tunName');
 
   if (!name) { showToast('Tunnel name is required', true); return; }
@@ -2051,7 +2077,7 @@ function submitTunnel() {
 
     fetch('/api/v1/tunnels/' + encodeURIComponent(editId), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      headers: authHeaders(),
       body: JSON.stringify(body)
     })
     .then(function(r) { return r.json(); })
@@ -2096,7 +2122,7 @@ function submitTunnel() {
 
     fetch('/api/v1/tunnels', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      headers: authHeaders(),
       body: JSON.stringify(body)
     })
     .then(function(r) { return r.json(); })
@@ -2112,10 +2138,9 @@ function submitTunnel() {
 
 function deleteTunnel(tunnelId, tunnelName) {
   if (!confirm('Are you sure you want to delete tunnel "' + tunnelName + '"?')) return;
-  var token = localStorage.getItem('token');
   fetch('/api/v1/tunnels/' + encodeURIComponent(tunnelId), {
     method: 'DELETE',
-    headers: { 'Authorization': 'Bearer ' + token }
+    headers: authHeaders()
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {

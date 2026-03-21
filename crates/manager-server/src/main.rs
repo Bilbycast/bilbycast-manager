@@ -219,17 +219,8 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
     driver_registry.register(Arc::new(manager_core::drivers::relay::RelayDriver::new()));
     let driver_registry = Arc::new(driver_registry);
 
-    let state = AppState {
-        db: pool,
-        node_hub,
-        jwt_secret: jwt_secret.as_bytes().to_vec(),
-        master_key,
-        browser_stats_tx: browser_tx,
-        config: Arc::new(RwLock::new(server_config.clone())),
-        driver_registry,
-    };
-
-    let app = build_router(state);
+    // Login rate limiter: 5 attempts per 60 seconds per IP
+    let login_limiter = Arc::new(crate::middleware::rate_limit::RateLimiter::new(5, 60));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
@@ -241,47 +232,119 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
         .ok()
         .or_else(|| server_config.tls.as_ref().map(|t| t.key_path.clone()));
 
-    match (tls_cert, tls_key) {
-        #[cfg(feature = "tls")]
-        (Some(cert_path), Some(key_path)) => {
-            tracing::info!(
-                "bilbycast-manager listening on {addr} with TLS (HTTPS/WSS)"
-            );
+    let cert_path = tls_cert.ok_or_else(|| {
+        anyhow::anyhow!(
+            "TLS is required. Set BILBYCAST_TLS_CERT (or tls.cert_path in config) \
+             to the path of your TLS certificate PEM file."
+        )
+    })?;
+    let key_path = tls_key.ok_or_else(|| {
+        anyhow::anyhow!(
+            "TLS is required. Set BILBYCAST_TLS_KEY (or tls.key_path in config) \
+             to the path of your TLS private key PEM file."
+        )
+    })?;
 
-            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-                &cert_path,
-                &key_path,
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to load TLS cert/key: {e}"))?;
-
-            axum_server::bind_rustls(addr, tls_config)
-                .serve(app.into_make_service())
-                .await?;
-        }
-        #[cfg(not(feature = "tls"))]
-        (Some(_), Some(_)) => {
-            anyhow::bail!(
-                "TLS cert/key configured but the 'tls' feature is not enabled. \
-                 Rebuild with: cargo build --features tls"
-            );
-        }
-        (Some(_), None) | (None, Some(_)) => {
-            anyhow::bail!("Both BILBYCAST_TLS_CERT and BILBYCAST_TLS_KEY must be set for TLS");
-        }
-        (None, None) => {
-            tracing::warn!(
-                "TLS not configured — running in plaintext HTTP/WS mode. \
-                 Set BILBYCAST_TLS_CERT and BILBYCAST_TLS_KEY for production."
-            );
-            tracing::info!("bilbycast-manager listening on {addr}");
-
-            let listener = tokio::net::TcpListener::bind(addr).await?;
-            axum::serve(listener, app).await?;
-        }
+    // Detect self-signed certificate
+    let is_self_signed = detect_self_signed_cert(&cert_path);
+    if is_self_signed {
+        tracing::warn!("Using a self-signed TLS certificate — not recommended for production");
     }
 
+    let state = AppState {
+        db: pool,
+        node_hub,
+        jwt_secret: jwt_secret.as_bytes().to_vec(),
+        master_key,
+        browser_stats_tx: browser_tx,
+        config: Arc::new(RwLock::new(server_config.clone())),
+        driver_registry,
+        login_limiter,
+        is_self_signed_cert: is_self_signed,
+    };
+
+    let app = build_router(state);
+
+    tracing::info!("bilbycast-manager listening on {addr} with TLS (HTTPS/WSS)");
+
+    let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+        &cert_path,
+        &key_path,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("Failed to load TLS cert/key: {e}"))?;
+
+    axum_server::bind_rustls(addr, tls_config)
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+        .await?;
+
     Ok(())
+}
+
+/// Check if a PEM certificate file is self-signed (issuer == subject).
+fn detect_self_signed_cert(cert_path: &str) -> bool {
+    let Ok(pem_data) = std::fs::read(cert_path) else {
+        return false;
+    };
+    let mut reader = std::io::BufReader::new(pem_data.as_slice());
+    let certs: Vec<_> = rustls_pemfile::certs(&mut reader)
+        .filter_map(|c| c.ok())
+        .collect();
+    let Some(cert_der) = certs.first() else {
+        return false;
+    };
+    // Parse with x509-parser if available, or do a simple heuristic:
+    // A self-signed cert has issuer == subject in the DER encoding.
+    // Simple check: try to find if the cert can verify itself (issuer == subject).
+    // For now, use a byte-level heuristic: in a self-signed cert, the issuer and
+    // subject Distinguished Name sequences are identical.
+    parse_is_self_signed(cert_der.as_ref())
+}
+
+/// Heuristic: parse DER certificate to check if issuer == subject.
+fn parse_is_self_signed(der: &[u8]) -> bool {
+    parse_is_self_signed_inner(der).unwrap_or(false)
+}
+
+fn parse_is_self_signed_inner(der: &[u8]) -> Option<bool> {
+    fn read_tag_len(data: &[u8], pos: usize) -> Option<(usize, usize)> {
+        if pos >= data.len() { return None; }
+        let len_start = pos + 1;
+        if len_start >= data.len() { return None; }
+        let first = data[len_start];
+        if first < 0x80 {
+            Some((len_start + 1, first as usize))
+        } else {
+            let num_bytes = (first & 0x7f) as usize;
+            if len_start + 1 + num_bytes > data.len() { return None; }
+            let mut len = 0usize;
+            for i in 0..num_bytes {
+                len = (len << 8) | data[len_start + 1 + i] as usize;
+            }
+            Some((len_start + 1 + num_bytes, len))
+        }
+    }
+    fn skip_field(data: &[u8], pos: usize) -> Option<usize> {
+        let (content_start, len) = read_tag_len(data, pos)?;
+        Some(content_start + len)
+    }
+
+    let (tbs_start, _) = read_tag_len(der, 0)?;
+    let (tbs_content, _) = read_tag_len(der, tbs_start)?;
+    let mut pos = tbs_content;
+    if pos < der.len() && der[pos] == 0xa0 {
+        pos = skip_field(der, pos)?;
+    }
+    pos = skip_field(der, pos)?;
+    pos = skip_field(der, pos)?;
+    let issuer_start = pos;
+    let issuer_end = skip_field(der, pos)?;
+    let issuer = &der[issuer_start..issuer_end];
+    pos = skip_field(der, issuer_end)?;
+    let subject_start = pos;
+    let subject_end = skip_field(der, pos)?;
+    let subject = &der[subject_start..subject_end];
+    Some(issuer == subject)
 }
 
 /// Load a required secret from an environment variable.
@@ -389,19 +452,21 @@ async fn run_import(config_path: &str, input_path: &str) -> anyhow::Result<()> {
 mod ui;
 
 fn build_router(state: AppState) -> Router {
-    use tower_http::cors::CorsLayer;
+    use axum::http::{HeaderName, Method};
+    use tower_http::cors::{AllowOrigin, CorsLayer};
     use tower_http::trace::TraceLayer;
 
     let api_routes = api::build_api_router(state.clone());
     let ws_routes = ws::build_ws_router(state.clone());
     let ui_routes = ui::build_ui_router();
 
+    // No CORS layer — all requests are same-origin (UI served by same server).
+    // Cross-origin requests are blocked by default without CORS headers.
     Router::new()
         .merge(api_routes)
         .merge(ws_routes)
         .merge(ui_routes)
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
         .with_state(state)
 }
 

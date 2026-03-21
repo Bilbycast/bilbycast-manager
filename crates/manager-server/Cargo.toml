@@ -30,15 +30,12 @@ toml = { workspace = true }
 bytes = { workspace = true }
 reqwest = { workspace = true }
 
-[features]
-default = []
-tls = ["dep:axum-server", "dep:rustls"]
-
 [dependencies.axum-server]
 version = "0.8.0"
 features = ["tls-rustls"]
-optional = true
 
 [dependencies.rustls]
 version = "0.23.37"
-optional = true
+
+[dependencies.rustls-pemfile]
+version = "2.2.0"

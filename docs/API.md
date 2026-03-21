@@ -1,10 +1,8 @@
 # API Reference
 
-All endpoints except `/api/v1/auth/login` and `/health` require a valid JWT Bearer token in the `Authorization` header:
+All endpoints except `/api/v1/auth/login` and `/health` require authentication via a session cookie (set automatically at login). API clients may alternatively use an `Authorization: Bearer <token>` header.
 
-```
-Authorization: Bearer <token>
-```
+State-changing requests (POST, PUT, PATCH, DELETE) to authenticated endpoints also require an `X-CSRF-Token` header matching the `csrf_token` cookie value.
 
 ---
 
@@ -12,8 +10,8 @@ Authorization: Bearer <token>
 
 | Method | Path                    | Description              |
 |--------|-------------------------|--------------------------|
-| POST   | `/api/v1/auth/login`    | Log in, returns JWT token |
-| POST   | `/api/v1/auth/logout`   | Log out, invalidates session |
+| POST   | `/api/v1/auth/login`    | Log in, sets httpOnly session cookie and csrf_token cookie. Rate-limited: 5 attempts/60s per IP. |
+| POST   | `/api/v1/auth/logout`   | Log out, revokes session token and clears cookies |
 
 ---
 
@@ -61,6 +59,8 @@ Authorization: Bearer <token>
 |--------|-----------------------|--------------------------|
 | GET    | `/api/v1/settings`    | Get current settings     |
 | PUT    | `/api/v1/settings`    | Update settings          |
+| GET    | `/api/v1/settings/tls` | Get TLS certificate info (subject, issuer, self-signed status) |
+| POST   | `/api/v1/settings/tls/upload` | Upload new TLS certificate and key (PEM format, requires server restart) |
 
 ---
 

@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>bilbycast manager - Login</title>
     <style>
@@ -192,6 +195,20 @@
     </div>
 
     <script>
+        // Show error from redirect query params
+        const params = new URLSearchParams(window.location.search);
+        const errorParam = params.get('error');
+        if (errorParam) {
+            const errorEl = document.getElementById('error-message');
+            const msgs = {
+                'invalid': 'Invalid username or password',
+                'rate_limited': 'Too many login attempts. Try again later.',
+                'internal': 'An internal error occurred'
+            };
+            errorEl.textContent = msgs[errorParam] || 'Authentication failed';
+            errorEl.classList.add('visible');
+        }
+
         const form = document.getElementById('login-form');
         const errorEl = document.getElementById('error-message');
         const submitBtn = document.getElementById('submit-btn');
@@ -217,13 +234,19 @@
                     try {
                         const data = await res.json();
                         if (data.error) msg = data.error;
-                        else if (data.message) msg = data.message;
                     } catch (_) {}
                     throw new Error(msg);
                 }
 
                 const data = await res.json();
-                localStorage.setItem('token', data.token);
+                // Set cookies via JavaScript to guarantee they're stored
+                // (some browsers don't process Set-Cookie from fetch with self-signed certs)
+                if (data.token) {
+                    document.cookie = 'session=' + data.token + '; SameSite=Lax; Path=/; Max-Age=86400';
+                }
+                if (data.csrf_token) {
+                    document.cookie = 'csrf_token=' + data.csrf_token + '; SameSite=Lax; Path=/; Max-Age=86400';
+                }
                 window.location.href = '/dashboard';
             } catch (err) {
                 errorEl.textContent = err.message || 'An unexpected error occurred';

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Status of an edge node.
+/// Status of a managed device node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeStatus {
@@ -46,12 +46,15 @@ impl std::fmt::Display for NodeStatus {
     }
 }
 
-/// An edge node registered with the manager.
+/// A managed device node registered with the manager.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    /// Device type identifier (e.g., "edge", "relay"). Maps to a registered DeviceDriver.
+    #[serde(default = "default_device_type")]
+    pub device_type: String,
     pub registration_token: Option<String>,
     pub status: NodeStatus,
     pub last_seen_at: Option<DateTime<Utc>>,
@@ -62,11 +65,17 @@ pub struct Node {
     pub updated_at: DateTime<Utc>,
 }
 
+fn default_device_type() -> String {
+    "edge".to_string()
+}
+
 /// Request to create a new node.
 #[derive(Debug, Deserialize)]
 pub struct CreateNodeRequest {
     pub name: String,
     pub description: Option<String>,
+    /// Device type identifier. Defaults to "edge" if not provided.
+    pub device_type: Option<String>,
 }
 
 /// Request to update a node.

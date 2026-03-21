@@ -1,10 +1,55 @@
 use super::AiContext;
+use crate::drivers::DriverRegistry;
 
 /// Build the AI context with protocol documentation and schema.
+/// Uses the default edge protocol docs and schema.
 pub fn build_ai_context(node_info: Vec<super::NodeInfo>) -> AiContext {
     AiContext {
         protocol_docs: PROTOCOL_DOCS.to_string(),
         flow_config_schema: FLOW_CONFIG_SCHEMA.to_string(),
+        node_info,
+    }
+}
+
+/// Build AI context aggregated from all registered device drivers.
+/// Each driver contributes its own protocol docs and config schema.
+pub fn build_ai_context_from_drivers(
+    registry: &DriverRegistry,
+    node_info: Vec<super::NodeInfo>,
+) -> AiContext {
+    let mut protocol_docs = String::new();
+    let mut config_schema = String::new();
+
+    for driver in registry.all() {
+        if let Some(ctx) = driver.ai_context() {
+            protocol_docs.push_str(&format!(
+                "\n## {} ({})\n",
+                driver.display_name(),
+                driver.device_type()
+            ));
+            protocol_docs.push_str(&ctx.protocol_docs);
+            protocol_docs.push('\n');
+
+            config_schema.push_str(&format!(
+                "\n## {} config schema\n",
+                driver.display_name()
+            ));
+            config_schema.push_str(&ctx.config_schema);
+            config_schema.push('\n');
+        }
+    }
+
+    // Fall back to defaults if no drivers provided context
+    if protocol_docs.is_empty() {
+        protocol_docs = PROTOCOL_DOCS.to_string();
+    }
+    if config_schema.is_empty() {
+        config_schema = FLOW_CONFIG_SCHEMA.to_string();
+    }
+
+    AiContext {
+        protocol_docs,
+        flow_config_schema: config_schema,
         node_info,
     }
 }

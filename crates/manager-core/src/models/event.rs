@@ -29,7 +29,7 @@ impl EventSeverity {
     }
 }
 
-/// An event or alarm from an edge node.
+/// An event or alarm from a device node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: i64,

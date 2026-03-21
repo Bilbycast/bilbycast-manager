@@ -25,14 +25,32 @@ pub async fn generate_config(
     // Get the user's API key for this provider
     let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
 
-    // Build context with existing flows info
+    // Build context from device drivers (or fall back to defaults)
+    let (protocol_docs, config_schema) = {
+        let mut docs = String::new();
+        let mut schema = String::new();
+        for driver in state.driver_registry.all() {
+            if let Some(ctx) = driver.ai_context() {
+                docs.push_str(&ctx.protocol_docs);
+                schema.push_str(&ctx.config_schema);
+            }
+        }
+        if docs.is_empty() {
+            docs = manager_core::ai::config_gen::PROTOCOL_DOCS.to_string();
+        }
+        if schema.is_empty() {
+            schema = manager_core::ai::config_gen::FLOW_CONFIG_SCHEMA.to_string();
+        }
+        (docs, schema)
+    };
+
     let mut system_prompt = format!(
         "You are a bilbycast media streaming configuration assistant.\n\
          You generate valid JSON flow configurations for bilbycast-edge nodes.\n\n\
          {}\n\n\
          FlowConfig JSON schema:\n{}\n\n",
-        manager_core::ai::config_gen::PROTOCOL_DOCS,
-        manager_core::ai::config_gen::FLOW_CONFIG_SCHEMA,
+        protocol_docs,
+        config_schema,
     );
 
     if let Some(ref flows) = req.existing_flows {

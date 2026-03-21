@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Node Detail - bilbycast manager</title>
 <style>
@@ -168,6 +171,19 @@
     .main-wrapper { margin-left: 0; }
     .info-grid { grid-template-columns: 1fr; }
   }
+  .cert-warn-banner {
+    display: none;
+    background: linear-gradient(90deg, #92400e 0%, #b45309 50%, #92400e 100%);
+    color: #fef3c7;
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+        border-bottom: 2px solid #f59e0b;
+  }
+  .cert-warn-banner.visible { display: block; }
+  .cert-warn-banner a { color: #fde68a; text-decoration: underline; }
+
 </style>
 </head>
 <body>
@@ -215,6 +231,7 @@
 
 <!-- Main -->
 <div class="main-wrapper">
+<div class="cert-warn-banner" id="certWarnBanner">This server is using a self-signed TLS certificate. <a href="/admin/settings">Configure a proper certificate</a> for production use.</div>
   <div class="disconnect-banner" id="disconnectBanner">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     <span>Server connection lost &mdash; live data is not updating</span>
@@ -309,8 +326,13 @@
   'use strict';
 
   // ── Auth guard ──
-  var token = localStorage.getItem('token');
-  if (!token) { window.location.href = '/login'; return; }
+  function getCookie(name) {
+    var match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? match[1] : null;
+  }
+    fetch("/health").then(function(r){return r.json()}).then(function(d){if(d.self_signed_cert){var b=document.getElementById("certWarnBanner");if(b)b.classList.add("visible")}}).catch(function(){});
+
+  
 
   var $ = function(id) { return document.getElementById(id); };
   var pathParts = window.location.pathname.split('/');
@@ -320,7 +342,17 @@
   $('nodeId').textContent = 'ID: ' + nodeId;
 
   function authHeaders() {
-    return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    var h = { 'Content-Type': 'application/json' };
+    var csrf = getCookie('csrf_token');
+    if (csrf) h['X-CSRF-Token'] = csrf;
+    return h;
+  }
+
+  function apiFetch(url, opts) {
+    return fetch(url, opts).then(function(r) {
+      if (r.status === 401) { window.location.href = "/login"; }
+      return r;
+    });
   }
 
   // ── Formatters (exact match of edge dashboard) ──

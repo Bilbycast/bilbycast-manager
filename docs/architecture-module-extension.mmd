@@ -1,0 +1,53 @@
+---
+title: bilbycast-manager — Module Extension Pattern
+---
+graph LR
+    subgraph NewModule["Adding a New Network Module (e.g., Encoder)"]
+        direction TB
+
+        subgraph Step1["1. manager-core/src/models/"]
+            M1["encoder.rs<br/>- EncoderStatus enum<br/>- Encoder struct<br/>- CreateEncoderRequest<br/>- UpdateEncoderRequest"]
+        end
+
+        subgraph Step2["2. manager-core/src/db/"]
+            M2["encoder.rs<br/>- create_encoder()<br/>- get/list/update/delete<br/>- EncoderRow mapping"]
+        end
+
+        subgraph Step3["3. migrations/"]
+            M3["00N_encoders.sql<br/>- encoders table<br/>- indexes<br/>- FK to nodes if needed"]
+        end
+
+        subgraph Step4["4. manager-server/src/ws/"]
+            M4["encoder_hub.rs<br/>- EncoderHub struct<br/>- ConnectedEncoder<br/>- WS auth + message loop<br/>- Add to AppState"]
+        end
+
+        subgraph Step5["5. manager-server/src/api/"]
+            M5["encoders.rs<br/>- CRUD handlers<br/>- Command handlers<br/>- Register in api/mod.rs"]
+        end
+
+        subgraph Step6["6. models/ws_protocol.rs"]
+            M6["Add message types:<br/>- EncoderStatsPayload<br/>- EncoderCommandAction<br/>- EncoderHealthPayload"]
+        end
+
+        subgraph Step7["7. manager-ui/src/"]
+            M7["pages/encoders.rs<br/>components/encoder_card.rs<br/>Route in app.rs"]
+        end
+
+        subgraph Step8["8. manager-core/src/export.rs"]
+            M8["Add encoders to<br/>ExportData struct"]
+        end
+
+        Step1 --> Step2 --> Step3 --> Step4 --> Step5 --> Step6 --> Step7 --> Step8
+    end
+
+    classDef model fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#93c5fd
+    classDef db fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+    classDef ws fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#fcd34d
+    classDef api fill:#1e293b,stroke:#8b5cf6,stroke-width:2px,color:#c4b5fd
+    classDef ui fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#f9a8d4
+
+    class Step1,M1,Step6,M6 model
+    class Step2,M2,Step3,M3,Step8,M8 db
+    class Step4,M4 ws
+    class Step5,M5 api
+    class Step7,M7 ui

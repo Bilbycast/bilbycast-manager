@@ -1,0 +1,165 @@
+---
+title: bilbycast-manager — System Architecture
+---
+graph TB
+    subgraph External["External Clients"]
+        Browser["Browser<br/>(Dashboard/Admin UI)"]
+        EdgeNode1["Edge Node 1<br/>(bilbycast-edge)"]
+        EdgeNode2["Edge Node 2<br/>(bilbycast-edge)"]
+        EdgeNodeN["Edge Node N<br/>(bilbycast-edge)"]
+        FutureModule["Future Module<br/>(relay/encoder/probe)"]
+    end
+
+    subgraph Server["bilbycast-manager (Axum Server)"]
+
+        subgraph Middleware["Middleware Layer"]
+            CORS["CORS"]
+            Trace["Tracing"]
+            AuthMW["Auth Middleware<br/>(JWT Validation)"]
+            RateLimit["Rate Limiter<br/>(per-IP, DashMap)"]
+        end
+
+        subgraph Routes["Router"]
+            PublicAPI["Public API<br/>/api/v1/auth/login<br/>/health"]
+            AuthAPI["Authenticated API<br/>/api/v1/*"]
+            WSEP["WebSocket Endpoints<br/>/ws/node<br/>/ws/dashboard"]
+            UIRoutes["UI Routes<br/>/ /dashboard /topology<br/>/nodes /events /admin /ai"]
+        end
+
+        subgraph APIHandlers["API Handler Groups"]
+            AuthH["auth<br/>(login/logout)"]
+            UsersH["users<br/>(CRUD)"]
+            NodesH["nodes<br/>(CRUD + commands<br/>+ flow proxy)"]
+            EventsH["events<br/>(query/ack)"]
+            SettingsH["settings<br/>(get/update)"]
+            TunnelsH["tunnels<br/>(CRUD)"]
+            AIH["ai<br/>(generate/analyze<br/>/query/keys)"]
+            ExportH["export<br/>(backup/restore)"]
+            FutureH["future_module<br/>(extensible)"]
+        end
+
+        subgraph WSHubs["WebSocket Hubs"]
+            NodeHub["NodeHub<br/>(DashMap connections<br/>+ mpsc channels<br/>+ auth limiter)"]
+            BrowserWS["Browser Broadcast<br/>(broadcast::channel)"]
+            FutureHub["Future Module Hub<br/>(extensible)"]
+        end
+
+        AppState["AppState<br/>(db, node_hub, jwt_secret,<br/>master_key, browser_tx, config)"]
+    end
+
+    subgraph Core["manager-core (Business Logic)"]
+        subgraph Models["Domain Models"]
+            UserM["User / UserRole<br/>(RBAC 4-level)"]
+            NodeM["Node / NodeStatus<br/>NodeConnection"]
+            FlowM["FlowConfig<br/>InputConfig / OutputConfig"]
+            EventM["Event / EventQuery<br/>AuditEntry"]
+            TunnelM["Tunnel / TunnelMode<br/>TunnelProtocol"]
+            SettingsM["SystemSettings<br/>AiKeyEntry"]
+            WSProto["WsEnvelope<br/>CommandAction<br/>RegisterPayload<br/>StatsPayload"]
+            FutureM["Future Module Models<br/>(extensible)"]
+        end
+
+        subgraph DB["Database Layer (SQLx)"]
+            DBUsers["db::users"]
+            DBNodes["db::nodes"]
+            DBEvents["db::events"]
+            DBTunnels["db::tunnels"]
+            DBSettings["db::settings"]
+            DBAudit["db::audit"]
+            DBFuture["db::future_module<br/>(extensible)"]
+        end
+
+        subgraph Auth["Auth Module"]
+            Password["password.rs<br/>(Argon2id)"]
+            JWT["jwt.rs<br/>(HMAC-SHA256)"]
+            RBAC["rbac.rs<br/>(role hierarchy)"]
+            CSRF["csrf.rs<br/>(token gen/verify)"]
+        end
+
+        subgraph Crypto["Crypto"]
+            AES["AES-256-GCM<br/>encrypt/decrypt"]
+            HKDF["HKDF-SHA256<br/>key derivation"]
+        end
+
+        subgraph AI["AI Providers"]
+            AiTrait["AiProviderTrait"]
+            OpenAI["OpenAI"]
+            Anthropic["Anthropic"]
+            Gemini["Gemini"]
+            FutureAI["Future Provider<br/>(extensible)"]
+        end
+
+        Export["export.rs<br/>(data backup/restore)"]
+    end
+
+    subgraph DataStore["Data Store"]
+        SQLite[("SQLite Database<br/>13 tables<br/>+ migrations")]
+    end
+
+    subgraph AIServices["External AI Services"]
+        OpenAIAPI["OpenAI API"]
+        AnthropicAPI["Anthropic API"]
+        GeminiAPI["Gemini API"]
+    end
+
+    %% Browser connections
+    Browser -->|"HTTPS"| UIRoutes
+    Browser -->|"HTTPS + JWT"| AuthAPI
+    Browser -->|"WSS"| BrowserWS
+
+    %% Edge node connections
+    EdgeNode1 -->|"WSS<br/>(register/auth → stats/health/events)"| NodeHub
+    EdgeNode2 -->|"WSS"| NodeHub
+    EdgeNodeN -->|"WSS"| NodeHub
+    FutureModule -.->|"WSS or HTTPS<br/>(future)"| FutureHub
+
+    %% Middleware flow
+    PublicAPI --> AuthH
+    AuthAPI --> AuthMW
+    AuthMW --> APIHandlers
+
+    %% API to handlers
+    AuthH --> Auth
+    UsersH --> DBUsers
+    NodesH --> DBNodes
+    NodesH --> NodeHub
+    EventsH --> DBEvents
+    SettingsH --> DBSettings
+    TunnelsH --> DBTunnels
+    AIH --> AI
+    AIH --> Crypto
+    ExportH --> Export
+    FutureH -.-> DBFuture
+
+    %% WebSocket hubs
+    NodeHub -->|"cache stats/config"| AppState
+    NodeHub -->|"broadcast"| BrowserWS
+    NodeHub --> DBNodes
+    NodeHub --> DBEvents
+    NodeHub --> Crypto
+
+    %% Core to DB
+    DB --> SQLite
+    Export --> DB
+
+    %% AI to external
+    OpenAI --> OpenAIAPI
+    Anthropic --> AnthropicAPI
+    Gemini --> GeminiAPI
+    AiTrait --> OpenAI
+    AiTrait --> Anthropic
+    AiTrait --> Gemini
+    AiTrait -.-> FutureAI
+
+    %% Styling
+    classDef future fill:#1e293b,stroke:#7c3aed,stroke-width:2px,stroke-dasharray: 5 5,color:#c4b5fd
+    classDef security fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#fcd34d
+    classDef core fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#93c5fd
+    classDef external fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#cbd5e1
+    classDef data fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+
+    class FutureModule,FutureHub,FutureH,FutureM,DBFuture,FutureAI future
+    class AuthMW,RateLimit,Password,JWT,RBAC,CSRF,AES,HKDF,Crypto,Auth security
+    class AppState,NodeHub,BrowserWS core
+    class SQLite data
+    class Browser,EdgeNode1,EdgeNode2,EdgeNodeN,OpenAIAPI,AnthropicAPI,GeminiAPI external

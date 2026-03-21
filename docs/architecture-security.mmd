@@ -1,0 +1,94 @@
+---
+title: bilbycast-manager — Security & Data Flow
+---
+graph TB
+    subgraph TrustBoundary1["Trust Boundary: External Network"]
+        Browser["Browser Client"]
+        Node["Edge Node"]
+        AIExt["AI Provider API"]
+    end
+
+    subgraph TrustBoundary2["Trust Boundary: TLS Termination"]
+        TLS["TLS 1.3<br/>(optional feature flag)"]
+    end
+
+    subgraph TrustBoundary3["Trust Boundary: Authentication"]
+        direction TB
+
+        subgraph HTTPAuth["HTTP Authentication"]
+            Login["POST /api/v1/auth/login<br/>(username + password)"]
+            ArgonVerify["Argon2id verify"]
+            JWTIssue["JWT issue<br/>(HMAC-SHA256, 24h TTL)"]
+            JWTValidate["JWT validate<br/>(every authenticated request)"]
+        end
+
+        subgraph WSAuth["WebSocket Authentication"]
+            NodeRegister["Node Registration<br/>(one-time token)"]
+            NodeReconnect["Node Reconnection<br/>(node_id + encrypted secret)"]
+            AuthLimiter["Auth Rate Limiter<br/>(5 failures / 60s)"]
+        end
+    end
+
+    subgraph TrustBoundary4["Trust Boundary: Authorization"]
+        RBACCheck["RBAC Check<br/>Viewer < Operator < Admin < SuperAdmin"]
+        NodeAccess["Node Access Control<br/>(per-user allowed_node_ids)"]
+    end
+
+    subgraph TrustBoundary5["Trust Boundary: Data at Rest"]
+        direction TB
+
+        subgraph Encrypted["Encrypted Fields (AES-256-GCM)"]
+            NodeSecret["auth_client_secret_enc<br/>(node credentials)"]
+            AIKey["api_key_enc<br/>(AI provider keys)"]
+            TunnelPSK["tunnel_psk_enc<br/>(tunnel pre-shared keys)"]
+        end
+
+        subgraph Hashed["Hashed Fields (Argon2id)"]
+            PwHash["password_hash<br/>(user passwords)"]
+        end
+
+        subgraph Plaintext["Plaintext Fields"]
+            Config["settings, events,<br/>audit_log, flows"]
+        end
+
+        KeyDeriv["HKDF-SHA256<br/>BILBYCAST_MASTER_KEY<br/>→ AES-256-GCM key"]
+
+        SQLite[("SQLite<br/>Database")]
+    end
+
+    %% Flows
+    Browser -->|"HTTPS"| TLS
+    Node -->|"WSS"| TLS
+
+    TLS --> Login
+    TLS --> JWTValidate
+    TLS --> NodeRegister
+    TLS --> NodeReconnect
+
+    Login --> ArgonVerify --> JWTIssue
+    JWTValidate --> RBACCheck --> NodeAccess
+
+    NodeRegister --> AuthLimiter
+    NodeReconnect --> AuthLimiter
+
+    RBACCheck -->|"authorized"| Config
+    NodeAccess -->|"authorized"| Config
+
+    KeyDeriv --> Encrypted
+    Encrypted --> SQLite
+    Hashed --> SQLite
+    Plaintext --> SQLite
+
+    AIKey -->|"decrypt per-request"| AIExt
+
+    classDef boundary fill:none,stroke:#ef4444,stroke-width:2px,stroke-dasharray: 5 5
+    classDef encrypted fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#fcd34d
+    classDef hashed fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#6ee7b7
+    classDef auth fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#93c5fd
+    classDef external fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#cbd5e1
+
+    class TrustBoundary1,TrustBoundary2,TrustBoundary3,TrustBoundary4,TrustBoundary5 boundary
+    class NodeSecret,AIKey,TunnelPSK,KeyDeriv encrypted
+    class PwHash hashed
+    class Login,ArgonVerify,JWTIssue,JWTValidate,NodeRegister,NodeReconnect,AuthLimiter,RBACCheck,NodeAccess auth
+    class Browser,Node,AIExt external

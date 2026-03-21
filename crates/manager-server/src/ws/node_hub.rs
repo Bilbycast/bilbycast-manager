@@ -83,10 +83,11 @@ impl NodeAuthLimiter {
 // Connected node state
 // ───────────────────────────────────────────────────────
 
-/// State for a connected edge node.
+/// State for a connected device node.
 struct ConnectedNode {
     node_id: String,
     node_name: String,
+    device_type: String,
     command_tx: mpsc::Sender<String>,
     cached_config: Option<serde_json::Value>,
     cached_stats: Option<serde_json::Value>,
@@ -99,7 +100,7 @@ struct ConnectedNode {
 // NodeHub
 // ───────────────────────────────────────────────────────
 
-/// Hub managing all edge node WebSocket connections.
+/// Hub managing all device node WebSocket connections.
 pub struct NodeHub {
     connections: DashMap<String, ConnectedNode>,
     browser_tx: broadcast::Sender<String>,
@@ -160,6 +161,28 @@ impl NodeHub {
             .and_then(|c| c.cached_config.clone())
     }
 
+    /// Request config from a connected node and wait for the response.
+    /// Sends a GetConfig command and polls for the cached config_response
+    /// for up to `timeout_ms` milliseconds.
+    pub async fn request_config(&self, node_id: &str) -> Result<Option<serde_json::Value>, String> {
+        // If config is already cached, return it immediately
+        if let Some(config) = self.get_cached_config(node_id).await {
+            return Ok(Some(config));
+        }
+
+        // Send GetConfig command
+        self.send_command(node_id, serde_json::json!({"type": "get_config"})).await?;
+
+        // Poll for up to 3 seconds for the config_response to arrive
+        for _ in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if let Some(config) = self.get_cached_config(node_id).await {
+                return Ok(Some(config));
+            }
+        }
+        Ok(None)
+    }
+
     /// Disconnect a node.
     pub async fn disconnect_node(&self, node_id: &str) {
         if let Some((_, conn)) = self.connections.remove(node_id) {
@@ -173,20 +196,39 @@ impl NodeHub {
     }
 
     /// Broadcast aggregated stats to browser clients.
-    fn broadcast_to_browsers(&self) {
+    /// Uses device drivers to extract metrics when available.
+    fn broadcast_to_browsers(
+        &self,
+        driver_registry: Option<&manager_core::drivers::DriverRegistry>,
+    ) {
         let mut nodes = Vec::new();
         for entry in self.connections.iter() {
             let node = entry.value();
             let uptime_secs = (Utc::now() - node.connected_at).num_seconds().max(0) as u64;
-            nodes.push(serde_json::json!({
+
+            let mut node_json = serde_json::json!({
                 "node_id": node.node_id,
                 "name": node.node_name,
+                "device_type": node.device_type,
                 "status": "online",
                 "stats": node.cached_stats,
                 "health": node.cached_health,
                 "software_version": node.software_version,
                 "uptime_secs": uptime_secs,
-            }));
+            });
+
+            // Extract driver-specific metrics if a driver is registered
+            if let Some(registry) = driver_registry {
+                if let Some(driver) = registry.get(&node.device_type) {
+                    let empty = serde_json::Value::Null;
+                    let stats = node.cached_stats.as_ref().unwrap_or(&empty);
+                    let metrics = driver.extract_metrics(stats);
+                    node_json["driver_metrics"] = serde_json::to_value(&metrics)
+                        .unwrap_or(serde_json::Value::Null);
+                }
+            }
+
+            nodes.push(node_json);
         }
 
         let update = serde_json::json!({
@@ -203,7 +245,7 @@ impl NodeHub {
 // WebSocket handler
 // ───────────────────────────────────────────────────────
 
-/// WebSocket handler for edge node connections.
+/// WebSocket handler for device node connections.
 /// Credentials are NOT in query params — the node sends an "auth" message
 /// as the first WebSocket frame after connecting.
 pub async fn node_ws_handler(
@@ -258,7 +300,7 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
     // Clear any failure tracking on successful auth
     state.node_hub.auth_limiter.clear(&node_id);
 
-    tracing::info!("Edge node {node_id} connected");
+    tracing::info!("Node {node_id} connected");
 
     // Update node status
     let _ =
@@ -276,11 +318,11 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
     )
     .await;
 
-    // Get node name
-    let node_name = manager_core::db::nodes::get_node_by_id(&state.db, &node_id)
+    // Get node name and device type
+    let (node_name, device_type) = manager_core::db::nodes::get_node_by_id(&state.db, &node_id)
         .await
-        .map(|n| n.name)
-        .unwrap_or_else(|_| node_id.clone());
+        .map(|n| (n.name, n.device_type))
+        .unwrap_or_else(|_| (node_id.clone(), "edge".to_string()));
 
     // Create command channel
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<String>(64);
@@ -291,6 +333,7 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
         ConnectedNode {
             node_id: node_id.clone(),
             node_name,
+            device_type,
             command_tx: cmd_tx,
             cached_config: None,
             cached_stats: None,
@@ -330,7 +373,7 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
     }
 
     // Cleanup on disconnect
-    tracing::info!("Edge node {node_id} disconnected");
+    tracing::info!("Node {node_id} disconnected");
     state.node_hub.connections.remove(&node_id);
 
     let _ =
@@ -483,7 +526,7 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
             if let Some(mut conn) = state.node_hub.connections.get_mut(node_id) {
                 conn.cached_stats = Some(envelope.payload.clone());
             }
-            state.node_hub.broadcast_to_browsers();
+            state.node_hub.broadcast_to_browsers(Some(&state.driver_registry));
         }
         "health" => {
             let version = envelope.payload["version"].as_str().map(String::from);
@@ -500,7 +543,7 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
                 version.as_deref(),
             )
             .await;
-            state.node_hub.broadcast_to_browsers();
+            state.node_hub.broadcast_to_browsers(Some(&state.driver_registry));
         }
         "event" => {
             let severity = envelope.payload["severity"]

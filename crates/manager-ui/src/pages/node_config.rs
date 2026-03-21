@@ -1,13 +1,29 @@
 use leptos::prelude::*;
 
-/// Node configuration page with flow editor.
+/// Node configuration page with config editor, flow management, and AI assistant.
 #[component]
 pub fn NodeConfigPage() -> impl IntoView {
     view! {
         <div>
             <div class="mb-6">
                 <h2 class="text-2xl font-bold text-white">"Node Configuration"</h2>
-                <p class="text-sm text-slate-400 mt-1">"Configure flows and services on this node"</p>
+                <p class="text-sm text-slate-400 mt-1">"View and edit node configuration, manage flows"</p>
+            </div>
+
+            // Full config editor
+            <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-white">"Node Configuration"</h3>
+                    <div class="flex space-x-2">
+                        <button class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-lg transition-colors">
+                            "Refresh"
+                        </button>
+                        <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                            "Save Configuration"
+                        </button>
+                    </div>
+                </div>
+                <p class="text-slate-400 text-sm">"Loading configuration from node..."</p>
             </div>
 
             // Flow list
@@ -19,6 +35,17 @@ pub fn NodeConfigPage() -> impl IntoView {
                     </button>
                 </div>
                 <p class="text-slate-400 text-sm">"No flows configured. Create a new flow to get started."</p>
+            </div>
+
+            // IP Tunnels
+            <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-white">"IP Tunnels"</h3>
+                    <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors">
+                        "New Tunnel"
+                    </button>
+                </div>
+                <p class="text-slate-400 text-sm">"No tunnels configured. Create a TCP/UDP tunnel between nodes."</p>
             </div>
 
             // AI config generation

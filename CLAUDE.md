@@ -81,12 +81,17 @@ HTTP Request → CorsLayer → TraceLayer → Router
 
 ### Authentication & Authorization
 
-- **Password hashing:** Argon2id (`manager-core/src/auth/password.rs`)
-- **Sessions:** JWT with HMAC-SHA256, claims include `sub` (user_id), `role`, `jti` (session_id) (`auth/jwt.rs`)
+- **Password hashing:** Argon2id (`manager-core/src/auth/password.rs`), with timing-safe login (dummy hash on unknown users prevents username enumeration)
+- **Sessions:** JWT with HMAC-SHA256, delivered as `httpOnly; Secure; SameSite=Strict` cookie. Claims include `sub` (user_id), `role`, `jti` (session_id) (`auth/jwt.rs`)
+- **Session revocation:** Logout adds `jti` to `revoked_sessions` SQLite table; middleware rejects revoked tokens (`db/sessions.rs`)
+- **Login rate limiting:** 5 attempts per 60s per IP, returns HTTP 429 when exceeded (`middleware/rate_limit.rs`)
 - **RBAC:** 4-level hierarchy — Viewer(0) < Operator(1) < Admin(2) < SuperAdmin(3). Checked via `UserRole::has_permission(minimum_role)` (`auth/rbac.rs`)
 - **Node-level access:** `AuthUser.allowed_node_ids` — `None` means all nodes, `Some(vec)` restricts to listed node IDs
-- **Middleware:** `manager-server/src/middleware/auth.rs` — extracts and validates JWT, loads user from DB
-- **CSRF:** Random 128-bit tokens with constant-time comparison (`auth/csrf.rs`)
+- **Middleware:** `manager-server/src/middleware/auth.rs` — extracts JWT from cookie (primary) or Authorization header (fallback), validates, checks revocation, enforces CSRF on mutating requests
+- **CSRF:** Double-submit cookie pattern. Login sets non-httpOnly `csrf_token` cookie; middleware validates `X-CSRF-Token` header matches cookie on POST/PUT/PATCH/DELETE. Constant-time comparison (`auth/csrf.rs`)
+- **CORS:** Restricted to same-origin only; cross-origin API requests are blocked
+- **TLS:** Mandatory — server requires `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY` to start. Edge and relay clients enforce `wss://` URLs. Self-signed certs are detected at startup; all UI pages show a warning banner when using self-signed certs. Certs can be uploaded via `POST /api/v1/settings/tls/upload` or the Settings page
+- **Self-signed cert acceptance:** Edge/relay clients support `accept_self_signed_cert: true` in their manager config for dev/testing (disables cert validation)
 
 ### WebSocket Architecture
 
@@ -171,10 +176,12 @@ Required:
 - `BILBYCAST_JWT_SECRET` — 64-char hex string (32 bytes), validated on startup (rejects weak/short values)
 - `BILBYCAST_MASTER_KEY` — 64-char hex string (32 bytes), validated on startup
 
+Required:
+- `BILBYCAST_TLS_CERT` / `BILBYCAST_TLS_KEY` — TLS certificate and key paths (server will not start without TLS)
+
 Optional:
 - `BILBYCAST_PORT` — Override listen port (default: 8443)
 - `BILBYCAST_DATABASE_URL` — Override SQLite path (default: `sqlite:bilbycast-manager.db?mode=rwc`)
-- `BILBYCAST_TLS_CERT` / `BILBYCAST_TLS_KEY` — TLS certificate and key paths (requires `tls` feature)
 
 See `.env.example` for a template.
 

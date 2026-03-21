@@ -34,14 +34,19 @@ Centralized monitoring and management server for bilbycast-edge nodes. Provides 
    ./target/release/bilbycast-manager serve --config config/default.toml
    ```
 
-7. **Open browser** at `http://localhost:8443` and log in with the admin credentials created during setup.
-
-8. **Register edge nodes**: Navigate to the Dashboard, create a new node entry via the API, and use the generated registration token to connect edge nodes.
-
-9. **Optional -- Enable TLS for production**: Set `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY` environment variables pointing to your PEM certificate and key files, then rebuild with:
+7. **Generate TLS certificates** (required -- the server will not start without TLS):
    ```bash
-   cargo build --release --features tls
+   # For development/testing, generate a self-signed certificate:
+   openssl req -x509 -newkey rsa:4096 -keyout certs/server.key -out certs/server.crt \
+     -days 365 -nodes -subj '/CN=localhost'
+   echo "BILBYCAST_TLS_CERT=certs/server.crt" >> .env
+   echo "BILBYCAST_TLS_KEY=certs/server.key" >> .env
    ```
+   For production, use certificates from a trusted CA.
+
+8. **Open browser** at `https://localhost:8443` and log in with the admin credentials created during setup.
+
+9. **Register edge nodes**: Navigate to the Dashboard, create a new node entry via the API, and use the generated registration token to connect edge nodes. Edge and relay nodes must use `wss://` URLs to connect.
 
 ## CLI Reference
 

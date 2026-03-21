@@ -1,8 +1,17 @@
-use axum::response::Html;
+use axum::http::header;
+use axum::response::{Html, IntoResponse};
 use axum::routing::get;
 use axum::Router;
 
 use crate::app_state::AppState;
+
+/// Serve HTML with no-cache headers to prevent stale JS after updates.
+fn html_no_cache(content: &'static str) -> impl IntoResponse {
+    (
+        [(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")],
+        Html(content),
+    )
+}
 
 /// Build routes that serve the embedded web UI.
 pub fn build_ui_router() -> Router<AppState> {
@@ -20,48 +29,48 @@ pub fn build_ui_router() -> Router<AppState> {
         .route("/nodes/{node_id}/config", get(node_config_page))
 }
 
-async fn index_page() -> Html<&'static str> {
-    Html(SHELL_REDIRECT_DASHBOARD)
+async fn index_page() -> impl IntoResponse {
+    html_no_cache(SHELL_REDIRECT_DASHBOARD)
 }
 
-async fn login_page() -> Html<&'static str> {
-    Html(LOGIN_HTML)
+async fn login_page() -> impl IntoResponse {
+    html_no_cache(LOGIN_HTML)
 }
 
-async fn dashboard_page() -> Html<&'static str> {
-    Html(DASHBOARD_HTML)
+async fn dashboard_page() -> impl IntoResponse {
+    html_no_cache(DASHBOARD_HTML)
 }
 
-async fn topology_page() -> Html<&'static str> {
-    Html(TOPOLOGY_HTML)
+async fn topology_page() -> impl IntoResponse {
+    html_no_cache(TOPOLOGY_HTML)
 }
 
-async fn events_page() -> Html<&'static str> {
-    Html(EVENTS_HTML)
+async fn events_page() -> impl IntoResponse {
+    html_no_cache(EVENTS_HTML)
 }
 
-async fn users_page() -> Html<&'static str> {
-    Html(USERS_HTML)
+async fn users_page() -> impl IntoResponse {
+    html_no_cache(USERS_HTML)
 }
 
-async fn settings_page() -> Html<&'static str> {
-    Html(SETTINGS_HTML)
+async fn settings_page() -> impl IntoResponse {
+    html_no_cache(SETTINGS_HTML)
 }
 
-async fn ai_assistant_page() -> Html<&'static str> {
-    Html(AI_ASSISTANT_HTML)
+async fn ai_assistant_page() -> impl IntoResponse {
+    html_no_cache(AI_ASSISTANT_HTML)
 }
 
-async fn ai_settings_page() -> Html<&'static str> {
-    Html(AI_SETTINGS_HTML)
+async fn ai_settings_page() -> impl IntoResponse {
+    html_no_cache(AI_SETTINGS_HTML)
 }
 
-async fn node_detail_page() -> Html<&'static str> {
-    Html(NODE_DETAIL_HTML)
+async fn node_detail_page() -> impl IntoResponse {
+    html_no_cache(NODE_DETAIL_HTML)
 }
 
-async fn node_config_page() -> Html<&'static str> {
-    Html(NODE_CONFIG_HTML)
+async fn node_config_page() -> impl IntoResponse {
+    html_no_cache(NODE_CONFIG_HTML)
 }
 
 const SHELL_REDIRECT_DASHBOARD: &str = r#"<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=/dashboard"></head><body></body></html>"#;

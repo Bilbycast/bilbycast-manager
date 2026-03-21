@@ -10,15 +10,18 @@ pub async fn create_node(pool: &SqlitePool, req: &CreateNodeRequest) -> Result<N
     let registration_token = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
 
+    let device_type = req.device_type.as_deref().unwrap_or("edge");
+
     sqlx::query(
         r#"
-        INSERT INTO nodes (id, name, description, registration_token, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+        INSERT INTO nodes (id, name, description, device_type, registration_token, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
         "#,
     )
     .bind(&id)
     .bind(&req.name)
     .bind(&req.description)
+    .bind(device_type)
     .bind(&registration_token)
     .bind(&now)
     .bind(&now)
@@ -203,6 +206,7 @@ struct NodeRow {
     id: String,
     name: String,
     description: Option<String>,
+    device_type: String,
     registration_token: Option<String>,
     #[allow(dead_code)]
     auth_client_id: Option<String>,
@@ -223,6 +227,7 @@ impl NodeRow {
             id: self.id,
             name: self.name,
             description: self.description,
+            device_type: self.device_type,
             registration_token: self.registration_token,
             status: NodeStatus::from_str(&self.status).unwrap_or(NodeStatus::Pending),
             last_seen_at: self

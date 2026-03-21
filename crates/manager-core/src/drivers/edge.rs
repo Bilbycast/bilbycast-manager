@@ -42,6 +42,7 @@ impl DeviceDriver for EdgeDriver {
 
     fn extract_metrics(&self, stats: &serde_json::Value) -> DeviceMetricsSummary {
         let flows = stats.get("flows").and_then(|f| f.as_array());
+        let tunnels = stats.get("tunnels").and_then(|t| t.as_array());
 
         let total_flows = flows.map(|f| f.len() as u64).unwrap_or(0);
         let active_flows = flows
@@ -57,7 +58,7 @@ impl DeviceDriver for EdgeDriver {
             })
             .unwrap_or(0);
 
-        let total_bitrate: u64 = flows
+        let flow_bitrate: u64 = flows
             .map(|f| {
                 f.iter()
                     .filter_map(|flow| {
@@ -69,17 +70,55 @@ impl DeviceDriver for EdgeDriver {
             })
             .unwrap_or(0);
 
+        // Extract tunnel metrics
+        let total_tunnels = tunnels.map(|t| t.len() as u64).unwrap_or(0);
+        let active_tunnels = tunnels
+            .map(|t| {
+                t.iter()
+                    .filter(|tun| {
+                        tun.get("state")
+                            .and_then(|s| s.as_str())
+                            .map(|s| s == "ready")
+                            .unwrap_or(false)
+                    })
+                    .count() as u64
+            })
+            .unwrap_or(0);
+
+        let tunnel_bitrate: u64 = tunnels
+            .map(|t| {
+                t.iter()
+                    .filter_map(|tun| {
+                        let stats = tun.get("stats")?;
+                        let in_bps = stats.get("bitrate_in_bps").and_then(|b| b.as_u64()).unwrap_or(0);
+                        let out_bps = stats.get("bitrate_out_bps").and_then(|b| b.as_u64()).unwrap_or(0);
+                        Some(in_bps.max(out_bps))
+                    })
+                    .sum()
+            })
+            .unwrap_or(0);
+
+        let total_bitrate = flow_bitrate + tunnel_bitrate;
+
+        // Combine flows and tunnels into items
+        let mut items = flows.cloned().unwrap_or_default();
+        if let Some(tunnel_items) = tunnels {
+            items.extend(tunnel_items.iter().cloned());
+        }
+
         DeviceMetricsSummary {
             metrics: vec![
                 ("active_flows".into(), serde_json::json!(active_flows)),
                 ("total_flows".into(), serde_json::json!(total_flows)),
+                ("active_tunnels".into(), serde_json::json!(active_tunnels)),
+                ("total_tunnels".into(), serde_json::json!(total_tunnels)),
                 ("total_bitrate_bps".into(), serde_json::json!(total_bitrate)),
                 (
                     "uptime_secs".into(),
                     serde_json::json!(stats.get("uptime_secs").and_then(|u| u.as_u64()).unwrap_or(0)),
                 ),
             ],
-            items: flows.cloned().unwrap_or_default(),
+            items,
         }
     }
 

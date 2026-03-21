@@ -87,6 +87,24 @@ After successful login, the server issues a JWT containing:
 
 Tokens are signed with HMAC-SHA256 using `BILBYCAST_JWT_SECRET`. The issuer is validated on decode.
 
+### Session Token Storage
+
+The JWT is delivered as an **httpOnly Secure SameSite=Strict** cookie (`session`), not in the JSON response body. This prevents JavaScript from accessing the token, mitigating XSS-based token theft.
+
+A separate non-httpOnly `csrf_token` cookie is set alongside it for CSRF protection (see below).
+
+### Session Revocation
+
+Logout invalidates the session server-side by adding the JWT's `jti` to the `revoked_sessions` table in SQLite. The auth middleware checks this table on every authenticated request, rejecting revoked tokens even if they have not yet expired. Expired revocation entries are periodically cleaned up.
+
+### Login Rate Limiting
+
+Login attempts are rate-limited per client IP address:
+
+- **Threshold**: 5 attempts within a 60-second window
+- **Response**: HTTP 429 Too Many Requests when exceeded
+- **Recovery**: The window resets after 60 seconds
+
 ### Role-Based Access Control (RBAC)
 
 Four roles are defined, in ascending privilege order:
@@ -107,6 +125,12 @@ Users can be marked as temporary with an `expires_at` timestamp. Expired account
 ### CSRF Protection
 
 CSRF tokens are generated as 32-character hex strings (128 bits of randomness). Verification uses constant-time comparison to prevent timing attacks.
+
+At login, a CSRF token is set as a non-httpOnly `csrf_token` cookie (so JavaScript can read it). For all state-changing requests (POST, PUT, PATCH, DELETE) to authenticated endpoints, the auth middleware requires an `X-CSRF-Token` header whose value matches the `csrf_token` cookie. This double-submit cookie pattern, combined with the `SameSite=Strict` attribute, prevents cross-site request forgery.
+
+### Username Enumeration Protection
+
+The login endpoint always runs an Argon2id verification (against a dummy hash when the user doesn't exist) to equalize response timing, preventing attackers from discovering valid usernames via timing differences.
 
 ---
 
@@ -143,13 +167,7 @@ Node secrets are encrypted with AES-256-GCM before storage in the database. The 
 
 ### TLS (HTTPS/WSS)
 
-TLS is optional and requires building with the `tls` feature:
-
-```bash
-cargo build --release --features tls
-```
-
-Configure via environment variables or `config/default.toml`:
+TLS is **mandatory**. The server requires a TLS certificate and private key to start. Configure via environment variables or config file:
 
 ```bash
 BILBYCAST_TLS_CERT=/path/to/cert.pem
@@ -164,19 +182,43 @@ cert_path = "certs/server.crt"
 key_path = "certs/server.key"
 ```
 
-TLS is provided by **rustls** (a pure-Rust TLS implementation).
+TLS is provided by **rustls** (a pure-Rust TLS implementation). The server will refuse to start without valid TLS configuration.
 
-### Without TLS
+### Self-Signed Certificate Detection
 
-When TLS is not configured, the server runs in plaintext HTTP/WS mode. A warning is logged at startup:
+At startup, the manager parses the TLS certificate and detects whether it is self-signed (issuer == subject). If so:
 
-> TLS not configured -- running in plaintext HTTP/WS mode.
+- A warning is logged at startup
+- The `/health` endpoint includes `"self_signed_cert": true`
+- All UI pages display an amber warning banner linking to the Settings page
+- The Settings page shows the certificate status with a "Self-Signed" badge
 
-This is acceptable for development but **not recommended for production**, especially when edge nodes transmit credentials over the network.
+### Certificate Management
 
-### Edge Node Connections
+TLS certificates can be managed via the Settings page or API:
 
-In production, edge nodes should connect using `wss://` URLs to ensure credentials are encrypted in transit.
+- **`GET /api/v1/settings/tls`** -- Returns current certificate info (subject, issuer, path, self-signed status)
+- **`POST /api/v1/settings/tls/upload`** -- Accepts new cert + key PEM content, validates, and writes to the configured cert/key paths. A server restart is required to apply the new certificate.
+
+The Settings page also includes a placeholder for Let's Encrypt (ACME) certificate automation, which requires port 80 to be accessible from the internet.
+
+### Edge and Relay Node Connections
+
+Edge and relay nodes **must** connect using `wss://` URLs. Both clients enforce this at connection time and reject plaintext `ws://` URLs with a clear error message. This ensures all credentials and stats data are encrypted in transit.
+
+### Self-Signed Certificate Acceptance (Development)
+
+Edge and relay nodes can be configured to accept self-signed TLS certificates from the manager by setting `accept_self_signed_cert: true` in the `manager` section of their config files. This should **only** be used for development and testing -- it disables TLS certificate validation, making the connection vulnerable to MITM attacks.
+
+```json
+{
+  "manager": {
+    "enabled": true,
+    "url": "wss://manager-host:8443/ws/node",
+    "accept_self_signed_cert": true
+  }
+}
+```
 
 ---
 
@@ -184,14 +226,18 @@ In production, edge nodes should connect using `wss://` URLs to ensure credentia
 
 ### Authentication Requirements
 
-All API endpoints require a valid JWT Bearer token in the `Authorization` header, with two exceptions:
+All authenticated API endpoints require a valid JWT session cookie. The JWT is automatically sent by the browser as an httpOnly cookie. API clients may alternatively use an `Authorization: Bearer <token>` header.
 
-- `POST /api/v1/auth/login` -- used to obtain a token
-- `GET /health` -- unauthenticated health check
+State-changing requests (POST, PUT, PATCH, DELETE) also require a valid `X-CSRF-Token` header matching the `csrf_token` cookie.
+
+Unauthenticated endpoints:
+
+- `POST /api/v1/auth/login` -- obtain a session (rate-limited: 5 attempts/60s per IP)
+- `GET /health` -- health check
 
 ### CORS
 
-CORS is configured via `tower_http::cors::CorsLayer`. The current configuration is permissive; for production, restrict allowed origins.
+CORS is restricted to same-origin only. Cross-origin API requests are blocked. The `X-CSRF-Token` header is explicitly allowed in preflight responses.
 
 ---
 
@@ -213,25 +259,22 @@ The following security features are not currently present:
 - **Hardware Security Module (HSM) support** -- master keys are stored in environment variables or `.env` files
 - **Audit log signing** -- events are logged to the database but not cryptographically signed
 - **IP allowlisting** for node connections -- any IP can attempt to connect to `/ws/node`
-- **Account lockout for user login** -- rate limiting currently only applies to node authentication, not user login
 - **Import functionality** -- the `import` CLI command is defined but not yet implemented
 
 ---
 
 ## Recommendations for Production Deployment
 
-1. **Enable TLS** -- build with `--features tls` and provide valid certificates. Use `wss://` URLs for all edge node connections.
+1. **Provide TLS certificates** -- TLS is mandatory. Provide valid PEM certificate and key via `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY`, or upload via the Settings page. Use `wss://` URLs for all edge and relay node connections (enforced by clients). Replace any self-signed certificates with CA-signed ones for production.
 
 2. **Restrict `.env` permissions** -- `chmod 600 .env` and ensure it is owned by the service user.
 
-3. **Use a reverse proxy** -- place the server behind nginx or similar for additional protection (rate limiting, request size limits, IP filtering).
+3. **Use a reverse proxy** -- place the server behind nginx or similar for additional protection (request size limits, IP filtering).
 
-4. **Restrict CORS origins** -- update the CORS configuration to allow only your specific frontend domain(s).
+4. **Rotate secrets periodically** -- generate new `BILBYCAST_JWT_SECRET` and `BILBYCAST_MASTER_KEY` values. Rotating `JWT_SECRET` invalidates all active sessions. Rotating `MASTER_KEY` requires re-encrypting stored node secrets and API keys.
 
-5. **Rotate secrets periodically** -- generate new `BILBYCAST_JWT_SECRET` and `BILBYCAST_MASTER_KEY` values. Rotating `JWT_SECRET` invalidates all active sessions. Rotating `MASTER_KEY` requires re-encrypting stored node secrets and API keys.
+5. **Back up the database** -- the SQLite database contains encrypted secrets, user accounts, and event history.
 
-6. **Back up the database** -- the SQLite database contains encrypted secrets, user accounts, and event history.
+6. **Monitor logs** -- watch for repeated authentication failures, which may indicate brute-force attempts. Login rate limiting (5 attempts/60s per IP) provides automatic protection.
 
-7. **Monitor logs** -- watch for repeated authentication failures, which may indicate brute-force attempts.
-
-8. **Run as a non-root user** -- create a dedicated service account with minimal filesystem permissions.
+7. **Run as a non-root user** -- create a dedicated service account with minimal filesystem permissions.

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Envelope for all WebSocket messages between manager and edge nodes.
+/// Envelope for all WebSocket messages between manager and device nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEnvelope {
     #[serde(rename = "type")]
@@ -12,7 +12,7 @@ pub struct WsEnvelope {
 
 // ── Node → Manager messages ──
 
-/// Initial registration message from a new edge node.
+/// Initial registration message from a new device node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RegisterPayload {
     pub token: String,
@@ -28,7 +28,7 @@ pub struct AuthenticatePayload {
     pub software_version: Option<String>,
 }
 
-/// Stats snapshot from an edge node (same format as edge's WS stats).
+/// Stats snapshot from a device node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatsPayload {
     pub flows: Vec<super::FlowStats>,
@@ -37,7 +37,7 @@ pub struct StatsPayload {
     pub total_flows: u32,
 }
 
-/// Health check from an edge node.
+/// Health check from a device node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthPayload {
     pub status: String,
@@ -47,7 +47,7 @@ pub struct HealthPayload {
     pub total_flows: u32,
 }
 
-/// An event/alarm from an edge node.
+/// An event/alarm from a device node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventPayload {
     pub severity: String,
@@ -80,14 +80,14 @@ pub struct RegisterAckPayload {
     pub node_secret: String,
 }
 
-/// Command to execute on an edge node.
+/// Command to execute on a device node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandPayload {
     pub command_id: String,
     pub action: CommandAction,
 }
 
-/// Actions that the manager can send to edge nodes.
+/// Actions that the manager can send to device nodes (currently edge-specific, will be generalized via drivers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum CommandAction {

@@ -1,4 +1,4 @@
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::Deserialize;
@@ -7,21 +7,54 @@ use crate::app_state::AppState;
 use crate::middleware::auth::AuthUser;
 use manager_core::models::{CreateNodeRequest, Node, UpdateNodeRequest, UserRole};
 
+#[derive(Deserialize, Default)]
+pub struct ListNodesQuery {
+    pub device_type: Option<String>,
+}
+
 pub async fn list_nodes(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(query): Query<ListNodesQuery>,
 ) -> Result<Json<Vec<Node>>, StatusCode> {
     let nodes = manager_core::db::nodes::list_nodes(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Filter by user's allowed nodes
+    // Filter by user's allowed nodes and optional device_type
     let filtered: Vec<Node> = nodes
         .into_iter()
         .filter(|n| auth.can_access_node(&n.id))
+        .filter(|n| {
+            query
+                .device_type
+                .as_ref()
+                .map(|dt| n.device_type == *dt)
+                .unwrap_or(true)
+        })
         .collect();
 
     Ok(Json(filtered))
+}
+
+/// List all registered device drivers with their capabilities.
+pub async fn list_device_types(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let drivers: Vec<serde_json::Value> = state
+        .driver_registry
+        .all()
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "device_type": d.device_type(),
+                "display_name": d.display_name(),
+                "supported_commands": d.supported_commands(),
+            })
+        })
+        .collect();
+
+    Json(serde_json::json!({ "device_types": drivers }))
 }
 
 pub async fn create_node(
@@ -31,6 +64,13 @@ pub async fn create_node(
 ) -> Result<(StatusCode, Json<Node>), StatusCode> {
     if !auth.role.has_permission(UserRole::Admin) {
         return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Validate device_type against registered drivers
+    let device_type = req.device_type.as_deref().unwrap_or("edge");
+    if !state.driver_registry.is_registered(device_type) {
+        tracing::warn!("Rejected node creation with unknown device_type: {device_type}");
+        return Err(StatusCode::BAD_REQUEST);
     }
 
     let node = manager_core::db::nodes::create_node(&state.db, &req)
@@ -141,10 +181,53 @@ pub async fn get_node_config(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Get cached config from node hub
-    match state.node_hub.get_cached_config(&id).await {
-        Some(config) => Ok(Json(config)),
-        None => Err(StatusCode::NOT_FOUND),
+    // Request config from node (sends GetConfig command if not cached, waits up to 3s)
+    match state.node_hub.request_config(&id).await {
+        Ok(Some(config)) => Ok(Json(config)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::BAD_GATEWAY),
+    }
+}
+
+pub async fn update_node_config(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<String>,
+    Json(config): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    if !auth.role.has_permission(UserRole::Operator) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    if !auth.can_access_node(&id) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Send UpdateConfig command to the node via WebSocket
+    match state
+        .node_hub
+        .send_command(
+            &id,
+            serde_json::json!({"type": "update_config", "config": config}),
+        )
+        .await
+    {
+        Ok(ack) => {
+            let _ = manager_core::db::audit::log_audit(
+                &state.db,
+                Some(&auth.user_id),
+                "node.config.update",
+                Some("node"),
+                Some(&id),
+                None,
+                None,
+            )
+            .await;
+            Ok(Json(ack))
+        }
+        Err(e) => {
+            tracing::error!("Failed to send config update to node {id}: {e}");
+            Err(StatusCode::BAD_GATEWAY)
+        }
     }
 }
 
@@ -175,8 +258,8 @@ pub async fn send_command(
     }
 }
 
-/// Proxy flow operations directly to the edge node's HTTP API.
-/// More reliable than WebSocket commands for flow CRUD.
+/// Create a flow on a node via WebSocket command.
+/// Uses the persistent WebSocket connection so it works with nodes behind firewalls/NAT.
 pub async fn proxy_flow_create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -190,31 +273,14 @@ pub async fn proxy_flow_create(
         return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
     }
 
-    let api_addr = get_node_api_addr(&state, &id).await
-        .ok_or_else(|| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "Node API address not available. Is the node connected?"}))))?;
-
-    let client = reqwest::Client::new();
-    let url = format!("http://{}/api/v1/flows", api_addr);
-
-    let resp = client.post(&url)
-        .json(&flow)
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to reach node: {e}")}))))?;
-
-    let status = resp.status();
-    let body: serde_json::Value = resp.json().await
-        .unwrap_or_else(|_| serde_json::json!({"error": "Invalid response from node"}));
-
-    if status.is_success() {
-        Ok(Json(body))
-    } else {
-        Err((StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY), Json(body)))
+    match state.node_hub.send_command(&id, serde_json::json!({"type": "create_flow", "flow": flow})).await {
+        Ok(ack) => Ok(Json(ack)),
+        Err(e) => Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to send command: {e}")})))),
     }
 }
 
-/// Proxy flow delete directly to the edge node's HTTP API.
+/// Delete a flow on a node via WebSocket command.
+/// Uses the persistent WebSocket connection so it works with nodes behind firewalls/NAT.
 pub async fn proxy_flow_delete(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -227,32 +293,8 @@ pub async fn proxy_flow_delete(
         return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
     }
 
-    let api_addr = get_node_api_addr(&state, &id).await
-        .ok_or_else(|| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": "Node API address not available"}))))?;
-
-    let client = reqwest::Client::new();
-    let url = format!("http://{}/api/v1/flows/{}", api_addr, flow_id);
-
-    let resp = client.delete(&url)
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to reach node: {e}")}))))?;
-
-    let status = resp.status();
-    let body: serde_json::Value = resp.json().await
-        .unwrap_or_else(|_| serde_json::json!({"success": true}));
-
-    if status.is_success() {
-        Ok(Json(body))
-    } else {
-        Err((StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY), Json(body)))
+    match state.node_hub.send_command(&id, serde_json::json!({"type": "delete_flow", "flow_id": flow_id})).await {
+        Ok(ack) => Ok(Json(ack)),
+        Err(e) => Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to send command: {e}")})))),
     }
-}
-
-/// Get the node's HTTP API address from its cached health data.
-async fn get_node_api_addr(state: &AppState, node_id: &str) -> Option<String> {
-    let node = manager_core::db::nodes::get_node_by_id(&state.db, node_id).await.ok()?;
-    let health = node.last_health?;
-    health["api_addr"].as_str().map(|s| s.to_string())
 }
