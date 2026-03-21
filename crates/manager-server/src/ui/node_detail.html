@@ -795,6 +795,71 @@
       }
     });
 
+    // ── Tunnel canvas animation ──
+    tunnelVizStates.forEach(function(vs, tunnelId) {
+      if (!vs.canvas || !vs.ctx || !vs.data) return;
+      if (!vs.canvas.isConnected) return;
+
+      var ctx = vs.ctx;
+      var w = vs.w;
+      var h = vs.h;
+      var t = vs.data;
+      var dir = (t.direction || '').toLowerCase();
+      var layout = computeTunnelLayout(w, h, dir);
+      var tColor = tunnelStateColor(t.state);
+      var rate = tunnelBytesRate.get(tunnelId) || 0;
+
+      ctx.clearRect(0, 0, w, h);
+
+      var localLabel = dir === 'egress' ? 'LOCAL' : 'FORWARD';
+      var edgeLabel = dir === 'egress' ? 'EGRESS' : 'INGRESS';
+      var remoteLabel = dir === 'egress' ? 'REMOTE' : 'SOURCE';
+      var edgeColor = dir === 'egress' ? C_PINK : C_CYAN;
+
+      // Draw connections: local → edge (solid), edge → remote (dashed QUIC)
+      var localRight = layout.localX + layout.nodeW;
+      var edgeLeft = layout.edgeX;
+      var edgeRight = layout.edgeX + layout.nodeW;
+      var remotLeft = layout.remoteX;
+
+      drawConnection(ctx, localRight, layout.midY, edgeLeft, layout.midY, tColor);
+      drawDashedConnection(ctx, edgeRight, layout.midY, remotLeft, layout.midY, C_PURPLE, true);
+
+      // Draw QUIC label at midpoint of QUIC segment
+      drawQuicLabel(ctx, layout.quicMidX, layout.midY, t.protocol, rate);
+
+      // Draw nodes
+      drawNode(ctx, layout.localX, layout.midY, layout.nodeW, layout.nodeH, localLabel, t.local_addr || '', tColor);
+      drawNode(ctx, layout.edgeX, layout.midY, layout.nodeW, layout.nodeH, edgeLabel, (t.mode || 'direct').toUpperCase(), edgeColor);
+      drawNode(ctx, layout.remoteX, layout.midY, layout.nodeW, layout.nodeH, remoteLabel, '', C_PURPLE);
+
+      // Animate particles on local segment
+      var localLen = bezierLength(localRight, layout.midY, edgeLeft, layout.midY);
+      updateParticles(vs.particlesLocal, rate, dt, localLen);
+      for (var pi = 0; pi < vs.particlesLocal.length; pi++) {
+        var pLocal;
+        if (dir === 'egress') {
+          pLocal = bezierPoint(localRight, layout.midY, edgeLeft, layout.midY, vs.particlesLocal[pi].t);
+        } else {
+          pLocal = bezierPoint(localRight, layout.midY, edgeLeft, layout.midY, 1 - vs.particlesLocal[pi].t);
+        }
+        drawParticle(ctx, pLocal.x, pLocal.y, tColor);
+      }
+
+      // Animate particles on QUIC segment
+      var quicLen = bezierLength(edgeRight, layout.midY, remotLeft, layout.midY);
+      updateParticles(vs.particlesQuic, rate, dt, quicLen);
+      for (var qi = 0; qi < vs.particlesQuic.length; qi++) {
+        var pQuic;
+        if (dir === 'egress') {
+          pQuic = bezierPoint(edgeRight, layout.midY, remotLeft, layout.midY, vs.particlesQuic[qi].t);
+        } else {
+          pQuic = bezierPoint(edgeRight, layout.midY, remotLeft, layout.midY, 1 - vs.particlesQuic[qi].t);
+        }
+        drawParticle(ctx, pQuic.x, pQuic.y, C_PURPLE);
+      }
+    });
+
     requestAnimationFrame(animateAll);
   }
 
@@ -1019,6 +1084,169 @@
     }
   }
 
+  // ── Tunnel visualization state ──
+
+  var C_PURPLE = '#c084fc';
+  var C_CYAN = '#22d3ee';
+  var C_PINK = '#f472b6';
+  var tunnelVizStates = new Map();
+  var tunnelPrevBytes = new Map();
+  var tunnelBytesRate = new Map();
+  var tunnelPrevTime = 0;
+  var currentTunnelIds = [];
+
+  function tunnelStateColor(state) {
+    if (!state) return C_GRAY;
+    var s = String(state).toLowerCase();
+    if (s === 'ready' || s === 'active') return C_GREEN;
+    if (s === 'connecting') return C_AMBER;
+    return C_RED;
+  }
+
+  function computeTunnelLayout(w, h, direction) {
+    var nodeW = Math.min(w * 0.16, 100);
+    var nodeH = 34;
+    var midY = h / 2;
+    var isEgress = direction === 'egress';
+
+    // 3-node layout: [Local App] --- [This Edge] ===QUIC=== [Remote Peer]
+    var localX = w * 0.04;
+    var edgeX = w * 0.32 - nodeW / 2;
+    var quicMidX = w * 0.54;
+    var remoteX = w - w * 0.04 - nodeW;
+
+    return {
+      nodeW: nodeW, nodeH: nodeH, midY: midY,
+      localX: localX, edgeX: edgeX, quicMidX: quicMidX, remoteX: remoteX,
+      isEgress: isEgress
+    };
+  }
+
+  function drawDashedConnection(ctx, x1, y1, x2, y2, color, dashed) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    var cpx = x1 + (x2 - x1) * 0.5;
+    ctx.bezierCurveTo(cpx, y1, cpx, y2, x2, y2);
+    var rgb = hexToRgb(color);
+    ctx.strokeStyle = 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',0.35)';
+    ctx.lineWidth = dashed ? 2.5 : 2;
+    if (dashed) ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawQuicLabel(ctx, x, y, protocol, throughput) {
+    var text = 'QUIC / ' + (protocol || 'TCP').toUpperCase();
+    ctx.font = '600 10px -apple-system,BlinkMacSystemFont,monospace';
+    var tw = ctx.measureText(text).width + 16;
+    var th = 20;
+    var bx = x - tw / 2;
+    var by = y - th / 2 - 14;
+    drawRoundedRect(ctx, bx, by, tw, th, 4, 'rgba(192,132,252,0.12)', 'rgba(192,132,252,0.4)');
+    ctx.fillStyle = C_PURPLE;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, by + th / 2);
+    if (throughput > 0) {
+      ctx.fillStyle = C_TEXT_DIM;
+      ctx.font = '10px -apple-system,BlinkMacSystemFont,monospace';
+      ctx.fillText(fmt_bitrate(throughput), x, y + 14);
+    }
+  }
+
+  function updateTunnelVizData(tunnelId, tunnelData) {
+    var vs = tunnelVizStates.get(tunnelId);
+    if (!vs) {
+      vs = { canvas: null, ctx: null, particlesLocal: [], particlesQuic: [], data: null, w: 0, h: 0 };
+      tunnelVizStates.set(tunnelId, vs);
+    }
+    vs.data = tunnelData;
+  }
+
+  function initTunnelVizCanvas(tunnelId) {
+    var vs = tunnelVizStates.get(tunnelId);
+    if (!vs) return;
+    var container = document.getElementById('tviz-' + tunnelId);
+    if (!container) return;
+    var dpr = window.devicePixelRatio || 1;
+    var w = container.clientWidth;
+    var h = 100;
+    var canvas = container.querySelector('canvas');
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      container.appendChild(canvas);
+    }
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    vs.canvas = canvas;
+    vs.ctx = ctx;
+    vs.w = w;
+    vs.h = h;
+  }
+
+  // ── Build tunnel card HTML ──
+
+  function buildTunnelCardHTML(t) {
+    var stats = t.stats || {};
+    var stateColor = tunnelStateColor(t.state);
+    var stateRgb = hexToRgb(stateColor);
+    var proto = (t.protocol || 'tcp').toUpperCase();
+    var dir = (t.direction || '').toLowerCase();
+    var dirLabel = dir === 'ingress' ? 'INGRESS' : 'EGRESS';
+    var dirColor = dir === 'ingress' ? C_CYAN : C_PINK;
+    var dirBg = dir === 'ingress' ? '34,211,238' : '244,114,182';
+
+    var html = '<div class="flow-card" id="tunnel-card-' + esc(t.id) + '" style="border-left:3px solid #c084fc;">';
+
+    // Header
+    html += '<div class="flow-header">';
+    html += '<span class="flow-name" style="color:#c084fc;">' + esc(t.name || t.id) + '</span>';
+    html += '<span class="flow-badges">';
+    html += '<span class="badge" style="background:rgba(192,132,252,0.15);color:#c084fc">' + proto + '</span>';
+    html += '<span class="badge" style="background:rgba(' + dirBg + ',0.15);color:' + dirColor + '">' + dirLabel + '</span>';
+    html += '<span class="badge" style="background:rgba(' + stateRgb.r + ',' + stateRgb.g + ',' + stateRgb.b + ',0.15);color:' + stateColor + '">';
+    html += '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + stateColor + ';margin-right:4px;"></span>';
+    html += esc(t.state || 'unknown') + '</span>';
+    html += '<span class="badge" style="background:rgba(88,166,255,0.1);color:#58a6ff">' + esc(t.mode || 'direct') + '</span>';
+    html += '</span></div>';
+
+    // Visualization canvas
+    html += '<div class="flow-viz" id="tviz-' + esc(t.id) + '"></div>';
+
+    // Stats section
+    html += '<div class="flow-section"><div class="flow-section-title">Tunnel Statistics</div>';
+    html += '<div class="stats-grid" id="tstats-' + esc(t.id) + '">';
+    html += buildTunnelStatsHTML(t);
+    html += '</div></div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  function buildTunnelStatsHTML(t) {
+    var stats = t.stats || {};
+    var proto = (t.protocol || 'tcp').toUpperCase();
+    var errStyle = (stats.send_errors > 0) ? 'color:' + C_RED : '';
+    var rate = tunnelBytesRate.get(t.id) || 0;
+    var h = '';
+    h += '<div class="stat"><div class="k">Local Address</div><div class="v" style="font-size:12px;">' + esc(t.local_addr || '-') + '</div></div>';
+    h += '<div class="stat"><div class="k">Throughput</div><div class="v">' + fmt_bitrate(rate) + '</div></div>';
+    h += '<div class="stat"><div class="k">Bytes Sent</div><div class="v">' + fmt_bytes(stats.bytes_sent || 0) + '</div></div>';
+    h += '<div class="stat"><div class="k">Bytes Received</div><div class="v">' + fmt_bytes(stats.bytes_received || 0) + '</div></div>';
+    if (proto === 'TCP') {
+      h += '<div class="stat"><div class="k">Connections Active</div><div class="v">' + fmt_num(stats.connections_active || 0) + '</div></div>';
+      h += '<div class="stat"><div class="k">Connections Total</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
+    }
+    h += '<div class="stat"><div class="k">Packets Sent</div><div class="v">' + fmt_num(stats.packets_sent || 0) + '</div></div>';
+    h += '<div class="stat"><div class="k">Packets Received</div><div class="v">' + fmt_num(stats.packets_received || 0) + '</div></div>';
+    h += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="' + errStyle + '">' + fmt_num(stats.send_errors || 0) + '</div></div>';
+    return h;
+  }
+
   // ── Render tunnels section ──
 
   function renderTunnels(tunnels) {
@@ -1027,61 +1255,83 @@
     if (!tunnels || tunnels.length === 0) {
       section.style.display = 'none';
       list.innerHTML = '';
+      currentTunnelIds = [];
+      tunnelVizStates.clear();
       return;
     }
     section.style.display = '';
 
-    var html = '';
+    // Compute throughput rates
+    var now = performance.now() / 1000;
+    var timeDelta = tunnelPrevTime ? (now - tunnelPrevTime) : 1;
+    tunnelPrevTime = now;
+
+    var activeIds = [];
     for (var i = 0; i < tunnels.length; i++) {
       var t = tunnels[i];
+      var tid = t.id;
+      activeIds.push(tid);
+      updateTunnelVizData(tid, t);
+
       var stats = t.stats || {};
-      var stateColor = t.state === 'ready' ? '#22c55e' : (t.state === 'connecting' ? '#f59e0b' : '#ef4444');
-      var proto = (t.protocol || 'tcp').toUpperCase();
-      var dir = (t.direction || '').toLowerCase();
-      var dirLabel = dir === 'ingress' ? 'IN' : 'OUT';
-      var dirColor = dir === 'ingress' ? '#22d3ee' : '#f472b6';
-
-      html += '<div class="flow-card" style="border-left:3px solid #c084fc;">';
-      html += '<div class="flow-header">';
-      html += '<div class="flow-title">';
-      html += '<span class="flow-name" style="color:#c084fc;">' + esc(t.name || t.id) + '</span>';
-      html += '<span class="badge" style="background:rgba(192,132,252,0.15);color:#c084fc">' + proto + ' Tunnel</span>';
-      html += '<span class="badge" style="background:rgba(' + (dir === 'ingress' ? '34,211,238' : '244,114,182') + ',0.15);color:' + dirColor + '">' + dirLabel + '</span>';
-      html += '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + stateColor + ';margin-left:6px;" title="' + esc(t.state || 'unknown') + '"></span>';
-      html += '<span style="color:#64748b;font-size:11px;margin-left:4px;">' + esc(t.state || 'unknown') + '</span>';
-      html += '</div></div>';
-
-      // Tunnel details table
-      html += '<table class="flow-table"><thead><tr>';
-      html += '<th>Mode</th><th>Local Addr</th><th>Bytes Sent</th><th>Bytes Recv</th>';
-      if (proto === 'TCP') {
-        html += '<th>Conns Active</th><th>Conns Total</th>';
-      } else {
-        html += '<th>Pkts Sent</th><th>Pkts Recv</th>';
-      }
-      html += '</tr></thead><tbody><tr>';
-      html += '<td>' + esc(t.mode || '-') + '</td>';
-      html += '<td style="font-family:monospace;font-size:12px;">' + esc(t.local_addr || '-') + '</td>';
-      html += '<td>' + fmt_bytes(stats.bytes_sent || 0) + '</td>';
-      html += '<td>' + fmt_bytes(stats.bytes_received || 0) + '</td>';
-      if (proto === 'TCP') {
-        html += '<td>' + (stats.connections_active || 0) + '</td>';
-        html += '<td>' + (stats.connections_total || 0) + '</td>';
-      } else {
-        html += '<td>' + (stats.packets_sent || 0) + '</td>';
-        html += '<td>' + (stats.packets_received || 0) + '</td>';
-      }
-      html += '</tr></tbody></table>';
-      html += '</div>';
+      var totalBytes = (stats.bytes_sent || 0) + (stats.bytes_received || 0);
+      var prevBytes = tunnelPrevBytes.get(tid) || 0;
+      var byteDelta = totalBytes - prevBytes;
+      if (byteDelta < 0) byteDelta = 0;
+      var bytesPerSec = timeDelta > 0 ? byteDelta / timeDelta : 0;
+      tunnelBytesRate.set(tid, bytesPerSec * 8); // bits per second
+      tunnelPrevBytes.set(tid, totalBytes);
     }
-    list.innerHTML = html;
-  }
 
-  function fmt_bytes(b) {
-    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
-    if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
-    if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
-    return b + ' B';
+    // Check if tunnel set changed
+    var needRebuild = false;
+    if (activeIds.length !== currentTunnelIds.length) {
+      needRebuild = true;
+    } else {
+      for (var ci = 0; ci < activeIds.length; ci++) {
+        if (activeIds[ci] !== currentTunnelIds[ci]) { needRebuild = true; break; }
+      }
+    }
+
+    if (needRebuild) {
+      var html = '';
+      for (var fi = 0; fi < tunnels.length; fi++) {
+        html += buildTunnelCardHTML(tunnels[fi]);
+      }
+      list.innerHTML = html;
+      currentTunnelIds = activeIds;
+      for (var vi = 0; vi < tunnels.length; vi++) {
+        initTunnelVizCanvas(tunnels[vi].id);
+      }
+    } else {
+      // In-place update of stats
+      for (var ui = 0; ui < tunnels.length; ui++) {
+        var statsEl = document.getElementById('tstats-' + tunnels[ui].id);
+        if (statsEl) statsEl.innerHTML = buildTunnelStatsHTML(tunnels[ui]);
+        // Update header state badge
+        var card = document.getElementById('tunnel-card-' + tunnels[ui].id);
+        if (card) {
+          var sc = tunnelStateColor(tunnels[ui].state);
+          var scRgb = hexToRgb(sc);
+          var badges = card.querySelectorAll('.badge');
+          // Third badge is the state badge
+          if (badges[2]) {
+            badges[2].style.background = 'rgba(' + scRgb.r + ',' + scRgb.g + ',' + scRgb.b + ',0.15)';
+            badges[2].style.color = sc;
+            badges[2].innerHTML = '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + sc + ';margin-right:4px;"></span>' + esc(tunnels[ui].state || 'unknown');
+          }
+        }
+      }
+    }
+
+    // Cleanup stale states
+    tunnelVizStates.forEach(function(val, key) {
+      if (activeIds.indexOf(key) < 0) {
+        tunnelVizStates.delete(key);
+        tunnelPrevBytes.delete(key);
+        tunnelBytesRate.delete(key);
+      }
+    });
   }
 
   // ── In-place update of a single flow card's text content ──
@@ -1355,6 +1605,9 @@
     resizeTimer = setTimeout(function() {
       vizStates.forEach(function(vs, flowId) {
         initVizCanvas(flowId);
+      });
+      tunnelVizStates.forEach(function(vs, tunnelId) {
+        initTunnelVizCanvas(tunnelId);
       });
     }, 150);
   });

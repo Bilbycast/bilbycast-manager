@@ -1,5 +1,0 @@
-#!/bin/bash
-cd /Users/rezarahimi/Development/dev_claude/bilbycast-manager
-export BILBYCAST_JWT_SECRET=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2
-export BILBYCAST_MASTER_KEY=f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1
-exec cargo run -- serve
