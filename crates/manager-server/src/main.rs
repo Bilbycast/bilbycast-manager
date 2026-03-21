@@ -452,13 +452,13 @@ async fn run_import(config_path: &str, input_path: &str) -> anyhow::Result<()> {
 mod ui;
 
 fn build_router(state: AppState) -> Router {
-    use axum::http::{HeaderName, Method};
-    use tower_http::cors::{AllowOrigin, CorsLayer};
+    use axum::http::HeaderValue;
     use tower_http::trace::TraceLayer;
+    use tower_http::set_header::SetResponseHeaderLayer;
 
     let api_routes = api::build_api_router(state.clone());
     let ws_routes = ws::build_ws_router(state.clone());
-    let ui_routes = ui::build_ui_router();
+    let ui_routes = ui::build_ui_router(state.clone());
 
     // No CORS layer — all requests are same-origin (UI served by same server).
     // Cross-origin requests are blocked by default without CORS headers.
@@ -467,6 +467,19 @@ fn build_router(state: AppState) -> Router {
         .merge(ws_routes)
         .merge(ui_routes)
         .layer(TraceLayer::new_for_http())
+        // Security headers on all responses
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::HeaderName::from_static("strict-transport-security"),
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
         .with_state(state)
 }
 

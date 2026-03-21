@@ -61,7 +61,7 @@ pub async fn create_node(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<CreateNodeRequest>,
-) -> Result<(StatusCode, Json<Node>), StatusCode> {
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
     if !auth.role.has_permission(UserRole::Admin) {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -88,7 +88,14 @@ pub async fn create_node(
     )
     .await;
 
-    Ok((StatusCode::CREATED, Json(node)))
+    // Include registration_token in create response only (it's skip_serializing on Node)
+    let reg_token = node.registration_token.clone();
+    let mut value = serde_json::to_value(&node).unwrap_or_default();
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("registration_token".to_string(), serde_json::json!(reg_token));
+    }
+
+    Ok((StatusCode::CREATED, Json(value)))
 }
 
 pub async fn get_node(

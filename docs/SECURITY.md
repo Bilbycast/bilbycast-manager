@@ -89,9 +89,21 @@ Tokens are signed with HMAC-SHA256 using `BILBYCAST_JWT_SECRET`. The issuer is v
 
 ### Session Token Storage
 
-The JWT is delivered as an **httpOnly Secure SameSite=Strict** cookie (`session`), not in the JSON response body. This prevents JavaScript from accessing the token, mitigating XSS-based token theft.
+The JWT is delivered **exclusively** via a `Set-Cookie` response header with the following flags:
 
-A separate non-httpOnly `csrf_token` cookie is set alongside it for CSRF protection (see below).
+```
+session=<JWT>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
+```
+
+- **HttpOnly** — prevents JavaScript from accessing the session token, mitigating XSS-based token theft
+- **Secure** — cookie is only sent over HTTPS
+- **SameSite=Lax** — provides baseline CSRF protection at the browser level
+
+The JWT is **never** included in the JSON response body. A separate non-httpOnly `csrf_token` cookie is set alongside it for CSRF protection (see below).
+
+### Failed Login Auditing
+
+Failed login attempts are logged to the audit trail with the attempted username and client IP address, enabling detection of brute-force and credential-stuffing attacks.
 
 ### Session Revocation
 
@@ -126,7 +138,9 @@ Users can be marked as temporary with an `expires_at` timestamp. Expired account
 
 CSRF tokens are generated as 32-character hex strings (128 bits of randomness). Verification uses constant-time comparison to prevent timing attacks.
 
-At login, a CSRF token is set as a non-httpOnly `csrf_token` cookie (so JavaScript can read it). For all state-changing requests (POST, PUT, PATCH, DELETE) to authenticated endpoints, the auth middleware requires an `X-CSRF-Token` header whose value matches the `csrf_token` cookie. This double-submit cookie pattern, combined with the `SameSite=Strict` attribute, prevents cross-site request forgery.
+At login, a CSRF token is set as a non-httpOnly `csrf_token` cookie with `Secure; SameSite=Lax` (so JavaScript can read it for the double-submit pattern). For all state-changing requests (POST, PUT, PATCH, DELETE) to authenticated endpoints, the auth middleware requires an `X-CSRF-Token` header whose value matches the `csrf_token` cookie.
+
+The `logout` endpoint is in the authenticated router and therefore also requires a valid CSRF token.
 
 ### Username Enumeration Protection
 
@@ -233,11 +247,43 @@ State-changing requests (POST, PUT, PATCH, DELETE) also require a valid `X-CSRF-
 Unauthenticated endpoints:
 
 - `POST /api/v1/auth/login` -- obtain a session (rate-limited: 5 attempts/60s per IP)
+- `POST /api/v1/auth/login-form` -- form-based login with redirect (rate-limited)
 - `GET /health` -- health check
+
+All other endpoints, including `POST /api/v1/auth/logout`, require authentication.
+
+### UI Page Protection
+
+All UI pages (except `/login`) are protected by a server-side auth guard middleware. Unauthenticated requests to any protected page are redirected to `/login?next=<original_path>`. The `next` parameter is validated against a strict character whitelist to prevent open redirect attacks.
+
+### WebSocket Authentication
+
+- **`/ws/node`** -- authenticated via a custom two-stage protocol (registration token or node credentials)
+- **`/ws/dashboard`** -- requires a valid session cookie before the WebSocket upgrade is accepted
+
+### Security Response Headers
+
+All responses include the following security headers:
+
+- `X-Content-Type-Options: nosniff` -- prevents MIME-type sniffing
+- `X-Frame-Options: DENY` -- prevents clickjacking via iframes
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` -- enforces HTTPS for subsequent visits
 
 ### CORS
 
-CORS is restricted to same-origin only. Cross-origin API requests are blocked. The `X-CSRF-Token` header is explicitly allowed in preflight responses.
+CORS is restricted to same-origin only. No CORS headers are sent, so cross-origin API requests are blocked by the browser.
+
+### Tunnel Endpoint Authorization
+
+Tunnel management endpoints enforce role-based access:
+
+- `list_tunnels`, `get_tunnel`, `list_node_tunnels` -- require Operator role
+- `create_tunnel`, `update_tunnel`, `delete_tunnel` -- require Admin role
+- `list_node_tunnels` additionally checks node-level access via `allowed_node_ids`
+
+### Node API Data Protection
+
+The `registration_token` field is excluded from all node API responses to prevent credential exposure. It is only used internally during the registration flow.
 
 ---
 
@@ -259,6 +305,8 @@ The following security features are not currently present:
 - **Hardware Security Module (HSM) support** -- master keys are stored in environment variables or `.env` files
 - **Audit log signing** -- events are logged to the database but not cryptographically signed
 - **IP allowlisting** for node connections -- any IP can attempt to connect to `/ws/node`
+- **Content-Security-Policy (CSP) header** -- not yet configured; would further mitigate XSS risks
+- **API rate limiting** -- only login and node auth endpoints are rate-limited; authenticated API endpoints are not
 - **Import functionality** -- the `import` CLI command is defined but not yet implemented
 
 ---

@@ -580,28 +580,29 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// --- Shared auth helpers (global scope — used by functions outside the IIFE) ---
+function getCookie(name) {
+  var match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? match[1] : null;
+}
+
+function authHeaders() {
+  var h = { 'Content-Type': 'application/json' };
+  var csrf = getCookie('csrf_token');
+  if (csrf) h['X-CSRF-Token'] = csrf;
+  return h;
+}
+
+function apiFetch(url, opts) {
+  return fetch(url, opts).then(function(r) {
+    if (r.status === 401) { window.location.href = "/login?next=" + window.location.pathname; }
+    return r;
+  });
+}
+
 (function(){
   'use strict';
-  function getCookie(name) {
-    var match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-    return match ? match[1] : null;
-  }
-    fetch("/health").then(function(r){return r.json()}).then(function(d){if(d.self_signed_cert){var b=document.getElementById("certWarnBanner");if(b)b.classList.add("visible")}}).catch(function(){});
-
-  
-  function authHeaders() {
-    var h = { 'Content-Type': 'application/json' };
-    var csrf = getCookie('csrf_token');
-    if (csrf) h['X-CSRF-Token'] = csrf;
-    return h;
-  }
-
-  function apiFetch(url, opts) {
-    return fetch(url, opts).then(function(r) {
-      if (r.status === 401) { window.location.href = "/login"; }
-      return r;
-    });
-  }
+  fetch("/health").then(function(r){return r.json()}).then(function(d){if(d.self_signed_cert){var b=document.getElementById("certWarnBanner");if(b)b.classList.add("visible")}}).catch(function(){});
 
   var pathParts = window.location.pathname.split('/');
   var nodeId = decodeURIComponent(pathParts[2] || '');

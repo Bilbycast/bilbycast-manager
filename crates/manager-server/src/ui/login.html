@@ -239,15 +239,18 @@
                 }
 
                 const data = await res.json();
-                // Set cookies via JavaScript to guarantee they're stored
-                // (some browsers don't process Set-Cookie from fetch with self-signed certs)
-                if (data.token) {
-                    document.cookie = 'session=' + data.token + '; SameSite=Lax; Path=/; Max-Age=86400';
-                }
+                // Session cookie is set by the server via Set-Cookie (HttpOnly; Secure)
+                // CSRF token is set as a fallback here (JS needs to read it for X-CSRF-Token)
                 if (data.csrf_token) {
-                    document.cookie = 'csrf_token=' + data.csrf_token + '; SameSite=Lax; Path=/; Max-Age=86400';
+                    document.cookie = 'csrf_token=' + data.csrf_token + '; Secure; SameSite=Lax; Path=/; Max-Age=86400';
                 }
-                window.location.href = '/dashboard';
+                // Redirect to the page the user originally requested, or /dashboard
+                var nextUrl = params.get('next');
+                var redirectTo = '/dashboard';
+                if (nextUrl && /^\/[a-zA-Z0-9\/_\-\.]+$/.test(nextUrl)) {
+                    redirectTo = nextUrl;
+                }
+                window.location.href = redirectTo;
             } catch (err) {
                 errorEl.textContent = err.message || 'An unexpected error occurred';
                 errorEl.classList.add('visible');

@@ -69,26 +69,27 @@ When adding new managed device types, implement the `DeviceDriver` trait in `man
 ### Request Lifecycle
 
 ```
-HTTP Request → CorsLayer → TraceLayer → Router
-  ├── Public: /api/v1/auth/login, /api/v1/auth/logout, /health
-  ├── Authenticated: /api/v1/* (auth_middleware layer)
-  │   └── JWT from Authorization header or session cookie
-  │   └── Validates user active + not expired
+HTTP Request → SecurityHeaders → TraceLayer → Router
+  ├── Public: /api/v1/auth/login, /api/v1/auth/login-form, /health
+  ├── Authenticated: /api/v1/* including /auth/logout (auth_middleware layer)
+  │   └── JWT from session cookie (primary) or Authorization header (fallback)
+  │   └── Validates user active + not expired, session not revoked
+  │   └── CSRF validation on POST/PUT/PATCH/DELETE
   │   └── Injects AuthUser {user_id, role, session_id, allowed_node_ids}
-  ├── WebSocket: /ws/node, /ws/dashboard
-  └── UI: static HTML pages
+  ├── WebSocket: /ws/node (custom node auth), /ws/dashboard (session cookie auth)
+  └── UI: /login (public), all other pages (ui_auth_guard → redirect to /login)
 ```
 
 ### Authentication & Authorization
 
 - **Password hashing:** Argon2id (`manager-core/src/auth/password.rs`), with timing-safe login (dummy hash on unknown users prevents username enumeration)
-- **Sessions:** JWT with HMAC-SHA256, delivered as `httpOnly; Secure; SameSite=Strict` cookie. Claims include `sub` (user_id), `role`, `jti` (session_id) (`auth/jwt.rs`)
+- **Sessions:** JWT with HMAC-SHA256, delivered exclusively via `Set-Cookie: session=...; HttpOnly; Secure; SameSite=Lax` header — never in the response body. Claims include `sub` (user_id), `role`, `jti` (session_id) (`auth/jwt.rs`)
 - **Session revocation:** Logout adds `jti` to `revoked_sessions` SQLite table; middleware rejects revoked tokens (`db/sessions.rs`)
 - **Login rate limiting:** 5 attempts per 60s per IP, returns HTTP 429 when exceeded (`middleware/rate_limit.rs`)
 - **RBAC:** 4-level hierarchy — Viewer(0) < Operator(1) < Admin(2) < SuperAdmin(3). Checked via `UserRole::has_permission(minimum_role)` (`auth/rbac.rs`)
 - **Node-level access:** `AuthUser.allowed_node_ids` — `None` means all nodes, `Some(vec)` restricts to listed node IDs
 - **Middleware:** `manager-server/src/middleware/auth.rs` — extracts JWT from cookie (primary) or Authorization header (fallback), validates, checks revocation, enforces CSRF on mutating requests
-- **CSRF:** Double-submit cookie pattern. Login sets non-httpOnly `csrf_token` cookie; middleware validates `X-CSRF-Token` header matches cookie on POST/PUT/PATCH/DELETE. Constant-time comparison (`auth/csrf.rs`)
+- **CSRF:** Double-submit cookie pattern. Login sets non-httpOnly `csrf_token` cookie with `Secure; SameSite=Lax`; middleware validates `X-CSRF-Token` header matches cookie on POST/PUT/PATCH/DELETE (including logout). Constant-time comparison (`auth/csrf.rs`)
 - **CORS:** Restricted to same-origin only; cross-origin API requests are blocked
 - **TLS:** Mandatory — server requires `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY` to start. Edge and relay clients enforce `wss://` URLs. Self-signed certs are detected at startup; all UI pages show a warning banner when using self-signed certs. Certs can be uploaded via `POST /api/v1/settings/tls/upload` or the Settings page
 - **Self-signed cert acceptance:** Edge/relay clients support `accept_self_signed_cert: true` in their manager config for dev/testing (disables cert validation)
@@ -112,7 +113,9 @@ HTTP Request → CorsLayer → TraceLayer → Router
 - Node → Manager: `stats`, `health`, `event`, `config_response`, `command_ack`, `pong`
 - Manager → Node: `command` with action payload (GetConfig, UpdateConfig, CreateFlow, DeleteFlow, StartFlow, StopFlow, etc.)
 
-**Browser Dashboard** (`ws/browser.rs`) — One-way broadcast of aggregated node stats to all connected browsers via `broadcast::channel(256)`. Currently has no authentication.
+**Browser Dashboard** (`ws/browser.rs`) — One-way broadcast of aggregated node stats to all connected browsers via `broadcast::channel(256)`. Requires a valid session cookie before the WebSocket upgrade is accepted.
+
+**Security Response Headers** — All responses include `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` headers.
 
 ### Encryption at Rest
 

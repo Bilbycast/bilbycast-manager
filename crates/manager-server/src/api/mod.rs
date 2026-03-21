@@ -16,10 +16,11 @@ pub fn build_api_router(state: AppState) -> Router<AppState> {
     let public = Router::new()
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/login-form", post(auth::login_form))
-        .route("/api/v1/auth/logout", post(auth::logout))
         .route("/health", get(health_check));
 
     let authenticated = Router::new()
+        // Auth (logout requires valid session + CSRF)
+        .route("/api/v1/auth/logout", post(auth::logout))
         // Users
         .route("/api/v1/users", get(users::list_users).post(users::create_user))
         .route(

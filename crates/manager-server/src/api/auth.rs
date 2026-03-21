@@ -17,7 +17,6 @@ pub struct LoginRequest {
 #[derive(Serialize)]
 pub struct LoginResponse {
     pub success: bool,
-    pub token: Option<String>,
     pub csrf_token: Option<String>,
     pub user: Option<manager_core::models::UserInfo>,
     pub error: Option<String>,
@@ -34,7 +33,6 @@ pub async fn login(
             StatusCode::TOO_MANY_REQUESTS,
             Json(LoginResponse {
                 success: false,
-                token: None,
                 csrf_token: None,
                 user: None,
                 error: Some("Too many login attempts. Try again later.".into()),
@@ -67,12 +65,23 @@ pub async fn login(
 
     let user = match (password_valid, user) {
         (true, Some(u)) => u,
-        _ => {
+        (_, user_opt) => {
+            // Audit failed login attempt
+            let _ = manager_core::db::audit::log_audit(
+                &state.db,
+                user_opt.as_ref().map(|u| u.id.as_str()),
+                "auth.login_failed",
+                Some("user"),
+                user_opt.as_ref().map(|u| u.id.as_str()),
+                Some(&serde_json::json!({"username": req.username})),
+                Some(&addr.ip().to_string()),
+            )
+            .await;
+
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(LoginResponse {
                     success: false,
-                    token: None,
                     csrf_token: None,
                     user: None,
                     error: Some("Invalid credentials".into()),
@@ -87,7 +96,6 @@ pub async fn login(
             StatusCode::UNAUTHORIZED,
             Json(LoginResponse {
                 success: false,
-                token: None,
                 csrf_token: None,
                 user: None,
                 error: Some("Account is disabled".into()),
@@ -101,7 +109,6 @@ pub async fn login(
             StatusCode::UNAUTHORIZED,
             Json(LoginResponse {
                 success: false,
-                token: None,
                 csrf_token: None,
                 user: None,
                 error: Some("Account has expired".into()),
@@ -125,7 +132,6 @@ pub async fn login(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(LoginResponse {
                     success: false,
-                    token: None,
                     csrf_token: None,
                     user: None,
                     error: Some("Internal error".into()),
@@ -154,19 +160,13 @@ pub async fn login(
 
     let user_info = manager_core::models::UserInfo::from(user);
 
-    // Cookie flags: HttpOnly and Secure are omitted for self-signed certs
-    // because some browsers don't reliably store httpOnly cookies from
-    // fetch/redirect responses when the TLS cert is not trusted.
-    let (http_only, secure_flag) = if state.is_self_signed_cert {
-        ("", "")
-    } else {
-        (" HttpOnly;", " Secure;")
-    };
+    // Session cookie: always HttpOnly + Secure (never expose to JS)
+    // CSRF cookie: Secure but NOT HttpOnly (JS needs to read it for X-CSRF-Token header)
     let session_cookie = format!(
-        "session={token};{http_only}{secure_flag} SameSite=Lax; Path=/; Max-Age=86400"
+        "session={token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400"
     );
     let csrf_cookie = format!(
-        "csrf_token={csrf_token};{secure_flag} SameSite=Lax; Path=/; Max-Age=86400"
+        "csrf_token={csrf_token}; Secure; SameSite=Lax; Path=/; Max-Age=86400"
     );
 
     let mut headers = HeaderMap::new();
@@ -184,7 +184,6 @@ pub async fn login(
         headers,
         Json(LoginResponse {
             success: true,
-            token: Some(token.clone()),
             csrf_token: Some(csrf_token),
             user: Some(user_info),
             error: None,
@@ -195,16 +194,16 @@ pub async fn login(
 
 pub async fn logout(
     State(state): State<AppState>,
+    auth: crate::middleware::auth::AuthUser,
     headers: HeaderMap,
 ) -> Response {
-    // Extract JWT from cookie or Authorization header and revoke the session
+    // Revoke the current session (auth middleware already validated the JWT)
     let token = extract_token_from_headers(&headers);
 
     if let Some(ref token_str) = token {
         if let Ok(claims) =
             manager_core::auth::validate_session_token(token_str, &state.jwt_secret)
         {
-            // Revoke this session
             let expires_at =
                 chrono::DateTime::from_timestamp(claims.exp, 0)
                     .map(|dt| dt.to_rfc3339())
@@ -216,28 +215,25 @@ pub async fn logout(
                 &expires_at,
             )
             .await;
-
-            let _ = manager_core::db::audit::log_audit(
-                &state.db,
-                Some(&claims.sub),
-                "auth.logout",
-                Some("user"),
-                Some(&claims.sub),
-                None,
-                None,
-            )
-            .await;
         }
     }
 
-    // Clear cookies
-    let secure_flag = if state.is_self_signed_cert { "" } else { " Secure;" };
-    let clear_session = format!(
-        "session=; HttpOnly;{secure_flag} SameSite=Lax; Path=/; Max-Age=0"
-    );
-    let clear_csrf = format!(
-        "csrf_token=;{secure_flag} SameSite=Lax; Path=/; Max-Age=0"
-    );
+    let _ = manager_core::db::audit::log_audit(
+        &state.db,
+        Some(&auth.user_id),
+        "auth.logout",
+        Some("user"),
+        Some(&auth.user_id),
+        None,
+        None,
+    )
+    .await;
+
+    // Clear cookies — flags must match the original Set-Cookie
+    let clear_session =
+        "session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0".to_string();
+    let clear_csrf =
+        "csrf_token=; Secure; SameSite=Lax; Path=/; Max-Age=0".to_string();
 
     let mut resp_headers = HeaderMap::new();
     resp_headers.append(
@@ -312,16 +308,11 @@ pub async fn login_form(
         &state.db, Some(&user.id), "auth.login", Some("user"), Some(&user.id), None, None,
     ).await;
 
-    let (http_only, secure_flag) = if state.is_self_signed_cert {
-        ("", "")
-    } else {
-        (" HttpOnly;", " Secure;")
-    };
     let session_cookie = format!(
-        "session={token};{http_only}{secure_flag} SameSite=Lax; Path=/; Max-Age=86400"
+        "session={token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400"
     );
     let csrf_cookie = format!(
-        "csrf_token={csrf_token};{secure_flag} SameSite=Lax; Path=/; Max-Age=86400"
+        "csrf_token={csrf_token}; Secure; SameSite=Lax; Path=/; Max-Age=86400"
     );
 
     let mut headers = HeaderMap::new();

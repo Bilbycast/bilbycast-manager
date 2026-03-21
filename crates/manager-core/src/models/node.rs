@@ -55,6 +55,7 @@ pub struct Node {
     /// Device type identifier (e.g., "edge", "relay"). Maps to a registered DeviceDriver.
     #[serde(default = "default_device_type")]
     pub device_type: String,
+    #[serde(skip_serializing)]
     pub registration_token: Option<String>,
     pub status: NodeStatus,
     pub last_seen_at: Option<DateTime<Utc>>,
