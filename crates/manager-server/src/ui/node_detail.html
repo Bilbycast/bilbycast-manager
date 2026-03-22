@@ -1012,6 +1012,60 @@
       html += '</div></div>';
     }
 
+    // Media Analysis section
+    if (f.media_analysis) {
+      var ma = f.media_analysis;
+      html += '<div class="flow-section"><div class="flow-section-title">Media Analysis</div>';
+      html += '<div class="stats-grid">';
+      html += '<div class="stat"><div class="k">Protocol</div><div class="v">' + esc(ma.protocol || '-').toUpperCase() + '</div></div>';
+      html += '<div class="stat"><div class="k">Payload</div><div class="v">' + esc(ma.payload_format || '-') + '</div></div>';
+      if (ma.fec) {
+        html += '<div class="stat"><div class="k">FEC</div><div class="v" style="color:' + C_GREEN + '">' + esc(ma.fec.standard) + ' (L=' + ma.fec.columns + ', D=' + ma.fec.rows + ')</div></div>';
+      }
+      if (ma.redundancy) {
+        html += '<div class="stat"><div class="k">Redundancy</div><div class="v" style="color:' + C_GREEN + '">' + esc(ma.redundancy.standard) + '</div></div>';
+      }
+      html += '<div class="stat"><div class="k">Programs</div><div class="v">' + (ma.program_count || 0) + '</div></div>';
+      html += '<div class="stat"><div class="k">TS Bitrate</div><div class="v">' + fmt_bitrate(ma.total_bitrate_bps) + '</div></div>';
+      html += '</div>';
+      // Video streams
+      if (ma.video_streams && ma.video_streams.length > 0) {
+        html += '<div style="margin-top:8px;"><div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Video Streams</div>';
+        html += '<table class="outputs-table"><tr><th>PID</th><th>Codec</th><th>Resolution</th><th>Frame Rate</th><th>Profile</th><th>Level</th><th>Bitrate</th></tr>';
+        for (var vi = 0; vi < ma.video_streams.length; vi++) {
+          var vs = ma.video_streams[vi];
+          html += '<tr>';
+          html += '<td>0x' + vs.pid.toString(16).toUpperCase().padStart(4, '0') + '</td>';
+          html += '<td>' + esc(vs.codec) + '</td>';
+          html += '<td>' + esc(vs.resolution || 'detecting...') + '</td>';
+          html += '<td>' + (vs.frame_rate ? vs.frame_rate.toFixed(2) + ' fps' : 'detecting...') + '</td>';
+          html += '<td>' + esc(vs.profile || '-') + '</td>';
+          html += '<td>' + esc(vs.level || '-') + '</td>';
+          html += '<td>' + fmt_bitrate(vs.bitrate_bps) + '</td>';
+          html += '</tr>';
+        }
+        html += '</table></div>';
+      }
+      // Audio streams
+      if (ma.audio_streams && ma.audio_streams.length > 0) {
+        html += '<div style="margin-top:8px;"><div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Audio Streams</div>';
+        html += '<table class="outputs-table"><tr><th>PID</th><th>Codec</th><th>Sample Rate</th><th>Channels</th><th>Language</th><th>Bitrate</th></tr>';
+        for (var ai = 0; ai < ma.audio_streams.length; ai++) {
+          var as2 = ma.audio_streams[ai];
+          html += '<tr>';
+          html += '<td>0x' + as2.pid.toString(16).toUpperCase().padStart(4, '0') + '</td>';
+          html += '<td>' + esc(as2.codec) + '</td>';
+          html += '<td>' + (as2.sample_rate_hz ? as2.sample_rate_hz + ' Hz' : 'detecting...') + '</td>';
+          html += '<td>' + (as2.channels != null ? as2.channels + ' ch' : '-') + '</td>';
+          html += '<td>' + esc(as2.language || '-') + '</td>';
+          html += '<td>' + fmt_bitrate(as2.bitrate_bps) + '</td>';
+          html += '</tr>';
+        }
+        html += '</table></div>';
+      }
+      html += '</div>';
+    }
+
     // SMPTE Trust Boundary Metrics section
     html += '<div class="flow-section"><div class="flow-section-title">SMPTE Trust Boundary Metrics</div>';
     html += '<div class="stats-grid">';
@@ -1526,6 +1580,64 @@
           }
           statsGrid2.innerHTML = th;
         }
+      }
+      else if (titleText.indexOf('Media Analysis') === 0 && f.media_analysis) {
+        var ma = f.media_analysis;
+        var statsGridMA = section.querySelector('.stats-grid');
+        if (statsGridMA) {
+          var mh = '';
+          mh += '<div class="stat"><div class="k">Protocol</div><div class="v">' + esc(ma.protocol || '-').toUpperCase() + '</div></div>';
+          mh += '<div class="stat"><div class="k">Payload</div><div class="v">' + esc(ma.payload_format || '-') + '</div></div>';
+          if (ma.fec) {
+            mh += '<div class="stat"><div class="k">FEC</div><div class="v" style="color:' + C_GREEN + '">' + esc(ma.fec.standard) + ' (L=' + ma.fec.columns + ', D=' + ma.fec.rows + ')</div></div>';
+          }
+          if (ma.redundancy) {
+            mh += '<div class="stat"><div class="k">Redundancy</div><div class="v" style="color:' + C_GREEN + '">' + esc(ma.redundancy.standard) + '</div></div>';
+          }
+          mh += '<div class="stat"><div class="k">Programs</div><div class="v">' + (ma.program_count || 0) + '</div></div>';
+          mh += '<div class="stat"><div class="k">TS Bitrate</div><div class="v">' + fmt_bitrate(ma.total_bitrate_bps) + '</div></div>';
+          statsGridMA.innerHTML = mh;
+        }
+        // Update video table
+        var existingVid = section.querySelectorAll('table.outputs-table');
+        // Rebuild tables (simpler than in-place for variable-length stream lists)
+        var subSections = section.querySelectorAll('div[style*="margin-top"]');
+        for (var rr = 0; rr < subSections.length; rr++) subSections[rr].remove();
+        var maExtra = '';
+        if (ma.video_streams && ma.video_streams.length > 0) {
+          maExtra += '<div style="margin-top:8px;"><div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Video Streams</div>';
+          maExtra += '<table class="outputs-table"><tr><th>PID</th><th>Codec</th><th>Resolution</th><th>Frame Rate</th><th>Profile</th><th>Level</th><th>Bitrate</th></tr>';
+          for (var vi2 = 0; vi2 < ma.video_streams.length; vi2++) {
+            var vs2 = ma.video_streams[vi2];
+            maExtra += '<tr>';
+            maExtra += '<td>0x' + vs2.pid.toString(16).toUpperCase().padStart(4, '0') + '</td>';
+            maExtra += '<td>' + esc(vs2.codec) + '</td>';
+            maExtra += '<td>' + esc(vs2.resolution || 'detecting...') + '</td>';
+            maExtra += '<td>' + (vs2.frame_rate ? vs2.frame_rate.toFixed(2) + ' fps' : 'detecting...') + '</td>';
+            maExtra += '<td>' + esc(vs2.profile || '-') + '</td>';
+            maExtra += '<td>' + esc(vs2.level || '-') + '</td>';
+            maExtra += '<td>' + fmt_bitrate(vs2.bitrate_bps) + '</td>';
+            maExtra += '</tr>';
+          }
+          maExtra += '</table></div>';
+        }
+        if (ma.audio_streams && ma.audio_streams.length > 0) {
+          maExtra += '<div style="margin-top:8px;"><div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Audio Streams</div>';
+          maExtra += '<table class="outputs-table"><tr><th>PID</th><th>Codec</th><th>Sample Rate</th><th>Channels</th><th>Language</th><th>Bitrate</th></tr>';
+          for (var ai2 = 0; ai2 < ma.audio_streams.length; ai2++) {
+            var as3 = ma.audio_streams[ai2];
+            maExtra += '<tr>';
+            maExtra += '<td>0x' + as3.pid.toString(16).toUpperCase().padStart(4, '0') + '</td>';
+            maExtra += '<td>' + esc(as3.codec) + '</td>';
+            maExtra += '<td>' + (as3.sample_rate_hz ? as3.sample_rate_hz + ' Hz' : 'detecting...') + '</td>';
+            maExtra += '<td>' + (as3.channels != null ? as3.channels + ' ch' : '-') + '</td>';
+            maExtra += '<td>' + esc(as3.language || '-') + '</td>';
+            maExtra += '<td>' + fmt_bitrate(as3.bitrate_bps) + '</td>';
+            maExtra += '</tr>';
+          }
+          maExtra += '</table></div>';
+        }
+        if (maExtra) section.insertAdjacentHTML('beforeend', maExtra);
       }
       else if (titleText.indexOf('SMPTE') === 0) {
         var statsGrid3 = section.querySelector('.stats-grid');

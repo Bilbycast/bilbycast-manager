@@ -10,6 +10,8 @@ pub struct FlowConfig {
     pub name: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub media_analysis: bool,
     pub input: InputConfig,
     pub outputs: Vec<OutputConfig>,
 }
@@ -258,6 +260,8 @@ pub struct FlowStats {
     pub iat: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pdv_jitter_us: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_analysis: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
