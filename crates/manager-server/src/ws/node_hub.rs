@@ -577,6 +577,10 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
         }
         "command_ack" => {
             tracing::info!("Command ack from {node_id}: {}", envelope.payload);
+            // Clear cached config so the next get_config request fetches fresh data
+            if let Some(mut conn) = state.node_hub.connections.get_mut(node_id) {
+                conn.cached_config = None;
+            }
         }
         "pong" => {}
         other => {
