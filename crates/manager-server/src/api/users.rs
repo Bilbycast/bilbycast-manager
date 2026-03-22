@@ -5,6 +5,7 @@ use axum::Json;
 use crate::app_state::AppState;
 use crate::middleware::auth::AuthUser;
 use manager_core::models::{CreateUserRequest, UpdateUserRequest, UserInfo, UserRole};
+use manager_core::validation;
 
 pub async fn list_users(
     State(state): State<AppState>,
@@ -25,19 +26,27 @@ pub async fn create_user(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<CreateUserRequest>,
-) -> Result<(StatusCode, Json<UserInfo>), StatusCode> {
+) -> Result<(StatusCode, Json<UserInfo>), (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
     }
 
     // Only super_admin can create super_admin users
     if req.role == UserRole::SuperAdmin && auth.role != UserRole::SuperAdmin {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+
+    // Input validation
+    validation::validate_username(&req.username).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    validation::validate_password(&req.password).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    validation::validate_display_name(&req.display_name).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    if let Some(ref email) = req.email {
+        validation::validate_email(email).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
     }
 
     let user = manager_core::db::users::create_user(&state.db, &req)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to create user"}))))?;
 
     let _ = manager_core::db::audit::log_audit(
         &state.db,
@@ -75,23 +84,34 @@ pub async fn update_user(
     auth: AuthUser,
     Path(id): Path<String>,
     Json(req): Json<UpdateUserRequest>,
-) -> Result<Json<UserInfo>, StatusCode> {
+) -> Result<Json<UserInfo>, (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
     }
 
     let target = manager_core::db::users::get_user_by_id(&state.db, &id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|_| (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "User not found"}))))?;
 
     // Non-super_admin cannot modify super_admin users
     if target.role == UserRole::SuperAdmin && auth.role != UserRole::SuperAdmin {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+
+    // Input validation
+    if let Some(ref name) = req.display_name {
+        validation::validate_display_name(name).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    }
+    if let Some(ref email) = req.email {
+        validation::validate_email(email).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    }
+    if let Some(ref password) = req.password {
+        validation::validate_password(password).map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
     }
 
     let user = manager_core::db::users::update_user(&state.db, &id, &req)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to update user"}))))?;
 
     let _ = manager_core::db::audit::log_audit(
         &state.db,

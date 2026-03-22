@@ -27,6 +27,20 @@ pub async fn login(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(req): Json<LoginRequest>,
 ) -> Response {
+    // Reject oversized inputs early (before expensive Argon2 hashing)
+    if req.username.len() > 64 || req.password.len() > 128 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(LoginResponse {
+                success: false,
+                csrf_token: None,
+                user: None,
+                error: Some("Invalid credentials".into()),
+            }),
+        )
+            .into_response();
+    }
+
     // Rate limiting by IP
     if !state.login_limiter.check(addr.ip()) {
         return (
@@ -266,6 +280,10 @@ pub async fn login_form(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Form(req): Form<LoginFormRequest>,
 ) -> Response {
+    if req.username.len() > 64 || req.password.len() > 128 {
+        return Redirect::to("/login?error=invalid").into_response();
+    }
+
     if !state.login_limiter.check(addr.ip()) {
         return Redirect::to("/login?error=rate_limited").into_response();
     }

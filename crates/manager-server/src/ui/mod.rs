@@ -112,6 +112,7 @@ pub fn build_ui_router(state: AppState) -> Router<AppState> {
         .route("/dashboard", get(dashboard_page))
         .route("/topology", get(topology_page))
         .route("/events", get(events_page))
+        .route("/admin/nodes", get(managed_nodes_page))
         .route("/admin/users", get(users_page))
         .route("/admin/settings", get(settings_page))
         .route("/ai/assistant", get(ai_assistant_page))
@@ -150,6 +151,10 @@ async fn events_page() -> impl IntoResponse {
     html_no_cache(EVENTS_HTML)
 }
 
+async fn managed_nodes_page() -> impl IntoResponse {
+    html_no_cache(MANAGED_NODES_HTML)
+}
+
 async fn users_page() -> impl IntoResponse {
     html_no_cache(USERS_HTML)
 }
@@ -180,6 +185,7 @@ const LOGIN_HTML: &str = include_str!("login.html");
 const DASHBOARD_HTML: &str = include_str!("dashboard.html");
 const TOPOLOGY_HTML: &str = include_str!("topology.html");
 const EVENTS_HTML: &str = include_str!("events.html");
+const MANAGED_NODES_HTML: &str = include_str!("managed_nodes.html");
 const USERS_HTML: &str = include_str!("users.html");
 const SETTINGS_HTML: &str = include_str!("settings.html");
 const AI_ASSISTANT_HTML: &str = include_str!("ai_assistant.html");

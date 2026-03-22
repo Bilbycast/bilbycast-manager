@@ -6,6 +6,21 @@ use serde::Deserialize;
 use crate::app_state::AppState;
 use crate::middleware::auth::AuthUser;
 use manager_core::models::{CreateNodeRequest, Node, UpdateNodeRequest, UserRole};
+use manager_core::validation;
+
+/// Maximum JSON payload size for config updates sent to nodes.
+const MAX_CONFIG_PAYLOAD_SIZE: usize = 100 * 1024; // 100 KB
+/// Maximum JSON payload size for command actions and flow configs.
+const MAX_COMMAND_PAYLOAD_SIZE: usize = 50 * 1024; // 50 KB
+
+fn check_json_size(value: &serde_json::Value, max: usize) -> Result<(), StatusCode> {
+    let size = serde_json::to_string(value).map(|s| s.len()).unwrap_or(0);
+    if size > max {
+        tracing::warn!("Rejecting oversized JSON payload: {} bytes (max {})", size, max);
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    Ok(())
+}
 
 #[derive(Deserialize, Default)]
 pub struct ListNodesQuery {
@@ -61,21 +76,36 @@ pub async fn create_node(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<CreateNodeRequest>,
-) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+
+    // Input validation
+    validation::validate_name(&req.name, "node name", 128)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    if let Some(ref desc) = req.description {
+        validation::validate_description(desc, 512)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    }
+
+    // Validate expires_at is in the future if provided
+    if let Some(ref exp) = req.expires_at {
+        if *exp <= chrono::Utc::now() {
+            return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "expires_at must be in the future"}))));
+        }
     }
 
     // Validate device_type against registered drivers
     let device_type = req.device_type.as_deref().unwrap_or("edge");
     if !state.driver_registry.is_registered(device_type) {
         tracing::warn!("Rejected node creation with unknown device_type: {device_type}");
-        return Err(StatusCode::BAD_REQUEST);
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": format!("unknown device type: {device_type}")}))));
     }
 
     let node = manager_core::db::nodes::create_node(&state.db, &req)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to create node"}))))?;
 
     let _ = manager_core::db::audit::log_audit(
         &state.db,
@@ -119,14 +149,29 @@ pub async fn update_node(
     auth: AuthUser,
     Path(id): Path<String>,
     Json(req): Json<UpdateNodeRequest>,
-) -> Result<Json<Node>, StatusCode> {
+) -> Result<Json<Node>, (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+
+    // Input validation
+    if let Some(ref name) = req.name {
+        validation::validate_name(name, "node name", 128)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    }
+    if let Some(ref desc) = req.description {
+        validation::validate_description(desc, 512)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+    }
+    if let Some(Some(ref exp)) = req.expires_at {
+        if *exp <= chrono::Utc::now() {
+            return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "expires_at must be in the future"}))));
+        }
     }
 
     let node = manager_core::db::nodes::update_node(&state.db, &id, &req)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to update node"}))))?;
 
     Ok(Json(node))
 }
@@ -209,6 +254,8 @@ pub async fn update_node_config(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    check_json_size(&config, MAX_CONFIG_PAYLOAD_SIZE)?;
+
     // Send UpdateConfig command to the node via WebSocket
     match state
         .node_hub
@@ -256,6 +303,8 @@ pub async fn send_command(
         return Err(StatusCode::FORBIDDEN);
     }
 
+    check_json_size(&cmd.action, MAX_COMMAND_PAYLOAD_SIZE)?;
+
     match state.node_hub.send_command(&id, cmd.action).await {
         Ok(ack) => Ok(Json(ack)),
         Err(e) => {
@@ -278,6 +327,10 @@ pub async fn proxy_flow_create(
     }
     if !auth.can_access_node(&id) {
         return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
+    }
+
+    if check_json_size(&flow, MAX_COMMAND_PAYLOAD_SIZE).is_err() {
+        return Err((StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({"error": "Flow config too large"}))));
     }
 
     match state.node_hub.send_command(&id, serde_json::json!({"type": "create_flow", "flow": flow})).await {

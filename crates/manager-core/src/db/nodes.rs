@@ -12,10 +12,12 @@ pub async fn create_node(pool: &SqlitePool, req: &CreateNodeRequest) -> Result<N
 
     let device_type = req.device_type.as_deref().unwrap_or("edge");
 
+    let expires_at = req.expires_at.map(|dt| dt.to_rfc3339());
+
     sqlx::query(
         r#"
-        INSERT INTO nodes (id, name, description, device_type, registration_token, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+        INSERT INTO nodes (id, name, description, device_type, registration_token, status, expires_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
         "#,
     )
     .bind(&id)
@@ -23,6 +25,7 @@ pub async fn create_node(pool: &SqlitePool, req: &CreateNodeRequest) -> Result<N
     .bind(&req.description)
     .bind(device_type)
     .bind(&registration_token)
+    .bind(&expires_at)
     .bind(&now)
     .bind(&now)
     .execute(pool)
@@ -125,10 +128,15 @@ pub async fn update_node(
 
     let name = req.name.as_deref().unwrap_or(&existing.name);
     let description = req.description.as_deref().or(existing.description.as_deref());
+    let expires_at = match &req.expires_at {
+        Some(opt) => opt.map(|dt| dt.to_rfc3339()),
+        None => existing.expires_at.map(|dt| dt.to_rfc3339()),
+    };
 
-    sqlx::query("UPDATE nodes SET name = ?, description = ?, updated_at = ? WHERE id = ?")
+    sqlx::query("UPDATE nodes SET name = ?, description = ?, expires_at = ?, updated_at = ? WHERE id = ?")
         .bind(name)
         .bind(description)
+        .bind(&expires_at)
         .bind(&now)
         .bind(id)
         .execute(pool)
@@ -217,6 +225,7 @@ struct NodeRow {
     last_health: Option<String>,
     software_version: Option<String>,
     metadata: Option<String>,
+    expires_at: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -239,6 +248,10 @@ impl NodeRow {
                 .and_then(|s| serde_json::from_str(&s).ok()),
             software_version: self.software_version,
             metadata: self.metadata.and_then(|s| serde_json::from_str(&s).ok()),
+            expires_at: self
+                .expires_at
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
             created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_default(),

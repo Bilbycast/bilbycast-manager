@@ -42,13 +42,12 @@ There are no tests in this project currently.
 ### Workspace Crates (Dependency Direction)
 
 ```
-manager-ui ──→ manager-core ←── manager-server
-(frontend)      (business logic)    (HTTP/WS/CLI)
+manager-core ←── manager-server
+(business logic)    (HTTP/WS/CLI + embedded UI)
 ```
 
 - **manager-core** (`crates/manager-core/`) — Domain models, database operations, auth, crypto, AI providers, **device drivers**. Framework-agnostic — no Axum or web dependency. The `drivers/` module contains the `DeviceDriver` trait and `DriverRegistry`, plus implementations: `EdgeDriver` (edge transport nodes) and `RelayDriver` (relay servers).
-- **manager-server** (`crates/manager-server/`) — Axum HTTP server, API handlers, auth middleware, WebSocket hubs, CLI entry point. Assembles router from public + authenticated + WS + UI routes.
-- **manager-ui** (`crates/manager-ui/`) — Leptos components compiled to static HTML via `include_str!()`. Pages, layouts, and reusable card components.
+- **manager-server** (`crates/manager-server/`) — Axum HTTP server, API handlers, auth middleware, WebSocket hubs, CLI entry point. Assembles router from public + authenticated + WS + UI routes. UI is embedded static HTML+JS pages served via `include_str!()`.
 
 ### AppState (Central Shared State)
 
@@ -89,7 +88,7 @@ HTTP Request → SecurityHeaders → TraceLayer → Router
 - **RBAC:** 4-level hierarchy — Viewer(0) < Operator(1) < Admin(2) < SuperAdmin(3). Checked via `UserRole::has_permission(minimum_role)` (`auth/rbac.rs`)
 - **Node-level access:** `AuthUser.allowed_node_ids` — `None` means all nodes, `Some(vec)` restricts to listed node IDs
 - **Middleware:** `manager-server/src/middleware/auth.rs` — extracts JWT from cookie (primary) or Authorization header (fallback), validates, checks revocation, enforces CSRF on mutating requests
-- **CSRF:** Double-submit cookie pattern. Login sets non-httpOnly `csrf_token` cookie with `Secure; SameSite=Lax`; middleware validates `X-CSRF-Token` header matches cookie on POST/PUT/PATCH/DELETE (including logout). Constant-time comparison (`auth/csrf.rs`)
+- **CSRF:** Double-submit cookie pattern with header-only fallback. Login sets non-httpOnly `csrf_token` cookie with `Secure; SameSite=Lax`; middleware validates `X-CSRF-Token` header matches cookie on POST/PUT/PATCH/DELETE. When the cookie is missing (Chrome with self-signed certs), the header alone is accepted — safe because custom headers can only be set by same-origin JS (CORS blocks cross-origin). Constant-time comparison (`auth/csrf.rs`)
 - **CORS:** Restricted to same-origin only; cross-origin API requests are blocked
 - **TLS:** Mandatory — server requires `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY` to start. Edge and relay clients enforce `wss://` URLs. Self-signed certs are detected at startup; all UI pages show a warning banner when using self-signed certs. Certs can be uploaded via `POST /api/v1/settings/tls/upload` or the Settings page
 - **Self-signed cert acceptance:** Edge/relay clients support `accept_self_signed_cert: true` in their manager config for dev/testing (disables cert validation)
@@ -99,8 +98,9 @@ HTTP Request → SecurityHeaders → TraceLayer → Router
 **Node Hub** (`manager-server/src/ws/node_hub.rs`) — the most complex component:
 
 1. **Connection auth** (10s timeout): Node sends first message with either `registration_token` (new node) or `node_id + node_secret` (reconnection)
-2. **Registration flow:** Token lookup → generate secret → encrypt with master_key → store in DB → return `register_ack` with credentials
-3. **Reconnection flow:** Decrypt stored secret → compare → return `auth_ok`
+2. **Registration flow:** Token lookup → check expiry → generate secret → encrypt with master_key → store in DB → return `register_ack` with credentials
+3. **Reconnection flow:** Decrypt stored secret → compare → check expiry → return `auth_ok`
+4. **Node expiry:** Nodes with `expires_at` in the past are rejected at auth time (both registration and reconnection)
 4. **Main loop:** `tokio::select!` over socket recv (stats/health/events from node) and mpsc recv (commands to node)
 5. **State:** Each connected node tracked as `ConnectedNode` in `DashMap<String, ConnectedNode>` with `device_type`, cached config, stats, health
 6. **Anti-bruteforce:** `NodeAuthLimiter` — 5 failures per 60s window per node_id
@@ -164,14 +164,35 @@ let result = manager_core::db::module::operation(&state.db, &req)
 let _ = manager_core::db::audit::log_audit(&state.db, ...).await;
 ```
 
+### Input Validation
+
+All API inputs are validated before processing. Validation functions live in `manager-core/src/validation.rs`.
+
+**User fields:** username (1-64 chars, alphanumeric+underscore/hyphen/dot), password (8-128 chars), display name (1-128, no control chars), email (basic format, max 254)
+
+**Node fields:** name (1-128, no control chars), description (max 512), device_type (must match registered driver), expires_at (must be in the future if set, ISO 8601)
+
+**Settings:** key whitelist (6 allowed keys) + per-key value type/range validation (e.g., `events_retention_days` must be integer 1-365)
+
+**Payload size limits** (`manager-server/src/api/nodes.rs`):
+- Config payloads forwarded to nodes: max 100KB
+- Command action payloads: max 50KB
+- Flow creation payloads: max 50KB
+
+**WebSocket payload limits** (`manager-server/src/ws/node_hub.rs`):
+- Max 5MB per message from any node
+- Event message field: max 10,000 chars
+- Event category: max 256 chars
+- Software version: max 256 chars
+
+**When adding new API endpoints or fields, always add validation.** Use the existing helpers in `validation.rs` (`validate_name`, `validate_description`, `validate_string_length`, `validate_addr`).
+
 ### Frontend
 
-Static HTML pages embedded via `include_str!()` in `manager-server/src/ui/`. Leptos components in `manager-ui/src/`:
+Static HTML+JS pages embedded via `include_str!()` in `manager-server/src/ui/`. No frontend framework — all client-side logic is vanilla JavaScript.
 
-- **Layouts:** `AuthLayout` (login), `MainLayout` (sidebar + header + content area)
-- **Pages:** dashboard, topology, node_detail, node_config, events, users, settings, ai_assistant, ai_settings
-- **Components:** `NodeCard`, `FlowCard`, common components (modal, toast, badge — placeholder)
-- **Styling:** Tailwind CSS dark theme (slate palette), configured in `tailwind.config.js`
+- **Pages:** login, dashboard, topology, node_detail, node_config, events, managed_nodes, users, settings, ai_assistant, ai_settings
+- **Styling:** Tailwind CSS dark theme (slate palette)
 
 ## Environment Variables
 
@@ -215,5 +236,15 @@ That's it. The hub, DB, auth, API routes, WebSocket protocol, events, export, an
 - `manager-core/src/drivers/relay.rs` — Relay server driver
 - `GET /api/v1/device-types` — Lists all registered drivers with capabilities
 
+### Managed Nodes UI (`/admin/nodes`):
+Admin page for node lifecycle management. Provides:
+- **List** all registered nodes with status, type, version, expiry, last seen
+- **Add** nodes with name, description, device type, optional expiry — displays registration token with copy button
+- **Edit** node name, description, expiry
+- **Regenerate token** — resets node to pending status with a new one-time token
+- **Delete** with confirmation — disconnects online nodes before removal
+- **Search/filter** across name, type, and status
+- **Node expiry** — optional `expires_at` timestamp. Expired nodes are rejected at WebSocket auth (both registration and reconnection). Shown with "Expired" badge in the UI.
+
 ### UI device-type awareness:
-The dashboard, topology, node detail, and node config pages all read `device_type` from the WebSocket broadcast and render device-specific views. Relay nodes show purple accent styling, tunnel-focused displays, and hide edge-specific sections (flows, AI config generation).
+The dashboard, topology, node detail, node config, and managed nodes pages all read `device_type` and render device-specific views. Relay nodes show purple accent styling, tunnel-focused displays, and hide edge-specific sections (flows, AI config generation).

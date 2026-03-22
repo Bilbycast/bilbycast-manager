@@ -6,7 +6,6 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use chrono::Utc;
 use dashmap::DashMap;
-use sqlx::SqlitePool;
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
@@ -71,12 +70,6 @@ impl NodeAuthLimiter {
         self.failures.remove(identifier);
     }
 
-    /// Periodic cleanup of expired entries.
-    pub fn cleanup(&self) {
-        self.failures.retain(|_, (_, first_failure)| {
-            first_failure.elapsed().as_secs() < self.window_secs * 2
-        });
-    }
 }
 
 // ───────────────────────────────────────────────────────
@@ -104,20 +97,17 @@ struct ConnectedNode {
 pub struct NodeHub {
     connections: DashMap<String, ConnectedNode>,
     browser_tx: broadcast::Sender<String>,
-    db: SqlitePool,
     auth_limiter: Arc<NodeAuthLimiter>,
 }
 
 impl NodeHub {
     pub fn new(
-        db: SqlitePool,
         browser_tx: broadcast::Sender<String>,
         auth_limiter: Arc<NodeAuthLimiter>,
     ) -> Self {
         Self {
             connections: DashMap::new(),
             browser_tx,
-            db,
             auth_limiter,
         }
     }
@@ -188,11 +178,6 @@ impl NodeHub {
         if let Some((_, conn)) = self.connections.remove(node_id) {
             drop(conn.command_tx);
         }
-    }
-
-    /// Get the number of connected nodes.
-    pub fn connected_count(&self) -> usize {
-        self.connections.len()
     }
 
     /// Broadcast aggregated stats to browser clients.
@@ -442,6 +427,11 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthR
                 "Invalid registration token".to_string()
             })?;
 
+        // Reject expired nodes
+        if node.is_expired() {
+            return Err("Node has expired".into());
+        }
+
         // Generate node secret
         let node_secret = Uuid::new_v4().to_string();
         let encrypted = manager_core::crypto::encrypt(&node_secret, &state.master_key)
@@ -499,6 +489,13 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthR
         return Err("Invalid node secret".into());
     }
 
+    // Check if node has expired
+    if let Ok(Some(node)) = manager_core::db::nodes::get_node_by_node_id(&state.db, node_id).await {
+        if node.is_expired() {
+            return Err("Node has expired".into());
+        }
+    }
+
     // Success — clear any prior failures
     state.node_hub.auth_limiter.clear(node_id);
 
@@ -512,7 +509,26 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthR
 // Message handling
 // ───────────────────────────────────────────────────────
 
+/// Maximum WebSocket message size from a node (5 MB).
+const MAX_NODE_MESSAGE_SIZE: usize = 5 * 1024 * 1024;
+/// Maximum event message field length.
+const MAX_EVENT_MESSAGE_LEN: usize = 10_000;
+/// Maximum event category field length.
+const MAX_EVENT_CATEGORY_LEN: usize = 256;
+/// Maximum software version string length.
+const MAX_VERSION_LEN: usize = 256;
+
 async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
+    // Reject oversized messages
+    if text.len() > MAX_NODE_MESSAGE_SIZE {
+        tracing::warn!(
+            "Dropping oversized message from node {node_id}: {} bytes (max {})",
+            text.len(),
+            MAX_NODE_MESSAGE_SIZE
+        );
+        return;
+    }
+
     let envelope: WsEnvelope = match serde_json::from_str(text) {
         Ok(e) => e,
         Err(e) => {
@@ -529,7 +545,10 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
             state.node_hub.broadcast_to_browsers(Some(&state.driver_registry));
         }
         "health" => {
-            let version = envelope.payload["version"].as_str().map(String::from);
+            let version = envelope.payload["version"]
+                .as_str()
+                .map(|v| &v[..v.len().min(MAX_VERSION_LEN)])
+                .map(String::from);
             if let Some(mut conn) = state.node_hub.connections.get_mut(node_id) {
                 conn.cached_health = Some(envelope.payload.clone());
                 if let Some(ref v) = version {
@@ -553,9 +572,11 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
             let category = envelope.payload["category"]
                 .as_str()
                 .unwrap_or("unknown");
+            let category = &category[..category.len().min(MAX_EVENT_CATEGORY_LEN)];
             let message = envelope.payload["message"]
                 .as_str()
                 .unwrap_or("Unknown event");
+            let message = &message[..message.len().min(MAX_EVENT_MESSAGE_LEN)];
             let flow_id = envelope.payload["flow_id"].as_str();
             let details = envelope.payload.get("details");
 

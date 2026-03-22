@@ -8,7 +8,7 @@ pub mod export;
 pub mod tunnels;
 
 use axum::Router;
-use axum::routing::{get, post, put, delete};
+use axum::routing::{get, post, delete};
 
 use crate::app_state::AppState;
 

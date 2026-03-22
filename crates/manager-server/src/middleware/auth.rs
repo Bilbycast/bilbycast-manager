@@ -11,7 +11,6 @@ use manager_core::models::UserRole;
 pub struct AuthUser {
     pub user_id: String,
     pub role: UserRole,
-    pub session_id: String,
     pub allowed_node_ids: Option<Vec<String>>,
 }
 
@@ -69,7 +68,6 @@ pub async fn auth_middleware(
     let auth_user = AuthUser {
         user_id: claims.sub,
         role,
-        session_id: claims.jti,
         allowed_node_ids: user.allowed_node_ids,
     };
 
@@ -78,8 +76,28 @@ pub async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// Validate CSRF token: the X-CSRF-Token header must match the csrf_token cookie.
+/// Validate CSRF token.
+///
+/// Primary: double-submit cookie — X-CSRF-Token header must match csrf_token cookie.
+/// Fallback: if the browser doesn't send the csrf_token cookie (can happen with
+/// self-signed TLS certs or Chrome cookie partitioning), accept a non-empty
+/// X-CSRF-Token header alone. The header can only be set by same-origin JS
+/// (blocked cross-origin by CORS), so its presence is sufficient CSRF proof.
 fn validate_csrf(request: &Request<axum::body::Body>) -> Result<(), StatusCode> {
+    // Extract CSRF token from header (required in all cases)
+    let header_csrf = request
+        .headers()
+        .get("x-csrf-token")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
+
+    let header_csrf = match header_csrf {
+        Some(h) if !h.is_empty() => h,
+        _ => {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    };
+
     // Extract CSRF token from cookie
     let cookie_csrf = request
         .headers()
@@ -92,26 +110,18 @@ fn validate_csrf(request: &Request<axum::body::Body>) -> Result<(), StatusCode> 
             })
         });
 
-    let cookie_csrf = match cookie_csrf {
-        Some(c) if !c.is_empty() => c,
-        _ => return Err(StatusCode::FORBIDDEN),
-    };
-
-    // Extract CSRF token from header
-    let header_csrf = request
-        .headers()
-        .get("x-csrf-token")
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string());
-
-    let header_csrf = match header_csrf {
-        Some(h) if !h.is_empty() => h,
-        _ => return Err(StatusCode::FORBIDDEN),
-    };
-
-    // Constant-time comparison
-    if !manager_core::auth::verify_csrf_token(&cookie_csrf, &header_csrf) {
-        return Err(StatusCode::FORBIDDEN);
+    match cookie_csrf {
+        Some(c) if !c.is_empty() => {
+            // Double-submit cookie validation: compare cookie and header
+            if !manager_core::auth::verify_csrf_token(&c, &header_csrf) {
+                return Err(StatusCode::FORBIDDEN);
+            }
+        }
+        _ => {
+            // Cookie missing (self-signed cert, browser partitioning, etc.)
+            // The X-CSRF-Token header alone is sufficient — it can only be set
+            // by same-origin JS due to CORS restrictions.
+        }
     }
 
     Ok(())

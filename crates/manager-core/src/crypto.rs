@@ -1,6 +1,6 @@
 use aes_gcm::{
     aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
+    Aes256Gcm, Nonce, aead::consts::U12,
 };
 use rand::RngExt;
 use sha2::Digest;
@@ -12,10 +12,10 @@ pub fn encrypt(plaintext: &str, key: &[u8; 32]) -> Result<String, CryptoError> {
     let mut rng = rand::rng();
     let mut nonce_bytes = [0u8; 12];
     rng.fill(nonce_bytes.as_mut_slice());
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce: Nonce<U12> = nonce_bytes.into();
 
     let ciphertext = cipher
-        .encrypt(nonce, plaintext.as_bytes())
+        .encrypt(&nonce, plaintext.as_bytes())
         .map_err(|_| CryptoError::EncryptionFailed)?;
 
     // Concatenate nonce (12 bytes) + ciphertext
@@ -35,7 +35,7 @@ pub fn decrypt(encrypted: &str, key: &[u8; 32]) -> Result<String, CryptoError> {
 
     let (nonce_bytes, ciphertext) = combined.split_at(12);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| CryptoError::InvalidKey)?;
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce: &Nonce<U12> = nonce_bytes.try_into().map_err(|_| CryptoError::InvalidData)?;
 
     let plaintext = cipher
         .decrypt(nonce, ciphertext)

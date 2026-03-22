@@ -9,8 +9,18 @@ use manager_core::models::{Event, EventQuery};
 pub async fn list_events(
     State(state): State<AppState>,
     _auth: AuthUser,
-    Query(query): Query<EventQuery>,
+    Query(mut query): Query<EventQuery>,
 ) -> Result<Json<Vec<Event>>, StatusCode> {
+    // Clamp query params
+    if let Some(ref s) = query.search
+        && s.len() > 256
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    if let Some(pp) = query.per_page {
+        query.per_page = Some(pp.min(200));
+    }
+
     let events = manager_core::db::events::query_events(&state.db, &query)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

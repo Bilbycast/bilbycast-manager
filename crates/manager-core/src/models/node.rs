@@ -62,8 +62,16 @@ pub struct Node {
     pub last_health: Option<serde_json::Value>,
     pub software_version: Option<String>,
     pub metadata: Option<serde_json::Value>,
+    pub expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+impl Node {
+    /// Returns true if the node has an expiry time that has passed.
+    pub fn is_expired(&self) -> bool {
+        self.expires_at.map_or(false, |exp| Utc::now() > exp)
+    }
 }
 
 fn default_device_type() -> String {
@@ -77,6 +85,8 @@ pub struct CreateNodeRequest {
     pub description: Option<String>,
     /// Device type identifier. Defaults to "edge" if not provided.
     pub device_type: Option<String>,
+    /// Optional expiry time (ISO 8601). Node registration is rejected after this time.
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// Request to update a node.
@@ -84,6 +94,8 @@ pub struct CreateNodeRequest {
 pub struct UpdateNodeRequest {
     pub name: Option<String>,
     pub description: Option<String>,
+    /// Set or clear expiry time. Use `null` to remove expiry.
+    pub expires_at: Option<Option<DateTime<Utc>>>,
 }
 
 /// Node info with connection status for the dashboard.

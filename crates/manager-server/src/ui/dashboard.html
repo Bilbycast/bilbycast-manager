@@ -494,6 +494,10 @@
     </a>
 
     <div class="nav-section-label">Administration</div>
+    <a href="/admin/nodes" class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      Nodes
+    </a>
     <a href="/admin/users" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -719,7 +723,7 @@
         var card = document.createElement('div');
         card.className = 'node-card';
         card.id = 'node-' + key;
-        card.onclick = function () { window.location.href = '/nodes/' + encodeURIComponent(key); };
+        card.onclick = function (ev) { if (ev.target.closest('.node-delete-btn')) return; window.location.href = '/nodes/' + encodeURIComponent(key); };
         var isRelay = node.device_type === 'relay';
         var typeBadge = isRelay ? '<span style="background:rgba(192,132,252,0.15);color:#c084fc;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;text-transform:uppercase;">Relay</span>' : '';
         var label1 = isRelay ? 'Tunnels' : 'Flows';

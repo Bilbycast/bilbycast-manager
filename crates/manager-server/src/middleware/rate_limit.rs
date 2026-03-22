@@ -44,13 +44,6 @@ impl RateLimiter {
         }
     }
 
-    /// Periodically clean up expired entries.
-    pub fn cleanup(&self) {
-        let now = Instant::now();
-        self.windows.retain(|_, (_, start)| {
-            now.duration_since(*start).as_secs() < self.window_secs * 2
-        });
-    }
 }
 
 #[cfg(test)]

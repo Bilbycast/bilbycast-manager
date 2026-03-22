@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 use crate::app_state::AppState;
 use crate::middleware::auth::AuthUser;
+use manager_core::validation;
 
 #[derive(Deserialize)]
 pub struct GenerateConfigRequest {
@@ -12,7 +13,6 @@ pub struct GenerateConfigRequest {
     pub provider: Option<String>,
     /// Optional: existing flow configs on the node for context
     pub existing_flows: Option<Vec<serde_json::Value>>,
-    pub node_id: Option<String>,
 }
 
 pub async fn generate_config(
@@ -20,6 +20,10 @@ pub async fn generate_config(
     auth: AuthUser,
     Json(req): Json<GenerateConfigRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Input validation
+    validation::validate_string_length(&req.prompt, "prompt", 10000)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+
     let provider_name = req.provider.as_deref().unwrap_or("openai");
 
     // Get the user's API key for this provider
@@ -112,7 +116,6 @@ pub async fn generate_config(
 #[derive(Deserialize)]
 pub struct AnalyzeRequest {
     pub description: String,
-    pub node_id: Option<String>,
     pub provider: Option<String>,
 }
 
@@ -121,6 +124,10 @@ pub async fn analyze_anomaly(
     auth: AuthUser,
     Json(req): Json<AnalyzeRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Input validation
+    validation::validate_string_length(&req.description, "description", 10000)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+
     let provider_name = req.provider.as_deref().unwrap_or("openai");
     let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
 
@@ -144,6 +151,10 @@ pub async fn answer_query(
     auth: AuthUser,
     Json(req): Json<QueryRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Input validation
+    validation::validate_string_length(&req.query, "query", 10000)
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+
     let provider_name = req.provider.as_deref().unwrap_or("openai");
     let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
 
@@ -196,6 +207,11 @@ pub async fn set_key(
     auth: AuthUser,
     Json(req): Json<SetKeyRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Input validation
+    if req.api_key.is_empty() || req.api_key.len() > 256 {
+        return Ok(Json(serde_json::json!({ "success": false, "error": "API key must be 1–256 characters" })));
+    }
+
     // Validate provider
     if !["openai", "anthropic", "gemini"].contains(&req.provider.as_str()) {
         return Ok(Json(serde_json::json!({ "success": false, "error": "Invalid provider" })));

@@ -208,7 +208,6 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
     let node_auth_limiter = Arc::new(ws::node_hub::NodeAuthLimiter::new(5, 60));
 
     let node_hub = Arc::new(ws::node_hub::NodeHub::new(
-        pool.clone(),
         browser_tx.clone(),
         node_auth_limiter.clone(),
     ));

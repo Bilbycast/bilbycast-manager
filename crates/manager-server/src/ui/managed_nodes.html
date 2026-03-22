@@ -6,7 +6,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Users - bilbycast manager</title>
+<title>Managed Nodes - bilbycast manager</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -60,91 +60,57 @@
   .page-header div p { font-size: 14px; color: #64748b; }
 
   .btn-primary {
-    background: #3b82f6;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    background: #3b82f6; color: #fff; border: none; border-radius: 8px;
+    padding: 10px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: background 0.15s; display: flex; align-items: center; gap: 8px;
   }
-
   .btn-primary:hover { background: #2563eb; }
   .btn-primary svg { width: 16px; height: 16px; }
 
   .table-wrapper {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 12px;
-    overflow: hidden;
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden;
   }
-
   table { width: 100%; border-collapse: collapse; }
-
   thead th {
-    text-align: left;
-    padding: 12px 16px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid #334155;
-    background: rgba(0,0,0,0.2);
+    text-align: left; padding: 12px 16px; font-size: 11px; font-weight: 600;
+    color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid #334155; background: rgba(0,0,0,0.2);
   }
-
   tbody td {
-    padding: 12px 16px;
-    font-size: 13px;
-    border-bottom: 1px solid #334155;
-    color: #e2e8f0;
+    padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #334155; color: #e2e8f0;
   }
-
   tbody tr:last-child td { border-bottom: none; }
   tbody tr:hover { background: rgba(96, 165, 250, 0.04); }
 
-  .role-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
+  .status-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
   }
+  .status-online { background: rgba(74, 222, 128, 0.15); color: #4ade80; }
+  .status-offline { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+  .status-pending { background: rgba(250, 204, 21, 0.15); color: #facc15; }
+  .status-degraded { background: rgba(251, 146, 60, 0.15); color: #fb923c; }
+  .status-error { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+  .status-expired { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 
-  .role-admin { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
-  .role-operator { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
-  .role-viewer { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
-
-  .status-active { color: #4ade80; }
-  .status-disabled { color: #64748b; }
+  .type-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+  }
+  .type-edge { background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+  .type-relay { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
 
   .action-btn {
-    background: none;
-    border: 1px solid #334155;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    color: #94a3b8;
-    cursor: pointer;
-    transition: all 0.15s;
-    margin-right: 4px;
+    background: none; border: 1px solid #334155; border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; color: #94a3b8; cursor: pointer;
+    transition: all 0.15s; margin-right: 4px;
   }
-
   .action-btn:hover { border-color: #60a5fa; color: #60a5fa; }
   .action-btn.danger:hover { border-color: #f87171; color: #f87171; }
 
   .empty-state {
-    padding: 64px 20px;
-    text-align: center;
-    color: #64748b;
+    padding: 64px 20px; text-align: center; color: #64748b;
   }
-
   .empty-state svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.4; }
   .empty-state p { font-size: 16px; font-weight: 500; }
   .empty-state span { font-size: 13px; display: block; margin-top: 4px; }
@@ -157,7 +123,7 @@
   .modal-overlay.open { display: flex; }
   .modal {
     background: #1e293b; border: 1px solid #334155; border-radius: 12px;
-    width: 480px; max-width: 90vw; max-height: 90vh; overflow-y: auto; padding: 24px;
+    width: 520px; max-width: 90vw; max-height: 90vh; overflow-y: auto; padding: 24px;
   }
   .modal h3 { font-size: 18px; font-weight: 700; color: #f1f5f9; margin-bottom: 20px; }
   .form-group { margin-bottom: 16px; }
@@ -168,8 +134,7 @@
   }
   .form-group input:focus, .form-group select:focus { border-color: #60a5fa; }
   .form-group select { cursor: pointer; }
-  .form-group input[type="checkbox"] { width: auto; margin-right: 8px; accent-color: #3b82f6; }
-  .form-group .checkbox-label { display: flex; align-items: center; font-size: 14px; color: #e2e8f0; cursor: pointer; }
+  .form-group .hint { font-size: 11px; color: #64748b; margin-top: 4px; }
   .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
   .btn-cancel {
     background: none; border: 1px solid #334155; border-radius: 8px; padding: 10px 20px;
@@ -177,6 +142,19 @@
   }
   .btn-cancel:hover { border-color: #475569; color: #e2e8f0; }
   .form-error { color: #f87171; font-size: 13px; margin-top: 4px; }
+
+  /* ── Token display ── */
+  .token-box {
+    background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+    padding: 12px 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
+    color: #facc15; word-break: break-all; position: relative; margin-top: 8px;
+  }
+  .token-box .copy-btn {
+    position: absolute; top: 8px; right: 8px; background: #334155; border: none;
+    border-radius: 4px; padding: 4px 8px; font-size: 11px; color: #94a3b8;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .token-box .copy-btn:hover { background: #475569; color: #e2e8f0; }
 
   /* ── Full-width disconnection warning banner ── */
   .disconnect-banner {
@@ -200,16 +178,11 @@
   .cert-warn-banner {
     display: none;
     background: linear-gradient(90deg, #92400e 0%, #b45309 50%, #92400e 100%);
-    color: #fef3c7;
-    text-align: center;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: 500;
-        border-bottom: 2px solid #f59e0b;
+    color: #fef3c7; text-align: center; padding: 8px 16px; font-size: 13px; font-weight: 500;
+    border-bottom: 2px solid #f59e0b;
   }
   .cert-warn-banner.visible { display: block; }
   .cert-warn-banner a { color: #fde68a; text-decoration: underline; }
-
 </style>
 </head>
 <body>
@@ -233,11 +206,11 @@
       Events
     </a>
     <div class="nav-section-label">Administration</div>
-    <a href="/admin/nodes" class="nav-item">
+    <a href="/admin/nodes" class="nav-item active">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
       Nodes
     </a>
-    <a href="/admin/users" class="nav-item active">
+    <a href="/admin/users" class="nav-item">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       Users
     </a>
@@ -268,7 +241,7 @@
   <header class="topbar">
     <div class="topbar-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" placeholder="Search nodes, events..." />
+      <input type="text" placeholder="Search nodes..." id="searchInput" />
     </div>
     <div class="topbar-right">
       <button class="alarm-btn" title="Alarms" onclick="window.location.href='/events'">
@@ -285,12 +258,12 @@
   <main class="content">
     <div class="page-header">
       <div>
-        <h1>User Management</h1>
-        <p>Manage user accounts and access control</p>
+        <h1>Managed Nodes</h1>
+        <p>Register and manage edge nodes and relay servers</p>
       </div>
-      <button class="btn-primary" id="addUserBtn">
+      <button class="btn-primary" id="addNodeBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add User
+        Add Node
       </button>
     </div>
 
@@ -298,68 +271,86 @@
       <table>
         <thead>
           <tr>
-            <th>Username</th>
-            <th>Display Name</th>
-            <th>Role</th>
+            <th>Name</th>
+            <th>Type</th>
             <th>Status</th>
+            <th>Version</th>
             <th>Expires</th>
-            <th>Node Access</th>
+            <th>Last Seen</th>
             <th>Actions</th>
           </tr>
         </thead>
-        <tbody id="usersBody">
+        <tbody id="nodesBody">
         </tbody>
       </table>
       <div class="empty-state" id="emptyState">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <p>No users configured</p>
-        <span>Click "Add User" to create the first user account</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        <p>No nodes registered</p>
+        <span>Click "Add Node" to register your first edge node or relay server</span>
       </div>
     </div>
   </main>
 </div>
 
-<!-- User Modal -->
-<div class="modal-overlay" id="userModal">
+<!-- Add / Edit Node Modal -->
+<div class="modal-overlay" id="nodeModal">
   <div class="modal">
-    <h3 id="modalTitle">Add User</h3>
-    <input type="hidden" id="editUserId" value="">
+    <h3 id="modalTitle">Add Node</h3>
+    <input type="hidden" id="editNodeId" value="">
     <div class="form-group">
-      <label>Username</label>
-      <input type="text" id="formUsername" placeholder="e.g. john.doe" autocomplete="off">
+      <label>Name</label>
+      <input type="text" id="formName" placeholder="e.g. edge-sydney-01" autocomplete="off" maxlength="128">
+      <div class="hint">1-128 characters, no control characters</div>
     </div>
     <div class="form-group">
-      <label>Password</label>
-      <input type="password" id="formPassword" placeholder="Enter password" autocomplete="new-password">
+      <label>Description (optional)</label>
+      <input type="text" id="formDescription" placeholder="e.g. Sydney office primary encoder" maxlength="512">
     </div>
-    <div class="form-group">
-      <label>Display Name</label>
-      <input type="text" id="formDisplayName" placeholder="e.g. John Doe">
-    </div>
-    <div class="form-group">
-      <label>Email (optional)</label>
-      <input type="email" id="formEmail" placeholder="e.g. john@example.com">
-    </div>
-    <div class="form-group">
-      <label>Role</label>
-      <select id="formRole">
-        <option value="viewer">Viewer</option>
-        <option value="operator">Operator</option>
-        <option value="admin">Admin</option>
-        <option value="super_admin">Super Admin</option>
+    <div class="form-group" id="deviceTypeGroup">
+      <label>Device Type</label>
+      <select id="formDeviceType">
       </select>
     </div>
     <div class="form-group">
-      <label class="checkbox-label"><input type="checkbox" id="formTemporary"> Temporary user</label>
-    </div>
-    <div class="form-group" id="expiresGroup" style="display:none;">
-      <label>Expires At</label>
+      <label>Expires At (optional)</label>
       <input type="datetime-local" id="formExpiresAt">
+      <div class="hint">Leave empty for no expiry. Expired nodes cannot connect.</div>
     </div>
     <div id="formError" class="form-error" style="display:none;"></div>
     <div class="form-actions">
       <button class="btn-cancel" id="modalCancelBtn">Cancel</button>
       <button class="btn-primary" id="modalSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Token Display Modal -->
+<div class="modal-overlay" id="tokenModal">
+  <div class="modal">
+    <h3 id="tokenModalTitle">Registration Token</h3>
+    <p style="font-size:13px;color:#94a3b8;margin-bottom:12px;" id="tokenModalDesc">
+      Copy this token into the node's config file under <code style="color:#60a5fa;">manager.registration_token</code>. This token is single-use and will be consumed on first connection.
+    </p>
+    <div class="token-box">
+      <span id="tokenValue"></span>
+      <button class="copy-btn" id="copyTokenBtn">Copy</button>
+    </div>
+    <div class="form-actions">
+      <button class="btn-primary" id="tokenCloseBtn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Delete Modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <h3>Delete Node</h3>
+    <p style="font-size:14px;color:#e2e8f0;margin-bottom:8px;">Are you sure you want to delete <strong id="deleteNodeName"></strong>?</p>
+    <p style="font-size:13px;color:#94a3b8;">This will disconnect the node if online and permanently remove it. This action cannot be undone.</p>
+    <input type="hidden" id="deleteNodeId" value="">
+    <div class="form-actions">
+      <button class="btn-cancel" id="deleteCancelBtn">Cancel</button>
+      <button class="btn-primary" style="background:#ef4444;" id="deleteConfirmBtn">Delete</button>
     </div>
   </div>
 </div>
@@ -371,9 +362,7 @@
     var match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
     return match ? match[1] : null;
   }
-    fetch("/health").then(function(r){return r.json()}).then(function(d){if(d.self_signed_cert){var b=document.getElementById("certWarnBanner");if(b)b.classList.add("visible")}}).catch(function(){});
-
-  
+  fetch("/health").then(function(r){return r.json()}).then(function(d){if(d.self_signed_cert){var b=document.getElementById("certWarnBanner");if(b)b.classList.add("visible")}}).catch(function(){});
 
   var $ = function(id) { return document.getElementById(id); };
 
@@ -386,7 +375,7 @@
 
   function apiFetch(url, opts) {
     return fetch(url, opts).then(function(r) {
-      if (r.status === 401) { window.location.href = "/login?next=/admin/users"; }
+      if (r.status === 401) { window.location.href = "/login?next=/admin/nodes"; }
       return r;
     });
   }
@@ -397,17 +386,6 @@
     return d.innerHTML;
   }
 
-  // ── Role badge helpers ──
-  function roleBadgeClass(role) {
-    if (role === 'super_admin' || role === 'admin') return 'role-admin';
-    if (role === 'operator') return 'role-operator';
-    return 'role-viewer';
-  }
-
-  function formatRole(role) {
-    return (role || '').replace('_', ' ');
-  }
-
   function formatDate(iso) {
     if (!iso) return '--';
     try {
@@ -416,24 +394,70 @@
     } catch(e) { return iso; }
   }
 
-  // ── Fetch and render users ──
-  function fetchUsers() {
-    fetch('/api/v1/users', { headers: authHeaders() })
-      .then(function(r) {
-        if (r.status === 401) { window.location.href = '/login?next=/admin/users'; return []; }
-        return r.ok ? r.json() : [];
-      })
-      .then(function(users) {
-        renderUsers(users || []);
-      })
-      .catch(function() { renderUsers([]); });
+  function isExpired(node) {
+    if (!node.expires_at) return false;
+    return new Date(node.expires_at) < new Date();
   }
 
-  function renderUsers(users) {
-    var tbody = $('usersBody');
+  function statusBadge(node) {
+    if (isExpired(node)) return '<span class="status-badge status-expired">Expired</span>';
+    var cls = 'status-' + node.status;
+    return '<span class="status-badge ' + cls + '">' + escapeHtml(node.status) + '</span>';
+  }
+
+  function typeBadge(dt) {
+    var cls = dt === 'relay' ? 'type-relay' : 'type-edge';
+    return '<span class="type-badge ' + cls + '">' + escapeHtml(dt) + '</span>';
+  }
+
+  // ── Device types ──
+  var deviceTypes = [];
+  function loadDeviceTypes() {
+    apiFetch('/api/v1/device-types', { headers: authHeaders() })
+      .then(function(r) { return r.ok ? r.json() : { device_types: [] }; })
+      .then(function(data) {
+        deviceTypes = data.device_types || [];
+        var sel = $('formDeviceType');
+        sel.innerHTML = '';
+        deviceTypes.forEach(function(dt) {
+          var opt = document.createElement('option');
+          opt.value = dt.device_type;
+          opt.textContent = dt.display_name;
+          sel.appendChild(opt);
+        });
+      }).catch(function() {});
+  }
+  loadDeviceTypes();
+
+  // ── All nodes (cached for search) ──
+  var allNodes = [];
+
+  function fetchNodes() {
+    apiFetch('/api/v1/nodes', { headers: authHeaders() })
+      .then(function(r) {
+        if (r.status === 401) return [];
+        return r.ok ? r.json() : [];
+      })
+      .then(function(nodes) {
+        allNodes = nodes || [];
+        renderNodes(allNodes);
+      })
+      .catch(function() { renderNodes([]); });
+  }
+
+  function renderNodes(nodes) {
+    var filter = ($('searchInput').value || '').toLowerCase();
+    if (filter) {
+      nodes = nodes.filter(function(n) {
+        return n.name.toLowerCase().indexOf(filter) !== -1 ||
+               n.device_type.toLowerCase().indexOf(filter) !== -1 ||
+               n.status.toLowerCase().indexOf(filter) !== -1;
+      });
+    }
+    var tbody = $('nodesBody');
     var empty = $('emptyState');
 
-    if (!users.length) {
+    if (!nodes.length) {
       tbody.innerHTML = '';
       empty.style.display = '';
       return;
@@ -441,122 +465,93 @@
 
     empty.style.display = 'none';
     var html = '';
-    users.forEach(function(u) {
-      var statusClass = u.is_active ? 'status-active' : 'status-disabled';
-      var statusText = u.is_active ? 'Active' : 'Disabled';
-      var nodeAccess = u.allowed_node_ids ? u.allowed_node_ids.length + ' node(s)' : 'All nodes';
+    nodes.forEach(function(n) {
+      var expiresText = n.expires_at ? formatDate(n.expires_at) : '--';
       html += '<tr>' +
-        '<td>' + escapeHtml(u.username) + '</td>' +
-        '<td>' + escapeHtml(u.display_name) + '</td>' +
-        '<td><span class="role-badge ' + roleBadgeClass(u.role) + '">' + escapeHtml(formatRole(u.role)) + '</span></td>' +
-        '<td><span class="' + statusClass + '">' + statusText + '</span></td>' +
-        '<td>' + (u.is_temporary ? formatDate(u.expires_at) : '--') + '</td>' +
-        '<td>' + nodeAccess + '</td>' +
+        '<td><a href="/nodes/' + encodeURIComponent(n.id) + '" style="color:#60a5fa;text-decoration:none;">' + escapeHtml(n.name) + '</a></td>' +
+        '<td>' + typeBadge(n.device_type) + '</td>' +
+        '<td>' + statusBadge(n) + '</td>' +
+        '<td>' + escapeHtml(n.software_version || '--') + '</td>' +
+        '<td>' + expiresText + '</td>' +
+        '<td>' + formatDate(n.last_seen_at) + '</td>' +
         '<td>' +
-          '<button class="action-btn edit-btn" data-id="' + escapeHtml(u.id) + '">Edit</button>' +
-          '<button class="action-btn toggle-btn" data-id="' + escapeHtml(u.id) + '" data-active="' + u.is_active + '">' + (u.is_active ? 'Disable' : 'Enable') + '</button>' +
+          '<button class="action-btn edit-btn" data-id="' + escapeHtml(n.id) + '" title="Edit">Edit</button>' +
+          '<button class="action-btn token-btn" data-id="' + escapeHtml(n.id) + '" title="Regenerate token">Token</button>' +
+          '<button class="action-btn danger delete-btn" data-id="' + escapeHtml(n.id) + '" data-name="' + escapeHtml(n.name) + '" title="Delete node">Delete</button>' +
         '</td>' +
       '</tr>';
     });
     tbody.innerHTML = html;
   }
 
-  fetchUsers();
+  fetchNodes();
 
-  // ── Modal logic ──
-  var modal = $('userModal');
+  // ── Search ──
+  $('searchInput').addEventListener('input', function() {
+    renderNodes(allNodes);
+  });
 
-  function openModal(title, user) {
+  // ── Add Node Modal ──
+  var modal = $('nodeModal');
+
+  function openModal(title, node) {
     $('modalTitle').textContent = title;
-    $('editUserId').value = user ? user.id : '';
-    $('formUsername').value = user ? user.username : '';
-    $('formUsername').disabled = !!user;
-    $('formPassword').value = '';
-    $('formPassword').placeholder = user ? 'Leave blank to keep current' : 'Enter password';
-    $('formDisplayName').value = user ? user.display_name : '';
-    $('formEmail').value = user ? (user.email || '') : '';
-    $('formRole').value = user ? user.role : 'viewer';
-    $('formTemporary').checked = user ? user.is_temporary : false;
-    $('formExpiresAt').value = user && user.expires_at ? user.expires_at.slice(0, 16) : '';
-    $('expiresGroup').style.display = (user && user.is_temporary) ? '' : 'none';
+    $('editNodeId').value = node ? node.id : '';
+    $('formName').value = node ? node.name : '';
+    $('formName').disabled = false;
+    $('formDescription').value = node ? (node.description || '') : '';
+    $('formDeviceType').value = node ? node.device_type : 'edge';
+    $('deviceTypeGroup').style.display = node ? 'none' : '';  // Can't change type after creation
+    $('formExpiresAt').value = node && node.expires_at ? node.expires_at.slice(0, 16) : '';
     $('formError').style.display = 'none';
     modal.classList.add('open');
   }
 
-  function closeModal() {
-    modal.classList.remove('open');
-  }
+  function closeModal() { modal.classList.remove('open'); }
 
-  $('addUserBtn').addEventListener('click', function() {
-    openModal('Add User', null);
-  });
-
+  $('addNodeBtn').addEventListener('click', function() { openModal('Add Node', null); });
   $('modalCancelBtn').addEventListener('click', closeModal);
-
-  modal.addEventListener('click', function(e) {
-    if (e.target === modal) closeModal();
-  });
-
-  $('formTemporary').addEventListener('change', function() {
-    $('expiresGroup').style.display = this.checked ? '' : 'none';
-  });
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
 
   $('modalSaveBtn').addEventListener('click', function() {
-    var editId = $('editUserId').value;
-    var username = $('formUsername').value.trim();
-    var password = $('formPassword').value;
-    var displayName = $('formDisplayName').value.trim();
-    var email = $('formEmail').value.trim() || null;
-    var role = $('formRole').value;
-    var isTemp = $('formTemporary').checked;
-    var expiresAt = isTemp && $('formExpiresAt').value ? new Date($('formExpiresAt').value).toISOString() : null;
+    var editId = $('editNodeId').value;
+    var name = $('formName').value.trim();
+    var desc = $('formDescription').value.trim() || null;
+    var deviceType = $('formDeviceType').value;
+    var expiresVal = $('formExpiresAt').value;
+    var expiresAt = expiresVal ? new Date(expiresVal).toISOString() : null;
 
-    // Validation
-    if (!editId) {
-      if (!username) { showError('Username is required'); return; }
-      if (!password) { showError('Password is required'); return; }
+    if (!name) { showError('Name is required'); return; }
+    if (name.length > 128) { showError('Name must be at most 128 characters'); return; }
+
+    if (expiresAt && new Date(expiresAt) <= new Date()) {
+      showError('Expiry must be in the future'); return;
     }
-    if (!displayName) { showError('Display name is required'); return; }
 
     if (editId) {
-      // Update
-      var body = {
-        display_name: displayName,
-        email: email,
-        role: role,
-        is_temporary: isTemp,
-        expires_at: isTemp ? expiresAt : null
-      };
-      if (password) body.password = password;
-
-      fetch('/api/v1/users/' + encodeURIComponent(editId), {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(body)
+      // Update existing node
+      var body = { name: name, description: desc, expires_at: expiresAt };
+      apiFetch('/api/v1/nodes/' + encodeURIComponent(editId), {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify(body)
       }).then(function(r) {
-        if (r.ok) { closeModal(); fetchUsers(); }
-        else { r.text().then(function(t) { showError('Failed: ' + (t || r.status)); }); }
+        if (r.ok) { closeModal(); fetchNodes(); }
+        else { r.json().then(function(d) { showError(d.error || 'Failed to update'); }).catch(function() { showError('Failed to update node'); }); }
       }).catch(function(e) { showError('Error: ' + e.message); });
     } else {
-      // Create
-      var body = {
-        username: username,
-        password: password,
-        display_name: displayName,
-        email: email,
-        role: role,
-        is_temporary: isTemp,
-        expires_at: expiresAt,
-        allowed_node_ids: null
-      };
-
-      fetch('/api/v1/users', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body)
+      // Create new node
+      var body = { name: name, description: desc, device_type: deviceType, expires_at: expiresAt };
+      apiFetch('/api/v1/nodes', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify(body)
       }).then(function(r) {
-        if (r.ok || r.status === 201) { closeModal(); fetchUsers(); }
-        else { r.text().then(function(t) { showError('Failed: ' + (t || r.status)); }); }
+        if (r.ok || r.status === 201) {
+          return r.json().then(function(data) {
+            closeModal();
+            fetchNodes();
+            showToken(data.registration_token, data.name);
+          });
+        } else {
+          r.json().then(function(d) { showError(d.error || 'Failed to create'); }).catch(function() { showError('Failed to create node'); });
+        }
       }).catch(function(e) { showError('Error: ' + e.message); });
     }
   });
@@ -567,30 +562,82 @@
     el.style.display = '';
   }
 
-  // ── Edit and toggle handlers (delegated) ──
-  $('usersBody').addEventListener('click', function(e) {
+  // ── Token Modal ──
+  function showToken(token, nodeName) {
+    $('tokenModalTitle').textContent = 'Registration Token for ' + (nodeName || 'Node');
+    $('tokenValue').textContent = token;
+    $('tokenModal').classList.add('open');
+  }
+
+  $('copyTokenBtn').addEventListener('click', function() {
+    var token = $('tokenValue').textContent;
+    navigator.clipboard.writeText(token).then(function() {
+      $('copyTokenBtn').textContent = 'Copied!';
+      setTimeout(function() { $('copyTokenBtn').textContent = 'Copy'; }, 2000);
+    }).catch(function() {
+      // Fallback for older browsers
+      var ta = document.createElement('textarea');
+      ta.value = token;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      $('copyTokenBtn').textContent = 'Copied!';
+      setTimeout(function() { $('copyTokenBtn').textContent = 'Copy'; }, 2000);
+    });
+  });
+
+  $('tokenCloseBtn').addEventListener('click', function() { $('tokenModal').classList.remove('open'); });
+  $('tokenModal').addEventListener('click', function(e) { if (e.target === $('tokenModal')) $('tokenModal').classList.remove('open'); });
+
+  // ── Delete Modal ──
+  $('deleteCancelBtn').addEventListener('click', function() { $('deleteModal').classList.remove('open'); });
+  $('deleteModal').addEventListener('click', function(e) { if (e.target === $('deleteModal')) $('deleteModal').classList.remove('open'); });
+
+  $('deleteConfirmBtn').addEventListener('click', function() {
+    var id = $('deleteNodeId').value;
+    apiFetch('/api/v1/nodes/' + encodeURIComponent(id), {
+      method: 'DELETE', headers: authHeaders()
+    }).then(function(r) {
+      $('deleteModal').classList.remove('open');
+      if (r.ok || r.status === 204) { fetchNodes(); }
+    }).catch(function() { $('deleteModal').classList.remove('open'); });
+  });
+
+  // ── Table action delegation ──
+  $('nodesBody').addEventListener('click', function(e) {
     var editBtn = e.target.closest('.edit-btn');
     if (editBtn) {
-      var userId = editBtn.getAttribute('data-id');
-      fetch('/api/v1/users/' + encodeURIComponent(userId), { headers: authHeaders() })
+      var nodeId = editBtn.getAttribute('data-id');
+      apiFetch('/api/v1/nodes/' + encodeURIComponent(nodeId), { headers: authHeaders() })
         .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(user) {
-          if (user) openModal('Edit User', user);
+        .then(function(node) {
+          if (node) openModal('Edit Node', node);
         });
       return;
     }
 
-    var toggleBtn = e.target.closest('.toggle-btn');
-    if (toggleBtn) {
-      var userId = toggleBtn.getAttribute('data-id');
-      var isActive = toggleBtn.getAttribute('data-active') === 'true';
-      fetch('/api/v1/users/' + encodeURIComponent(userId), {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify({ is_active: !isActive })
-      }).then(function(r) {
-        if (r.ok) fetchUsers();
-      });
+    var tokenBtn = e.target.closest('.token-btn');
+    if (tokenBtn) {
+      var nodeId = tokenBtn.getAttribute('data-id');
+      apiFetch('/api/v1/nodes/' + encodeURIComponent(nodeId) + '/token', {
+        method: 'POST', headers: authHeaders()
+      }).then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (data && data.registration_token) {
+            showToken(data.registration_token);
+            fetchNodes(); // Status will change to pending
+          }
+        });
+      return;
+    }
+
+    var deleteBtn = e.target.closest('.delete-btn');
+    if (deleteBtn) {
+      $('deleteNodeId').value = deleteBtn.getAttribute('data-id');
+      $('deleteNodeName').textContent = deleteBtn.getAttribute('data-name');
+      $('deleteModal').classList.add('open');
+      return;
     }
   });
 

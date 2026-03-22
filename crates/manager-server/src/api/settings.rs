@@ -197,9 +197,17 @@ pub async fn update_settings(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(req): Json<UpdateSettingsRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
+    }
+
+    // Validate all keys and values before applying any
+    for (key, value) in &req.settings {
+        manager_core::validation::validate_setting_key(key)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
+        manager_core::validation::validate_setting_value(key, value)
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
     }
 
     for (key, value) in &req.settings {
@@ -209,7 +217,7 @@ pub async fn update_settings(
         };
         manager_core::db::settings::set_setting(&state.db, key, &value_str, Some(&auth.user_id))
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Failed to update settings"}))))?;
     }
 
     let _ = manager_core::db::audit::log_audit(
