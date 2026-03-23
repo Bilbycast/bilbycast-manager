@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
 //! Device driver for bilbycast-edge transport nodes.
 
 use super::{AiDeviceContext, CommandDescriptor, DeviceDriver, DeviceMetricsSummary};

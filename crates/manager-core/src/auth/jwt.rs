@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};

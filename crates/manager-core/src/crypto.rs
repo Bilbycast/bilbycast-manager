@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce, aead::consts::U12,

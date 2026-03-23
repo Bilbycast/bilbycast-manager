@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
 //! Device driver trait and registry for managing different types of network devices.
 //!
 //! Each device type (edge transport node, relay server, encoder, etc.) implements

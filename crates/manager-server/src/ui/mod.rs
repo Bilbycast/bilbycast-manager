@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
 use axum::extract::{Request, State};
 use axum::http::header;
 use axum::middleware::Next;
@@ -9,9 +15,10 @@ use crate::app_state::AppState;
 
 /// Serve HTML with no-cache headers to prevent stale JS after updates.
 fn html_no_cache(content: &'static str) -> impl IntoResponse {
+    let versioned = content.replace("{{VERSION}}", env!("CARGO_PKG_VERSION"));
     (
         [(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")],
-        Html(content),
+        Html(versioned),
     )
 }
 

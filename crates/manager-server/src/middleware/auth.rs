@@ -1,3 +1,9 @@
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
+// Copyright (c) 2026 Reza Rahimi. All rights reserved.
+// SPDX-License-Identifier: Elastic-2.0
+
 use axum::extract::{FromRequestParts, State};
 use axum::http::{Method, Request, StatusCode, header};
 use axum::middleware::Next;

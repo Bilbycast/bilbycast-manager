@@ -94,4 +94,4 @@ All commands accept `--config <path>` (default: `config/default.toml`). The `ser
 
 ## License
 
-See [LICENSE](LICENSE).
+This project is licensed under the [Elastic License 2.0](LICENSE). For use cases not covered by ELv2 (OEM, managed services, resale), a commercial license is available from Softside Tech Pty Ltd — contact admin@softsidetech.com.
