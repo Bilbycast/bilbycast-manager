@@ -90,7 +90,10 @@ HTTP Request → SecurityHeaders → TraceLayer → Router
 - **Middleware:** `manager-server/src/middleware/auth.rs` — extracts JWT from cookie (primary) or Authorization header (fallback), validates, checks revocation, enforces CSRF on mutating requests
 - **CSRF:** Double-submit cookie pattern with header-only fallback. Login sets non-httpOnly `csrf_token` cookie with `Secure; SameSite=Lax`; middleware validates `X-CSRF-Token` header matches cookie on POST/PUT/PATCH/DELETE. When the cookie is missing (Chrome with self-signed certs), the header alone is accepted — safe because custom headers can only be set by same-origin JS (CORS blocks cross-origin). Constant-time comparison (`auth/csrf.rs`)
 - **CORS:** Restricted to same-origin only; cross-origin API requests are blocked
-- **TLS:** Mandatory — server requires `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY` to start. Edge and relay clients enforce `wss://` URLs. Self-signed certs are detected at startup; all UI pages show a warning banner when using self-signed certs. Certs can be uploaded via `POST /api/v1/settings/tls/upload` or the Settings page
+- **TLS:** Two modes via `tls_mode` config (or `BILBYCAST_TLS_MODE` env var):
+  - `"direct"` (default): Manager handles TLS. Requires `BILBYCAST_TLS_CERT` and `BILBYCAST_TLS_KEY`. Sets `Secure` cookie flag, sends HSTS headers.
+  - `"behind_proxy"`: Load balancer terminates TLS. Manager listens on plain HTTP/WS. No cert needed. Omits `Secure` flag and HSTS. Only use on trusted networks between LB and manager.
+  Edge and relay clients always enforce `wss://` URLs (connecting to LB or directly). Self-signed certs are detected at startup; all UI pages show a warning banner when using self-signed certs.
 - **Self-signed cert acceptance:** Edge/relay clients support `accept_self_signed_cert: true` in their manager config for dev/testing (disables cert validation)
 
 ### WebSocket Architecture
@@ -128,12 +131,18 @@ HTTP Request → SecurityHeaders → TraceLayer → Router
 
 ### AI Integration
 
-Trait-based provider abstraction in `manager-core/src/ai/`:
+Action-based AI assistant in `manager-server/src/api/ai.rs` with provider abstraction:
 
-- **`AiProviderTrait`** (async_trait): `generate_flow_config()`, `analyze_anomaly()`, `answer_query()`
-- **Implementations:** OpenAI (`openai.rs`), Anthropic (`anthropic.rs`), Gemini (`gemini.rs`)
-- **Context building:** `config_gen.rs` assembles protocol docs + flow config JSON schema + node info
-- **API handlers:** `manager-server/src/api/ai.rs` — keys are encrypted/decrypted per-request using master_key
+- **Providers:** OpenAI, Anthropic, Gemini — keys encrypted at rest, model preference persisted per-user in DB
+- **Context building:** `config_gen.rs` assembles protocol docs + flow config JSON schema. Real flow configs fetched from the node hub cache (not stats data) for accurate context.
+- **Action-based responses:** AI returns a JSON action envelope, not raw config. Supported actions:
+  - `create_flow` / `update_flow` — with complete FlowConfig JSON
+  - `delete_flow` / `start_flow` / `stop_flow` / `restart_flow` — by flow ID
+  - `add_output` / `remove_output` — modify outputs on existing flows
+  - `info` — answer questions without config changes
+  - `multiple` — batch operations (array of sub-actions)
+- **UI execution:** Each action renders with an appropriate button (Apply, Delete, Stop, etc.) that calls the correct API endpoint. Flow cache refreshes after every successful action.
+- **Backwards compatibility:** Raw FlowConfig responses (no action wrapper) are auto-wrapped in `create_flow`; non-JSON text responses become `info` actions.
 
 ### Database
 
@@ -192,6 +201,7 @@ All API inputs are validated before processing. Validation functions live in `ma
 Static HTML+JS pages embedded via `include_str!()` in `manager-server/src/ui/`. No frontend framework — all client-side logic is vanilla JavaScript.
 
 - **Pages:** login, dashboard, topology, node_detail, node_config, events, managed_nodes, users, settings, ai_assistant, ai_settings
+- **Topology page:** Two views toggled via Graph/Flow buttons — force-directed graph layout (default) and left-to-right signal flow layout that organizes nodes into columns by role (sources → edge ingress → relay → edge egress → destinations). Both views share the same canvas, data pipeline, and interaction model (pan, zoom, drag, double-click to detail). Flow view uses `computeFlowLayout()` for deterministic column positioning and cubic bezier S-curves for links.
 - **Styling:** Tailwind CSS dark theme (slate palette)
 
 ## Environment Variables
@@ -201,7 +211,10 @@ Required:
 - `BILBYCAST_MASTER_KEY` — 64-char hex string (32 bytes), validated on startup
 
 Required:
-- `BILBYCAST_TLS_CERT` / `BILBYCAST_TLS_KEY` — TLS certificate and key paths (server will not start without TLS)
+- `BILBYCAST_TLS_CERT` / `BILBYCAST_TLS_KEY` — TLS certificate and key paths (required in direct mode, ignored in behind_proxy mode)
+
+Optional:
+- `BILBYCAST_TLS_MODE` — `"direct"` (default) or `"behind_proxy"` (LB terminates TLS)
 
 Optional:
 - `BILBYCAST_PORT` — Override listen port (default: 8443)

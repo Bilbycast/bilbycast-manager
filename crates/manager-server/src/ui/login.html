@@ -242,7 +242,8 @@
                 // Session cookie is set by the server via Set-Cookie (HttpOnly; Secure)
                 // CSRF token is set as a fallback here (JS needs to read it for X-CSRF-Token)
                 if (data.csrf_token) {
-                    document.cookie = 'csrf_token=' + data.csrf_token + '; Secure; SameSite=Lax; Path=/; Max-Age=86400';
+                    var securePart = (window.location.protocol === 'https:') ? ' Secure;' : '';
+                    document.cookie = 'csrf_token=' + data.csrf_token + ';' + securePart + ' SameSite=Lax; Path=/; Max-Age=86400';
                 }
                 // Redirect to the page the user originally requested, or /dashboard
                 var nextUrl = params.get('next');

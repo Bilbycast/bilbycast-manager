@@ -150,6 +150,39 @@
   .json-bool { color: #c084fc; }
   .json-null { color: #94a3b8; }
 
+  /* ── Flow preview card ── */
+  .flow-preview {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 10px;
+    margin-top: 8px; overflow: hidden;
+  }
+  .flow-preview .fp-header {
+    padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #21262d; background: #161b22;
+  }
+  .flow-preview .fp-name { font-size: 14px; font-weight: 600; color: #f0f6fc; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .flow-preview .fp-badges { display: flex; gap: 6px; align-items: center; }
+  .flow-preview .fp-badge {
+    padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; font-family: -apple-system, BlinkMacSystemFont, monospace;
+  }
+  .flow-preview .fp-section { padding: 10px 14px; border-bottom: 1px solid #21262d; }
+  .flow-preview .fp-section:last-child { border-bottom: none; }
+  .flow-preview .fp-label {
+    font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 6px; font-family: -apple-system, BlinkMacSystemFont, monospace;
+  }
+  .flow-preview .fp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+  .flow-preview .fp-stat { display: flex; flex-direction: column; }
+  .flow-preview .fp-stat .k { font-size: 10px; color: #8b949e; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .flow-preview .fp-stat .v { font-size: 13px; color: #c9d1d9; font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .flow-preview table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, monospace; }
+  .flow-preview th {
+    text-align: left; color: #8b949e; font-weight: 500; padding: 5px 8px;
+    font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #21262d;
+  }
+  .flow-preview td { padding: 5px 8px; color: #c9d1d9; border-top: 1px solid #21262d; }
+  .flow-preview tr:first-child td { border-top: none; }
+
   /* ── Apply button ── */
   .btn-apply {
     background: #059669; color: #fff; border: none; border-radius: 8px;
@@ -166,6 +199,23 @@
   }
   .apply-status.success { background: rgba(5, 150, 105, 0.15); color: #4ade80; }
   .apply-status.error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+  /* ── Action buttons (delete, stop, start, etc.) ── */
+  .btn-action {
+    border: none; border-radius: 8px; padding: 10px 20px; font-size: 13px;
+    font-weight: 600; cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; margin-right: 8px;
+  }
+  .btn-action:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-action svg { width: 16px; height: 16px; }
+  .btn-action.delete { background: #dc2626; color: #fff; }
+  .btn-action.delete:hover { background: #b91c1c; }
+  .btn-action.stop { background: #d97706; color: #fff; }
+  .btn-action.stop:hover { background: #b45309; }
+  .btn-action.start { background: #059669; color: #fff; }
+  .btn-action.start:hover { background: #047857; }
+  .btn-action.restart { background: #7c3aed; color: #fff; }
+  .btn-action.restart:hover { background: #6d28d9; }
 
   /* ── Welcome state ── */
   .welcome {
@@ -365,12 +415,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="12" cy="15" r="2"/></svg>
         </div>
         <h2>AI Configuration Assistant</h2>
-        <p>Describe the flow configuration you need in plain language, and the AI will generate the FlowConfig JSON for you. Select a target node above, then try one of these examples:</p>
+        <p>Manage flow configurations using natural language. Create, modify, delete, start, stop flows &mdash; or ask questions about what's running. Select a target node above, then try:</p>
         <div class="welcome-examples">
           <button class="example-chip" data-prompt="SRT listener on port 9000 with AES-256, output as RTP multicast to 239.1.1.1:5004 with SMPTE 2022-1 FEC 10x10">SRT to RTP multicast</button>
           <button class="example-chip" data-prompt="SRT listener on port 9000, fan out to three SRT callers: London on port 5001, Sydney on port 5002, and New York on port 5003, all with 200ms latency">SRT fan-out to 3 sites</button>
-          <button class="example-chip" data-prompt="RTP input on multicast 239.1.1.1:5000, output to RTMP on rtmp://live.example.com/app with stream key 'live123', and also output SRT caller to 10.0.0.1:9000">Multicast to RTMP + SRT</button>
-          <button class="example-chip" data-prompt="SRT listener on port 9000 with AES-128, output to WebRTC via WHIP endpoint https://whip.example.com/ingest and also RTP to 192.168.1.100:5004">SRT to WebRTC + RTP</button>
+          <button class="example-chip" data-prompt="What flows are currently configured on this node?">What flows are running?</button>
+          <button class="example-chip" data-prompt="Add an RTP output to the main flow sending to 239.1.1.1:5004 with DSCP 46">Add output to a flow</button>
+          <button class="example-chip" data-prompt="Stop all flows on this node">Stop all flows</button>
+          <button class="example-chip" data-prompt="RTP input on multicast 239.1.1.1:5000, output to RTMP on rtmp://live.example.com/app with stream key 'live123'">Multicast to RTMP</button>
         </div>
       </div>
     </div>
@@ -422,9 +474,22 @@
   }
 
   // ── State ──
-  var nodeFlows = {};       // node_id -> [flow objects] from WS
+  var nodeFlows = {};       // node_id -> [flow config objects]
   var isWaiting = false;    // prevent double-send
   var messageCounter = 0;   // unique IDs for apply buttons
+
+  // ── Fetch real flow configs for a node ──
+  function fetchNodeFlows(nodeId) {
+    if (!nodeId) return;
+    fetch('/api/v1/nodes/' + encodeURIComponent(nodeId) + '/config', { headers: authHeaders() })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.flows && Array.isArray(data.flows)) {
+          nodeFlows[nodeId] = data.flows;
+        }
+      })
+      .catch(function () { /* silent — flows context is optional */ });
+  }
 
   // ── Fetch nodes for dropdown ──
   function fetchNodes() {
@@ -443,6 +508,8 @@
           opt.textContent = n.name + (n.status === 'online' ? '' : ' (offline)');
           sel.appendChild(opt);
         });
+        // Fetch flow configs for initially selected node
+        if (sel.value) fetchNodeFlows(sel.value);
       })
       .catch(function () {
         $('nodeSelect').innerHTML = '<option value="">Failed to load nodes</option>';
@@ -450,6 +517,11 @@
   }
 
   fetchNodes();
+
+  // Fetch flow configs when node selection changes
+  $('nodeSelect').addEventListener('change', function () {
+    if (this.value) fetchNodeFlows(this.value);
+  });
 
   // ── WebSocket for flow context ──
   var ws = null;
@@ -469,10 +541,14 @@
       try {
         var msg = JSON.parse(evt.data);
         if (msg.type === 'dashboard_update' && Array.isArray(msg.nodes)) {
+          // Update node status in dropdown
           msg.nodes.forEach(function (n) {
             var key = n.node_id || n.id || n.name;
-            var stats = n.stats || {};
-            nodeFlows[key] = stats.flows || [];
+            // Only update flow cache from WS if we don't already have real configs from the API
+            if (!nodeFlows[key] || nodeFlows[key].length === 0) {
+              var stats = n.stats || {};
+              nodeFlows[key] = stats.flows || [];
+            }
           });
         }
       } catch (e) { /* ignore */ }
@@ -584,11 +660,15 @@
       body: JSON.stringify(body)
     })
     .then(function (r) {
-      return r.json().catch(function () {
-        // If response body isn't JSON, create a synthetic error
-        if (!r.ok) throw new Error('Server returned ' + r.status + '. Check your AI API key in AI Keys settings.');
-        throw new Error('Invalid response from server');
-      });
+      if (!r.ok) {
+        return r.json().then(function (data) {
+          throw new Error(data.error || 'Server returned HTTP ' + r.status);
+        }).catch(function (e) {
+          if (e.message) throw e;
+          throw new Error('Server returned HTTP ' + r.status + '. Check your AI API key in AI Keys settings.');
+        });
+      }
+      return r.json();
     })
     .then(function (data) {
       loadingEl.remove();
@@ -596,7 +676,7 @@
       sendBtn.disabled = false;
 
       if (data.success && data.config) {
-        addAiConfigMessage(data.config, data.message || null, nodeId);
+        handleActionResponse(data.config, nodeId);
       } else {
         var errMsg = data.error || data.message || 'The AI was unable to generate a configuration. Please try rephrasing your request.';
         addAiTextMessage(errMsg);
@@ -608,6 +688,83 @@
       sendBtn.disabled = false;
       addAiTextMessage(err.message || 'Network error. Please check your connection and AI key configuration.');
     });
+  }
+
+  // ── Handle action-based AI responses ──
+  function handleActionResponse(config, nodeId) {
+    var action = config.action || '';
+    var message = config.message || '';
+
+    switch (action) {
+      case 'create_flow':
+        addAiConfigMessage(config.flow, message, nodeId, 'create_flow');
+        break;
+      case 'update_flow':
+        addAiConfigMessage(config.flow, message, nodeId, 'update_flow');
+        break;
+      case 'delete_flow':
+        addActionMessage(message || ('Delete flow "' + config.flow_id + '"'), nodeId, 'delete_flow', config);
+        break;
+      case 'add_output':
+        addAiConfigMessage(config.output, message || ('Add output to flow "' + config.flow_id + '"'), nodeId, 'add_output', config.flow_id);
+        break;
+      case 'remove_output':
+        addActionMessage(message || ('Remove output "' + config.output_id + '" from flow "' + config.flow_id + '"'), nodeId, 'remove_output', config);
+        break;
+      case 'start_flow':
+        addActionMessage(message || ('Start flow "' + config.flow_id + '"'), nodeId, 'start_flow', config);
+        break;
+      case 'stop_flow':
+        addActionMessage(message || ('Stop flow "' + config.flow_id + '"'), nodeId, 'stop_flow', config);
+        break;
+      case 'restart_flow':
+        addActionMessage(message || ('Restart flow "' + config.flow_id + '"'), nodeId, 'restart_flow', config);
+        break;
+      case 'info':
+        addAiTextMessage(message);
+        break;
+      case 'multiple':
+        if (message) addAiTextMessage(message);
+        var actions = config.actions || [];
+        for (var i = 0; i < actions.length; i++) {
+          handleActionResponse(actions[i], nodeId);
+        }
+        break;
+      default:
+        // Legacy fallback: if it looks like a FlowConfig, treat as create
+        if (config.id && config.input) {
+          addAiConfigMessage(config, message, nodeId, 'create_flow');
+        } else {
+          addAiTextMessage(message || JSON.stringify(config, null, 2));
+        }
+    }
+  }
+
+  // ── Add action message (delete, stop, start, restart, remove_output) ──
+  function addActionMessage(text, nodeId, actionType, actionData) {
+    messageCounter++;
+    var msgId = 'action-' + messageCounter;
+
+    var div = document.createElement('div');
+    div.className = 'message ai';
+
+    var btnLabel = { 'delete_flow': 'Delete Flow', 'stop_flow': 'Stop Flow', 'start_flow': 'Start Flow', 'restart_flow': 'Restart Flow', 'remove_output': 'Remove Output' }[actionType] || 'Execute';
+    var btnClass = { 'delete_flow': 'delete', 'stop_flow': 'stop', 'start_flow': 'start', 'restart_flow': 'restart', 'remove_output': 'delete' }[actionType] || 'start';
+
+    var html =
+      '<div class="message-label">AI Assistant</div>' +
+      '<div class="message-bubble">' + escapeHtml(text) + '</div>' +
+      '<button class="btn-action ' + btnClass + '" id="' + msgId + '">' + escapeHtml(btnLabel) + '</button>' +
+      '<div id="' + msgId + '-status"></div>';
+
+    div.innerHTML = html;
+    messagesArea.appendChild(div);
+
+    div.querySelector('.btn-action').addEventListener('click', function () {
+      executeAction(this, nodeId, actionType, actionData);
+    });
+
+    scrollToBottom();
   }
 
   function addUserMessage(text) {
@@ -630,7 +787,71 @@
     scrollToBottom();
   }
 
-  function addAiConfigMessage(config, explanationText, nodeId) {
+  // ── Build a visual flow preview card from a FlowConfig object ──
+  function buildFlowPreview(config, actionType) {
+    if (!config) return '';
+    var h = '';
+
+    // For add_output actions, show just the output
+    if (actionType === 'add_output') {
+      var o = config;
+      var oType = (o.type || 'unknown').toUpperCase();
+      var oMode = o.mode || '-';
+      var oAddr = o.dest_addr || o.dest_url || o.ingest_url || o.whip_url ||
+        ((o.type === 'srt' && (o.mode === 'caller' || o.mode === 'rendezvous')) ? (o.remote_addr || '-') : (o.local_addr || '-'));
+      h += '<div class="flow-preview">';
+      h += '<div class="fp-header"><span class="fp-name">New Output: ' + escapeHtml(o.name || o.id || '') + '</span>';
+      h += '<span class="fp-badges"><span class="fp-badge" style="background:#0d419d;color:#58a6ff">' + escapeHtml(oType) + '</span></span></div>';
+      h += '<div class="fp-section"><div class="fp-grid">';
+      h += '<div class="fp-stat"><div class="k">Mode</div><div class="v">' + escapeHtml(oMode) + '</div></div>';
+      h += '<div class="fp-stat"><div class="k">Address</div><div class="v">' + escapeHtml(oAddr) + '</div></div>';
+      if (o.latency_ms) h += '<div class="fp-stat"><div class="k">Latency</div><div class="v">' + o.latency_ms + ' ms</div></div>';
+      h += '</div></div></div>';
+      return h;
+    }
+
+    // Full flow card
+    var flowName = config.name || config.id || 'Unnamed Flow';
+    var enabled = config.enabled !== false;
+    var inp = config.input || {};
+    var inputType = (inp.type || 'unknown').toUpperCase();
+    var outs = config.outputs || [];
+
+    h += '<div class="flow-preview">';
+    // Header
+    h += '<div class="fp-header"><span class="fp-name">' + escapeHtml(flowName) + '</span>';
+    h += '<span class="fp-badges"><span class="fp-badge" style="' + (enabled ? 'background:#0d419d;color:#58a6ff' : 'background:#272c33;color:#8b949e') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span></span></div>';
+
+    // Input section
+    var inputMode = inp.mode ? ' (' + inp.mode + ')' : '';
+    var inputAddr = (inp.mode === 'caller' || inp.mode === 'rendezvous') ? (inp.remote_addr || '') : (inp.local_addr || '');
+    h += '<div class="fp-section"><div class="fp-label">Input (' + escapeHtml(inputType) + inputMode + ')</div>';
+    h += '<div class="fp-grid">';
+    if (inputAddr) h += '<div class="fp-stat"><div class="k">Address</div><div class="v">' + escapeHtml(inputAddr) + '</div></div>';
+    if (inp.latency_ms) h += '<div class="fp-stat"><div class="k">Latency</div><div class="v">' + inp.latency_ms + ' ms</div></div>';
+    h += '</div></div>';
+
+    // Outputs section
+    if (outs.length > 0) {
+      h += '<div class="fp-section"><div class="fp-label">Outputs (' + outs.length + ')</div>';
+      h += '<table><tr><th>Name</th><th>Type</th><th>Mode</th><th>Address</th></tr>';
+      for (var i = 0; i < outs.length; i++) {
+        var o = outs[i];
+        var oType = (o.type || 'unknown').toUpperCase();
+        var oMode = o.mode || '-';
+        var oAddr = o.dest_addr || o.dest_url || o.ingest_url || o.whip_url ||
+          ((o.type === 'srt' && (o.mode === 'caller' || o.mode === 'rendezvous')) ? (o.remote_addr || '-') : (o.local_addr || '-'));
+        h += '<tr><td>' + escapeHtml(o.name || o.id || '') + '</td><td>' + escapeHtml(oType) + '</td><td>' + escapeHtml(oMode) + '</td><td>' + escapeHtml(oAddr) + '</td></tr>';
+      }
+      h += '</table></div>';
+    }
+
+    h += '</div>';
+    return h;
+  }
+
+  function addAiConfigMessage(config, explanationText, nodeId, actionType, parentFlowId) {
+    if (!config) return;
     messageCounter++;
     var msgId = 'config-' + messageCounter;
     var jsonStr = JSON.stringify(config, null, 2);
@@ -639,6 +860,16 @@
     var div = document.createElement('div');
     div.className = 'message ai';
 
+    var blockLabel = 'FlowConfig JSON';
+    var btnLabel = 'Apply to Node';
+    if (actionType === 'update_flow') {
+      blockLabel = 'Updated FlowConfig';
+      btnLabel = 'Apply Update';
+    } else if (actionType === 'add_output') {
+      blockLabel = 'Output Config';
+      btnLabel = 'Add Output';
+    }
+
     var html =
       '<div class="message-label">AI Assistant</div>';
 
@@ -646,17 +877,21 @@
       html += '<div class="message-bubble">' + escapeHtml(explanationText) + '</div>';
     }
 
+    // Visual flow preview
+    html += buildFlowPreview(config, actionType);
+
     html +=
       '<div class="config-block">' +
         '<div class="config-block-header">' +
-          '<span>FlowConfig JSON</span>' +
+          '<span>' + blockLabel + '</span>' +
           '<button class="btn-copy" data-json="' + escapeAttr(jsonStr) + '">Copy</button>' +
         '</div>' +
         '<pre>' + highlightedJson + '</pre>' +
       '</div>' +
-      '<button class="btn-apply" id="' + msgId + '" data-node="' + escapeAttr(nodeId) + '" data-config="' + escapeAttr(jsonStr) + '">' +
+      '<button class="btn-apply" id="' + msgId + '" data-node="' + escapeAttr(nodeId) + '" data-config="' + escapeAttr(jsonStr) + '" data-action="' + (actionType || 'create_flow') + '"' +
+        (parentFlowId ? ' data-flow-id="' + escapeAttr(parentFlowId) + '"' : '') + '>' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
-        'Apply to Node' +
+        btnLabel +
       '</button>' +
       '<div id="' + msgId + '-status"></div>';
 
@@ -666,9 +901,7 @@
     // Bind copy button
     div.querySelector('.btn-copy').addEventListener('click', function () {
       var json = this.getAttribute('data-json');
-      navigator.clipboard.writeText(json).then(function () {
-        // brief feedback
-      });
+      navigator.clipboard.writeText(json).then(function () {});
       this.textContent = 'Copied!';
       var btn = this;
       setTimeout(function () { btn.textContent = 'Copy'; }, 2000);
@@ -706,10 +939,12 @@
     messagesArea.scrollTop = messagesArea.scrollHeight;
   }
 
-  // ── Apply config to node ──
+  // ── Apply config to node (create_flow, update_flow, add_output) ──
   function applyConfig(btn) {
     var nodeId = btn.getAttribute('data-node');
     var configStr = btn.getAttribute('data-config');
+    var actionType = btn.getAttribute('data-action') || 'create_flow';
+    var parentFlowId = btn.getAttribute('data-flow-id') || '';
     var statusEl = $(btn.id + '-status');
 
     btn.disabled = true;
@@ -722,127 +957,145 @@
       statusEl.className = 'apply-status error';
       statusEl.textContent = 'Invalid config JSON';
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Apply to Node';
+      btn.innerHTML = 'Retry';
       return;
     }
 
-    // Use direct HTTP proxy to node API (more reliable than WebSocket commands)
     var baseUrl = '/api/v1/nodes/' + encodeURIComponent(nodeId);
+    var applyPromise;
 
-    // Check if flow ID already exists on the node — if so, delete first then recreate
-    var existingFlows = nodeFlows[nodeId] || [];
-    var flowExists = existingFlows.some(function (f) {
-      return (f.id || f.flow_id) === config.id;
-    });
+    if (actionType === 'add_output' && parentFlowId) {
+      // Send add_output command via the command endpoint
+      applyPromise = fetch(baseUrl + '/command', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: { type: 'add_output', flow_id: parentFlowId, output: config } })
+      });
+    } else if (actionType === 'update_flow' || actionType === 'create_flow') {
+      // For both create and update: delete first if exists, then create
+      var existingFlows = nodeFlows[nodeId] || [];
+      var flowExists = existingFlows.some(function (f) {
+        return (f.id || f.flow_id) === config.id;
+      });
 
-    function sendCreateFlow() {
-      return fetch(baseUrl + '/flows', {
+      if (flowExists) {
+        statusEl.textContent = 'Replacing existing flow "' + config.id + '"...';
+        statusEl.style.color = '#fbbf24';
+        applyPromise = fetch(baseUrl + '/flows/' + encodeURIComponent(config.id), {
+          method: 'DELETE',
+          headers: authHeaders()
+        })
+        .then(function () {
+          return new Promise(function (resolve) { setTimeout(resolve, 500); });
+        })
+        .then(function () {
+          return fetch(baseUrl + '/flows', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify(config)
+          });
+        });
+      } else {
+        applyPromise = fetch(baseUrl + '/flows', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(config)
+        });
+      }
+    } else {
+      applyPromise = fetch(baseUrl + '/flows', {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify(config)
       });
     }
 
-    var applyPromise;
-    if (flowExists) {
-      statusEl.textContent = 'Replacing existing flow "' + config.id + '"...';
-      statusEl.style.color = '#fbbf24';
-      applyPromise = fetch(baseUrl + '/flows/' + encodeURIComponent(config.id), {
-        method: 'DELETE',
-        headers: authHeaders()
-      })
-      .then(function () {
-        return new Promise(function (resolve) { setTimeout(resolve, 500); });
-      })
-      .then(sendCreateFlow);
-    } else {
-      applyPromise = sendCreateFlow();
-    }
-
     applyPromise
     .then(function (r) {
-      return r.json().catch(function () {
-        if (!r.ok) throw new Error('Node returned error ' + r.status);
-        return {};
-      });
+      if (!r.ok) {
+        return r.json().then(function (data) {
+          throw new Error(data.error || 'Server returned error ' + r.status);
+        }).catch(function (e) {
+          if (e.message) throw e;
+          throw new Error('Server returned error ' + r.status);
+        });
+      }
+      return r.json();
     })
     .then(function (data) {
-      if (data.success || (data.data && data.data.id)) {
-        statusEl.className = 'apply-status success';
-        statusEl.textContent = 'Flow "' + config.id + '" applied to node successfully';
-        statusEl.style.color = '';
-        btn.disabled = true;
-        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Applied';
-        btn.style.background = '#064e3b';
-        // Refresh node flows cache
-        fetchNodeFlows(nodeId);
-      } else {
-        var errMsg = data.error || (typeof data === 'string' ? data : JSON.stringify(data));
-        statusEl.className = 'apply-status error';
-        statusEl.textContent = 'Node rejected config: ' + errMsg;
-        statusEl.style.color = '';
-        btn.disabled = false;
-        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
-      }
+      if (data.error) throw new Error(data.error);
+      statusEl.className = 'apply-status success';
+      statusEl.textContent = 'Applied successfully';
+      statusEl.style.color = '';
+      btn.disabled = true;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Applied';
+      btn.style.background = '#064e3b';
+      fetchNodeFlows(nodeId);
     })
     .catch(function (err) {
       statusEl.className = 'apply-status error';
-      statusEl.textContent = 'Failed to apply: ' + (err.error || err.message || 'Unknown error');
+      statusEl.textContent = 'Failed: ' + (err.message || 'Unknown error');
+      statusEl.style.color = '';
       btn.disabled = false;
-      btn.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
-        'Retry Apply';
+      btn.innerHTML = 'Retry';
     });
   }
 
-  // ── Verify flow was actually created on the node ──
-  function verifyFlowOnNode(nodeId, flowId, btn, statusEl) {
-    // Ask the manager for the node's cached config/stats to see if the flow exists
-    // We use the node command to request a config refresh, or check stats
-    fetch('/api/v1/nodes/' + encodeURIComponent(nodeId) + '/config', {
-      headers: authHeaders()
-    })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (data) {
-      // Check if the flow appears in the config or stats
-      var found = false;
-      if (data && data.flows && Array.isArray(data.flows)) {
-        for (var i = 0; i < data.flows.length; i++) {
-          if (data.flows[i].id === flowId) { found = true; break; }
-        }
-      }
-      // Also check from live stats (the WS-cached stats may have the flow)
-      if (!found && data && data.stats && Array.isArray(data.stats)) {
-        for (var i = 0; i < data.stats.length; i++) {
-          if (data.stats[i].flow_id === flowId) { found = true; break; }
-        }
-      }
+  // ── Execute action (delete, stop, start, restart, remove_output) ──
+  function executeAction(btn, nodeId, actionType, actionData) {
+    var statusEl = $(btn.id + '-status');
+    btn.disabled = true;
+    btn.textContent = 'Executing...';
 
-      if (found) {
-        statusEl.className = 'apply-status success';
-        statusEl.textContent = 'Flow "' + flowId + '" created successfully on node';
-        statusEl.style.color = '';
-        btn.disabled = true;
-        btn.innerHTML =
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
-          'Applied';
-        btn.style.background = '#064e3b';
-      } else {
-        // Flow not found — might have failed on the node
-        statusEl.className = 'apply-status error';
-        statusEl.textContent = 'Command was sent but flow "' + flowId + '" was not found on node. The node may have rejected the configuration — check node logs for errors.';
-        statusEl.style.color = '';
-        btn.disabled = false;
-        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
+    var baseUrl = '/api/v1/nodes/' + encodeURIComponent(nodeId);
+    var actionPromise;
+
+    if (actionType === 'delete_flow') {
+      actionPromise = fetch(baseUrl + '/flows/' + encodeURIComponent(actionData.flow_id), {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+    } else if (actionType === 'remove_output') {
+      actionPromise = fetch(baseUrl + '/command', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: { type: 'remove_output', flow_id: actionData.flow_id, output_id: actionData.output_id } })
+      });
+    } else {
+      // start_flow, stop_flow, restart_flow
+      actionPromise = fetch(baseUrl + '/command', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: { type: actionType, flow_id: actionData.flow_id } })
+      });
+    }
+
+    actionPromise
+    .then(function (r) {
+      if (!r.ok) {
+        return r.json().then(function (data) {
+          throw new Error(data.error || 'Server returned error ' + r.status);
+        }).catch(function (e) {
+          if (e.message) throw e;
+          throw new Error('Server returned error ' + r.status);
+        });
       }
+      return r.json();
     })
-    .catch(function () {
-      // Can't verify — show cautious success
-      statusEl.className = 'apply-status';
-      statusEl.textContent = 'Command sent to node (could not verify — check node dashboard)';
-      statusEl.style.color = '#fbbf24';
+    .then(function (data) {
+      if (data.error) throw new Error(data.error);
+      statusEl.className = 'apply-status success';
+      statusEl.textContent = 'Command executed successfully';
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.textContent = 'Done';
+      fetchNodeFlows(nodeId);
+    })
+    .catch(function (err) {
+      statusEl.className = 'apply-status error';
+      statusEl.textContent = 'Failed: ' + (err.message || 'Unknown error');
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Retry';
+      btn.textContent = 'Retry';
     });
   }
 

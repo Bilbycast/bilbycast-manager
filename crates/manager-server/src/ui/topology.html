@@ -98,6 +98,21 @@
   }
   .canvas-toolbar button:hover { background: #1e293b; color: #e2e8f0; border-color: #475569; }
 
+  /* ── View toggle ── */
+  .view-toggle {
+    display: flex; gap: 0; margin-right: 12px;
+  }
+  .view-btn {
+    padding: 6px 14px; font-size: 12px; font-weight: 600;
+    background: #0f172a; border: 1px solid #334155; color: #94a3b8;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+  }
+  .view-btn:first-child { border-radius: 6px 0 0 6px; }
+  .view-btn:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+  .view-btn.active { background: #1e40af; color: #e2e8f0; border-color: #3b82f6; }
+  .view-btn:hover:not(.active) { background: #1e293b; color: #e2e8f0; }
+  .view-btn svg { width: 14px; height: 14px; }
+
   .legend {
     position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.85);
     border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; font-size: 11px;
@@ -220,6 +235,16 @@
         <p>Live visual map of edge nodes, relay servers, and their connections</p>
       </div>
       <div class="topology-stats">
+        <div class="view-toggle">
+          <button class="view-btn active" id="btnGraphView" title="Force graph layout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><circle cx="12" cy="12" r="2"/><line x1="7.5" y1="7.5" x2="10.5" y2="10.5"/><line x1="13.5" y1="10.5" x2="16.5" y2="7.5"/><line x1="7.5" y1="16.5" x2="10.5" y2="13.5"/><line x1="13.5" y1="13.5" x2="16.5" y2="16.5"/></svg>
+            Graph
+          </button>
+          <button class="view-btn" id="btnFlowView" title="Signal flow layout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="5" height="5" rx="1"/><rect x="10" y="4" width="5" height="5" rx="1"/><rect x="17" y="4" width="5" height="5" rx="1"/><rect x="2" y="15" width="5" height="5" rx="1"/><rect x="10" y="15" width="5" height="5" rx="1"/><rect x="17" y="15" width="5" height="5" rx="1"/><line x1="7" y1="6.5" x2="10" y2="6.5"/><line x1="15" y1="6.5" x2="17" y2="6.5"/><line x1="7" y1="17.5" x2="10" y2="17.5"/><line x1="15" y1="17.5" x2="17" y2="17.5"/></svg>
+            Flow
+          </button>
+        </div>
         <div class="topo-stat online"><span class="val" id="statOnline">0</span> online</div>
         <div class="topo-stat"><span class="val" id="statTotal">0</span> nodes</div>
         <div class="topo-stat"><span class="val" id="statFlows">0</span> flows</div>
@@ -317,6 +342,7 @@
   var animFrameId = null;
   var layoutStable = false;
   var layoutIterations = 0;
+  var currentView = 'graph'; // 'graph' or 'flow'
 
   // ── Coordinate transforms ──
   function screenToWorld(sx, sy) {
@@ -825,6 +851,11 @@
     // Draw grid dots
     drawGrid(w, h);
 
+    // Draw column headers in flow view
+    if (currentView === 'flow') {
+      drawFlowColumnHeaders();
+    }
+
     // Draw links — compute offset for parallel links between same node pairs
     for (var l = 0; l < topoLinks.length; l++) {
       var link = topoLinks[l];
@@ -902,53 +933,85 @@
 
     var linkColor = protocolColor(protocol || 'srt');
     var isExternal = (a.isExternal || b.isExternal);
+    var useFlowCurve = (currentView === 'flow');
 
-    // Bezier curve
-    var mx = (ax + bx) / 2;
-    var my = (ay + by) / 2;
-    var dx = bx - ax;
-    var dy = by - ay;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    var offset = Math.min(dist * 0.15, 40) + (linkOffset || 0);
-    var nx = -dy / (dist || 1);
-    var ny = dx / (dist || 1);
-    var cx1 = mx + nx * offset;
-    var cy1 = my + ny * offset;
+    // Curve control points
+    var cx1, cy1, cx2, cy2;
 
-    // Offset start/end points so parallel links don't overlap at the node edges
-    var endShift = (linkOffset || 0) * 0.5;
-    ax += nx * endShift;
-    ay += ny * endShift;
-    bx += nx * endShift;
-    by += ny * endShift;
+    if (useFlowCurve) {
+      // Flow view: horizontal S-curve using cubic bezier
+      var cpOffset = Math.max(Math.abs(bx - ax) * 0.4, 60);
+      // Shift parallel links vertically
+      var shift = (linkOffset || 0);
+      ay += shift;
+      by += shift;
+      cx1 = ax + cpOffset;
+      cy1 = ay;
+      cx2 = bx - cpOffset;
+      cy2 = by;
+    } else {
+      // Graph view: quadratic bezier with perpendicular offset
+      var mx = (ax + bx) / 2;
+      var my = (ay + by) / 2;
+      var dx = bx - ax;
+      var dy = by - ay;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var offset = Math.min(dist * 0.15, 40) + (linkOffset || 0);
+      var nx = -dy / (dist || 1);
+      var ny = dx / (dist || 1);
+      cx1 = mx + nx * offset;
+      cy1 = my + ny * offset;
+
+      // Offset start/end points so parallel links don't overlap at the node edges
+      var endShift = (linkOffset || 0) * 0.5;
+      ax += nx * endShift;
+      ay += ny * endShift;
+      bx += nx * endShift;
+      by += ny * endShift;
+    }
 
     var dashPattern = isExternal ? [8 / camera.zoom, 4 / camera.zoom] : [6 / camera.zoom, 4 / camera.zoom];
     var lineW = 2 / camera.zoom;
 
+    // Helper to draw the curve path
+    function traceCurve(aox, aoy, box, boy, c1x, c1y, c2x, c2y) {
+      ctx.beginPath();
+      ctx.moveTo(aox, aoy);
+      if (useFlowCurve) {
+        ctx.bezierCurveTo(c1x, c1y, c2x, c2y, box, boy);
+      } else {
+        ctx.quadraticCurveTo(c1x, c1y, box, boy);
+      }
+    }
+
     if (redundant) {
       // Draw double line for 2022-7 redundancy
       var sep = 3 / camera.zoom;
-      ctx.beginPath();
-      ctx.moveTo(ax + nx * sep, ay + ny * sep);
-      ctx.quadraticCurveTo(cx1 + nx * sep, cy1 + ny * sep, bx + nx * sep, by + ny * sep);
+      if (useFlowCurve) {
+        traceCurve(ax, ay - sep, bx, by - sep, cx1, cy1 - sep, cx2, cy2 - sep);
+      } else {
+        var nx2 = -(by - ay) / (Math.sqrt((bx-ax)*(bx-ax)+(by-ay)*(by-ay)) || 1);
+        var ny2 = (bx - ax) / (Math.sqrt((bx-ax)*(bx-ax)+(by-ay)*(by-ay)) || 1);
+        traceCurve(ax + nx2*sep, ay + ny2*sep, bx + nx2*sep, by + ny2*sep, cx1 + nx2*sep, cy1 + ny2*sep, cx2, cy2);
+      }
       ctx.strokeStyle = linkColor;
       ctx.lineWidth = lineW;
       ctx.setLineDash(dashPattern);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.beginPath();
-      ctx.moveTo(ax - nx * sep, ay - ny * sep);
-      ctx.quadraticCurveTo(cx1 - nx * sep, cy1 - ny * sep, bx - nx * sep, by - ny * sep);
+      if (useFlowCurve) {
+        traceCurve(ax, ay + sep, bx, by + sep, cx1, cy1 + sep, cx2, cy2 + sep);
+      } else {
+        traceCurve(ax - nx2*sep, ay - ny2*sep, bx - nx2*sep, by - ny2*sep, cx1 - nx2*sep, cy1 - ny2*sep, cx2, cy2);
+      }
       ctx.strokeStyle = linkColor;
       ctx.lineWidth = lineW;
       ctx.setLineDash(dashPattern);
       ctx.stroke();
       ctx.setLineDash([]);
     } else {
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.quadraticCurveTo(cx1, cy1, bx, by);
+      traceCurve(ax, ay, bx, by, cx1, cy1, cx2, cy2);
       ctx.strokeStyle = linkColor;
       ctx.lineWidth = lineW;
       ctx.setLineDash(dashPattern);
@@ -958,7 +1021,12 @@
 
     // Arrow head toward target
     var arrowSize = 8 / camera.zoom;
-    var angle = Math.atan2(by - cy1, bx - cx1);
+    var angle;
+    if (useFlowCurve) {
+      angle = Math.atan2(by - cy2, bx - cx2);
+    } else {
+      angle = Math.atan2(by - cy1, bx - cx1);
+    }
     var arrowX = bx - Math.cos(angle) * 10;
     var arrowY = by - Math.sin(angle) * 10;
     ctx.beginPath();
@@ -971,8 +1039,15 @@
 
     // Label at midpoint
     if (label) {
-      var lx = (ax + 2 * cx1 + bx) / 4;
-      var ly = (ay + 2 * cy1 + by) / 4;
+      var lx, ly;
+      if (useFlowCurve) {
+        // Midpoint of cubic bezier (t=0.5 approximation)
+        lx = (ax + 3*cx1 + 3*cx2 + bx) / 8;
+        ly = (ay + 3*cy1 + 3*cy2 + by) / 8;
+      } else {
+        lx = (ax + 2 * cx1 + bx) / 4;
+        ly = (ay + 2 * cy1 + by) / 4;
+      }
       var fontSize = Math.max(10, 11 / camera.zoom);
       ctx.font = '600 ' + fontSize + 'px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.textAlign = 'center';
@@ -1403,7 +1478,7 @@
       var input = flow.input;
       if (input) {
         var type = (input.input_type || '').toLowerCase();
-        var addr = input.bind_addr || input.local_addr || input.listen_addr || input.remote_addr || '';
+        var addr = (input.mode === 'caller' || input.mode === 'rendezvous') ? (input.remote_addr || '') : (input.local_addr || input.bind_addr || input.listen_addr || '');
         var mode = input.mode || '';
         if (type) {
           inputs.push({
@@ -1420,7 +1495,8 @@
       for (var o = 0; o < outs.length; o++) {
         var out = outs[o];
         var type = (out.output_type || '').toLowerCase();
-        var addr = out.dest_addr || out.remote_addr || out.local_addr || out.dest_url || out.ingest_url || out.whip_url || '';
+        var addr = out.dest_addr || out.dest_url || out.ingest_url || out.whip_url ||
+          ((out.mode === 'caller' || out.mode === 'rendezvous') ? (out.remote_addr || '') : (out.local_addr || ''));
         var mode = out.mode || '';
         if (type) {
           outputs.push({
@@ -1657,16 +1733,185 @@
     camera.zoom = Math.max(camera.zoom, 0.2);
   }
 
+  // ── View toggle ──
+  document.getElementById('btnGraphView').addEventListener('click', function () {
+    if (currentView === 'graph') return;
+    currentView = 'graph';
+    this.classList.add('active');
+    document.getElementById('btnFlowView').classList.remove('active');
+    layoutStable = false;
+    layoutIterations = 0;
+  });
+
+  document.getElementById('btnFlowView').addEventListener('click', function () {
+    if (currentView === 'flow') return;
+    currentView = 'flow';
+    this.classList.add('active');
+    document.getElementById('btnGraphView').classList.remove('active');
+    computeFlowLayout();
+    setTimeout(fitToView, 100);
+  });
+
+  // ── Signal flow layout ──
+  var flowColumnPositions = []; // populated by computeFlowLayout for drawFlowColumnHeaders
+
+  function computeFlowLayout() {
+    if (topoNodes.length === 0) { flowColumnPositions = []; return; }
+
+    // Build adjacency from links
+    var inFrom = {};  // nodeIdx -> [sourceIdx...]
+    var outTo = {};   // nodeIdx -> [targetIdx...]
+    for (var i = 0; i < topoNodes.length; i++) {
+      inFrom[i] = [];
+      outTo[i] = [];
+    }
+    for (var l = 0; l < topoLinks.length; l++) {
+      var lk = topoLinks[l];
+      if (lk.source >= 0 && lk.source < topoNodes.length && lk.target >= 0 && lk.target < topoNodes.length) {
+        inFrom[lk.target].push(lk.source);
+        outTo[lk.source].push(lk.target);
+      }
+    }
+
+    // Classify nodes into columns: 0=ext-src, 1=src-edge, 2=relay, 3=dst-edge, 4=ext-dst
+    var columns = [[], [], [], [], []];
+    var colLabels = ['Sources', 'Edge Nodes', 'Relay', 'Edge Nodes', 'Destinations'];
+
+    for (var i = 0; i < topoNodes.length; i++) {
+      var n = topoNodes[i];
+      if (n.isExternal) {
+        columns[n.direction === 'source' ? 0 : 4].push(i);
+      } else if (n.isRelay) {
+        columns[2].push(i);
+      } else {
+        // Edge node: determine role by link analysis
+        var hasExtSrc = false, hasExtDst = false, relayOut = false, relayIn = false;
+        for (var j = 0; j < inFrom[i].length; j++) {
+          if (topoNodes[inFrom[i][j]] && topoNodes[inFrom[i][j]].isExternal) hasExtSrc = true;
+          if (topoNodes[inFrom[i][j]] && topoNodes[inFrom[i][j]].isRelay) relayIn = true;
+        }
+        for (var j = 0; j < outTo[i].length; j++) {
+          if (topoNodes[outTo[i][j]] && topoNodes[outTo[i][j]].isExternal) hasExtDst = true;
+          if (topoNodes[outTo[i][j]] && topoNodes[outTo[i][j]].isRelay) relayOut = true;
+        }
+
+        if (relayIn && !relayOut) {
+          columns[3].push(i); // egress side of relay tunnel
+        } else if (relayOut && !relayIn) {
+          columns[1].push(i); // ingress side of relay tunnel
+        } else if (hasExtDst && !hasExtSrc) {
+          columns[3].push(i); // sends to external destinations only
+        } else if (hasExtSrc && !hasExtDst) {
+          columns[1].push(i); // receives from external sources only
+        } else if (hasExtSrc && hasExtDst) {
+          columns[1].push(i); // both: place on source side
+        } else {
+          columns[1].push(i); // fallback: source side
+        }
+      }
+    }
+
+    // Sort nodes within each column by name for stable ordering
+    for (var c = 0; c < columns.length; c++) {
+      columns[c].sort(function (a, b) {
+        return (topoNodes[a].name || '').localeCompare(topoNodes[b].name || '');
+      });
+    }
+
+    // Compute x positions, skipping empty columns
+    var COLUMN_SPACING = 450;
+    var ROW_GAP = 50;
+    var activeColumns = [];
+    for (var c = 0; c < columns.length; c++) {
+      if (columns[c].length > 0) {
+        activeColumns.push({ col: c, indices: columns[c], label: colLabels[c] });
+      }
+    }
+
+    var totalWidth = (activeColumns.length - 1) * COLUMN_SPACING;
+    var startX = -totalWidth / 2;
+
+    flowColumnPositions = [];
+
+    for (var ac = 0; ac < activeColumns.length; ac++) {
+      var colData = activeColumns[ac];
+      var cx = startX + ac * COLUMN_SPACING;
+
+      // Compute total height of column
+      var totalH = 0;
+      for (var r = 0; r < colData.indices.length; r++) {
+        var ni = colData.indices[r];
+        var nh = topoNodes[ni].isExternal ? EXT_H : getNodeHeight(topoNodes[ni]);
+        totalH += nh;
+        if (r > 0) totalH += ROW_GAP;
+      }
+
+      // Position nodes centered vertically
+      var cy = -totalH / 2;
+      var minNodeY = Infinity;
+      for (var r = 0; r < colData.indices.length; r++) {
+        var ni = colData.indices[r];
+        var node = topoNodes[ni];
+        var nh = node.isExternal ? EXT_H : getNodeHeight(node);
+        node.x = cx;
+        node.y = cy + nh / 2;
+        if (node.y - nh / 2 < minNodeY) minNodeY = node.y - nh / 2;
+        cy += nh + ROW_GAP;
+        node.vx = 0;
+        node.vy = 0;
+      }
+
+      flowColumnPositions.push({ x: cx, label: colData.label, minY: minNodeY });
+    }
+  }
+
+  function drawFlowColumnHeaders() {
+    if (flowColumnPositions.length === 0) return;
+
+    // Find global min Y across all columns
+    var globalMinY = Infinity;
+    for (var i = 0; i < flowColumnPositions.length; i++) {
+      if (flowColumnPositions[i].minY < globalMinY) globalMinY = flowColumnPositions[i].minY;
+    }
+    var headerY = globalMinY - 30;
+
+    for (var i = 0; i < flowColumnPositions.length; i++) {
+      var col = flowColumnPositions[i];
+      var label = col.label.toUpperCase();
+
+      ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      var tw = ctx.measureText(label).width + 16;
+      var th = 22;
+
+      // Pill background
+      ctx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+      roundRect(ctx, col.x - tw / 2, headerY - th / 2, tw, th, 6);
+      ctx.fill();
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1;
+      roundRect(ctx, col.x - tw / 2, headerY - th / 2, tw, th, 6);
+      ctx.stroke();
+
+      // Label text
+      ctx.fillStyle = '#64748b';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, col.x, headerY);
+    }
+  }
+
   // ── Animation loop ──
   var layoutCooldown = 0; // frames after stabilization before stopping layout
 
   function tick() {
-    if (!layoutStable) {
-      runLayoutStep();
-      layoutCooldown = 60; // keep running 60 frames after any layout change
-    } else if (layoutCooldown > 0) {
-      runLayoutStep();
-      layoutCooldown--;
+    if (currentView === 'graph') {
+      if (!layoutStable) {
+        runLayoutStep();
+        layoutCooldown = 60; // keep running 60 frames after any layout change
+      } else if (layoutCooldown > 0) {
+        runLayoutStep();
+        layoutCooldown--;
+      }
     }
     // Only redraw when something changed or user is interacting
     draw();
@@ -1758,6 +2003,11 @@
     topoNodes = newNodes;
     computeLinksAndExternals();
 
+    // Recompute flow layout if in flow view
+    if (currentView === 'flow') {
+      computeFlowLayout();
+    }
+
     // Update stats
     var online = 0;
     var managedCount = 0;
@@ -1779,15 +2029,23 @@
     // Only reset layout if topology structure changed (new/removed managed nodes)
     var topologyChanged = prevNodeCount !== topoNodes.length;
     if (topologyChanged && prevNodeCount > 0) {
-      layoutStable = false;
-      layoutIterations = 0;
+      if (currentView === 'graph') {
+        layoutStable = false;
+        layoutIterations = 0;
+      } else {
+        setTimeout(fitToView, 100);
+      }
     }
 
     // Auto-fit on very first data load
     if (prevNodeCount === 0 && topoNodes.length > 0) {
-      layoutStable = false;
-      layoutIterations = 0;
-      setTimeout(function () { fitToView(); }, 500);
+      if (currentView === 'graph') {
+        layoutStable = false;
+        layoutIterations = 0;
+        setTimeout(function () { fitToView(); }, 500);
+      } else {
+        setTimeout(fitToView, 100);
+      }
     }
   }
 

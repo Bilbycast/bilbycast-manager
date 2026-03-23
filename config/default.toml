@@ -15,7 +15,22 @@ listen_port = 8443
 # SQLite database URL (created automatically if it doesn't exist)
 database_url = "sqlite:bilbycast-manager.db?mode=rwc"
 
-# TLS configuration (optional — set to enable HTTPS/WSS)
+# TLS mode: "direct" (default) or "behind_proxy"
+#
+# "direct" — Manager handles TLS itself. Requires cert+key (see below).
+#            Sets Secure cookie flag, sends HSTS headers.
+#            Edge/relay nodes connect via wss:// directly to this server.
+#
+# "behind_proxy" — A load balancer terminates TLS in front of the manager.
+#                  No cert/key needed. Manager listens on plain HTTP/WS.
+#                  Omits Secure cookie flag and HSTS header.
+#                  Edge/relay nodes connect via wss:// to the load balancer.
+#                  Only use when LB→manager connection is on a trusted network.
+#
+# Can also be set via: BILBYCAST_TLS_MODE=behind_proxy
+# tls_mode = "direct"
+
+# TLS certificate/key (required in "direct" mode, ignored in "behind_proxy")
 # [tls]
 # cert_path = "certs/server.crt"
 # key_path = "certs/server.key"

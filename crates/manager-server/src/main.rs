@@ -223,32 +223,46 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
-    // Check for TLS configuration
-    let tls_cert = std::env::var("BILBYCAST_TLS_CERT")
-        .ok()
-        .or_else(|| server_config.tls.as_ref().map(|t| t.cert_path.clone()));
-    let tls_key = std::env::var("BILBYCAST_TLS_KEY")
-        .ok()
-        .or_else(|| server_config.tls.as_ref().map(|t| t.key_path.clone()));
+    // Determine TLS mode: "direct" (default) or "behind_proxy"
+    let tls_mode = std::env::var("BILBYCAST_TLS_MODE")
+        .unwrap_or_else(|_| server_config.tls_mode.clone());
+    let is_behind_proxy = tls_mode == "behind_proxy";
 
-    let cert_path = tls_cert.ok_or_else(|| {
-        anyhow::anyhow!(
-            "TLS is required. Set BILBYCAST_TLS_CERT (or tls.cert_path in config) \
-             to the path of your TLS certificate PEM file."
-        )
-    })?;
-    let key_path = tls_key.ok_or_else(|| {
-        anyhow::anyhow!(
-            "TLS is required. Set BILBYCAST_TLS_KEY (or tls.key_path in config) \
-             to the path of your TLS private key PEM file."
-        )
-    })?;
+    // In direct mode, TLS certs are required. In behind_proxy mode, they're not needed.
+    let (cert_path, key_path, is_self_signed) = if is_behind_proxy {
+        tracing::info!("Running in behind_proxy mode — TLS terminated by load balancer");
+        tracing::info!("Cookies will NOT have Secure flag; HSTS will NOT be sent");
+        tracing::warn!("Ensure the connection between load balancer and manager is on a trusted network");
+        (None, None, false)
+    } else {
+        let tls_cert = std::env::var("BILBYCAST_TLS_CERT")
+            .ok()
+            .or_else(|| server_config.tls.as_ref().map(|t| t.cert_path.clone()));
+        let tls_key = std::env::var("BILBYCAST_TLS_KEY")
+            .ok()
+            .or_else(|| server_config.tls.as_ref().map(|t| t.key_path.clone()));
 
-    // Detect self-signed certificate
-    let is_self_signed = detect_self_signed_cert(&cert_path);
-    if is_self_signed {
-        tracing::warn!("Using a self-signed TLS certificate — not recommended for production");
-    }
+        let cert = tls_cert.ok_or_else(|| {
+            anyhow::anyhow!(
+                "TLS is required in direct mode. Set BILBYCAST_TLS_CERT (or tls.cert_path in config) \
+                 to the path of your TLS certificate PEM file. \
+                 Or set tls_mode = \"behind_proxy\" if a load balancer terminates TLS."
+            )
+        })?;
+        let key = tls_key.ok_or_else(|| {
+            anyhow::anyhow!(
+                "TLS is required in direct mode. Set BILBYCAST_TLS_KEY (or tls.key_path in config) \
+                 to the path of your TLS private key PEM file. \
+                 Or set tls_mode = \"behind_proxy\" if a load balancer terminates TLS."
+            )
+        })?;
+
+        let is_self_signed = detect_self_signed_cert(&cert);
+        if is_self_signed {
+            tracing::warn!("Using a self-signed TLS certificate — not recommended for production");
+        }
+        (Some(cert), Some(key), is_self_signed)
+    };
 
     let state = AppState {
         db: pool,
@@ -260,22 +274,32 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
         driver_registry,
         login_limiter,
         is_self_signed_cert: is_self_signed,
+        is_behind_proxy,
     };
 
     let app = build_router(state);
 
-    tracing::info!("bilbycast-manager listening on {addr} with TLS (HTTPS/WSS)");
-
-    let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
-        &cert_path,
-        &key_path,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Failed to load TLS cert/key: {e}"))?;
-
-    axum_server::bind_rustls(addr, tls_config)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+    if is_behind_proxy {
+        tracing::info!("bilbycast-manager listening on {addr} (plain HTTP/WS — behind proxy)");
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
         .await?;
+    } else {
+        tracing::info!("bilbycast-manager listening on {addr} with TLS (HTTPS/WSS)");
+        let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+            cert_path.as_ref().unwrap(),
+            key_path.as_ref().unwrap(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load TLS cert/key: {e}"))?;
+
+        axum_server::bind_rustls(addr, tls_config)
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .await?;
+    }
 
     Ok(())
 }
@@ -455,13 +479,15 @@ fn build_router(state: AppState) -> Router {
     use tower_http::trace::TraceLayer;
     use tower_http::set_header::SetResponseHeaderLayer;
 
+    let is_behind_proxy = state.is_behind_proxy;
+
     let api_routes = api::build_api_router(state.clone());
     let ws_routes = ws::build_ws_router(state.clone());
     let ui_routes = ui::build_ui_router(state.clone());
 
     // No CORS layer — all requests are same-origin (UI served by same server).
     // Cross-origin requests are blocked by default without CORS headers.
-    Router::new()
+    let router = Router::new()
         .merge(api_routes)
         .merge(ws_routes)
         .merge(ui_routes)
@@ -474,12 +500,19 @@ fn build_router(state: AppState) -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::header::HeaderName::from_static("x-frame-options"),
             HeaderValue::from_static("DENY"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
+        ));
+
+    // Only add HSTS in direct TLS mode. Behind a proxy, the LB handles HSTS.
+    let router = if !is_behind_proxy {
+        router.layer(SetResponseHeaderLayer::overriding(
             axum::http::header::HeaderName::from_static("strict-transport-security"),
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
         ))
-        .with_state(state)
+    } else {
+        router
+    };
+
+    router.with_state(state)
 }
 
 /// TLS configuration section in TOML.
@@ -495,8 +528,17 @@ pub struct ServerConfig {
     pub listen_port: u16,
     #[serde(default = "default_database_url")]
     pub database_url: String,
+    /// TLS mode: "direct" (default, manager handles TLS) or "behind_proxy" (LB terminates TLS).
+    /// When "behind_proxy", no cert/key is needed and the server listens on plain HTTP/WS.
+    #[serde(default = "default_tls_mode")]
+    pub tls_mode: String,
     /// TLS certificate/key paths (optional, can also be set via env vars).
+    /// Required when tls_mode is "direct" (default). Ignored when "behind_proxy".
     pub tls: Option<TlsConfig>,
+}
+
+fn default_tls_mode() -> String {
+    "direct".to_string()
 }
 
 fn default_listen_port() -> u16 {
@@ -511,6 +553,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             listen_port: 8443,
+            tls_mode: default_tls_mode(),
             database_url: default_database_url(),
             tls: None,
         }

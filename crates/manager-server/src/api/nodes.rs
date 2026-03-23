@@ -246,15 +246,16 @@ pub async fn update_node_config(
     auth: AuthUser,
     Path(id): Path<String>,
     Json(config): Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Operator) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
     }
     if !auth.can_access_node(&id) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
     }
 
-    check_json_size(&config, MAX_CONFIG_PAYLOAD_SIZE)?;
+    check_json_size(&config, MAX_CONFIG_PAYLOAD_SIZE)
+        .map_err(|s| (s, Json(serde_json::json!({"error": "Payload too large"}))))?;
 
     // Send UpdateConfig command to the node via WebSocket
     match state
@@ -279,8 +280,8 @@ pub async fn update_node_config(
             Ok(Json(ack))
         }
         Err(e) => {
-            tracing::error!("Failed to send config update to node {id}: {e}");
-            Err(StatusCode::BAD_GATEWAY)
+            tracing::warn!("Config update rejected by node {id}: {e}");
+            Err((StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": e}))))
         }
     }
 }
@@ -295,21 +296,28 @@ pub async fn send_command(
     auth: AuthUser,
     Path(id): Path<String>,
     Json(cmd): Json<NodeCommand>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     if !auth.role.has_permission(UserRole::Operator) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Forbidden"}))));
     }
     if !auth.can_access_node(&id) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "No access to this node"}))));
     }
 
-    check_json_size(&cmd.action, MAX_COMMAND_PAYLOAD_SIZE)?;
+    check_json_size(&cmd.action, MAX_COMMAND_PAYLOAD_SIZE)
+        .map_err(|s| (s, Json(serde_json::json!({"error": "Payload too large"}))))?;
 
     match state.node_hub.send_command(&id, cmd.action).await {
         Ok(ack) => Ok(Json(ack)),
+        Err(e) if e.contains("not connected") => {
+            Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))))
+        }
+        Err(e) if e.contains("timed out") => {
+            Err((StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({"error": e}))))
+        }
         Err(e) => {
-            tracing::error!("Failed to send command to node {id}: {e}");
-            Err(StatusCode::BAD_GATEWAY)
+            tracing::warn!("Command rejected by node {id}: {e}");
+            Err((StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": e}))))
         }
     }
 }
@@ -335,7 +343,15 @@ pub async fn proxy_flow_create(
 
     match state.node_hub.send_command(&id, serde_json::json!({"type": "create_flow", "flow": flow})).await {
         Ok(ack) => Ok(Json(ack)),
-        Err(e) => Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to send command: {e}")})))),
+        Err(e) if e.contains("not connected") => {
+            Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))))
+        }
+        Err(e) if e.contains("timed out") => {
+            Err((StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({"error": e}))))
+        }
+        Err(e) => {
+            Err((StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": e}))))
+        }
     }
 }
 
@@ -355,6 +371,14 @@ pub async fn proxy_flow_delete(
 
     match state.node_hub.send_command(&id, serde_json::json!({"type": "delete_flow", "flow_id": flow_id})).await {
         Ok(ack) => Ok(Json(ack)),
-        Err(e) => Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": format!("Failed to send command: {e}")})))),
+        Err(e) if e.contains("not connected") => {
+            Err((StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e}))))
+        }
+        Err(e) if e.contains("timed out") => {
+            Err((StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({"error": e}))))
+        }
+        Err(e) => {
+            Err((StatusCode::UNPROCESSABLE_ENTITY, Json(serde_json::json!({"error": e}))))
+        }
     }
 }

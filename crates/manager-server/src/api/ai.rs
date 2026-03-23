@@ -11,7 +11,9 @@ use manager_core::validation;
 pub struct GenerateConfigRequest {
     pub prompt: String,
     pub provider: Option<String>,
-    /// Optional: existing flow configs on the node for context
+    /// Node ID for fetching real flow configs from the hub
+    pub node_id: Option<String>,
+    /// Optional: existing flow configs on the node for context (sent from UI)
     pub existing_flows: Option<Vec<serde_json::Value>>,
 }
 
@@ -26,8 +28,9 @@ pub async fn generate_config(
 
     let provider_name = req.provider.as_deref().unwrap_or("openai");
 
-    // Get the user's API key for this provider
-    let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
+    // Get the user's API key and model preference for this provider
+    let (api_key, model_preference) =
+        get_user_api_key_and_model(&state, &auth.user_id, provider_name).await?;
 
     // Build context from device drivers (or fall back to defaults)
     let (protocol_docs, config_schema) = {
@@ -48,62 +51,143 @@ pub async fn generate_config(
         (docs, schema)
     };
 
+    // Try to fetch real flow configs from the node hub (not just stats)
+    let flow_context = if let Some(ref node_id) = req.node_id {
+        if auth.can_access_node(node_id) {
+            // Try cached config first (fast, no waiting)
+            if let Some(config) = state.node_hub.get_cached_config(node_id).await {
+                if let Some(flows) = config.get("flows") {
+                    Some(serde_json::to_string_pretty(flows).unwrap_or_default())
+                } else {
+                    None
+                }
+            } else {
+                // Fall back to UI-provided flows
+                req.existing_flows.as_ref().map(|f| {
+                    serde_json::to_string_pretty(f).unwrap_or_default()
+                })
+            }
+        } else {
+            None
+        }
+    } else {
+        req.existing_flows.as_ref().map(|f| {
+            serde_json::to_string_pretty(f).unwrap_or_default()
+        })
+    };
+
     let mut system_prompt = format!(
         "You are a bilbycast media streaming configuration assistant.\n\
-         You generate valid JSON flow configurations for bilbycast-edge nodes.\n\n\
+         You help manage flow configurations on bilbycast-edge nodes.\n\n\
          {}\n\n\
          FlowConfig JSON schema:\n{}\n\n",
         protocol_docs,
         config_schema,
     );
 
-    if let Some(ref flows) = req.existing_flows {
-        system_prompt.push_str(&format!(
-            "Current flows on this node:\n{}\n\n",
-            serde_json::to_string_pretty(flows).unwrap_or_default()
-        ));
+    if let Some(ref flows_str) = flow_context {
+        if !flows_str.is_empty() && flows_str != "[]" && flows_str != "null" {
+            system_prompt.push_str(&format!(
+                "Current flows on this node:\n{}\n\n",
+                flows_str
+            ));
+        }
     }
 
     system_prompt.push_str(
         "CRITICAL INSTRUCTIONS:\n\
          1. Respond with ONLY valid JSON — no markdown fences, no explanations, no extra text.\n\
-         2. The JSON MUST be a single FlowConfig object with these exact fields:\n\
-            - \"id\": string (unique, lowercase, e.g. \"srt-listener-1\")\n\
-            - \"name\": string (human readable)\n\
-            - \"enabled\": true\n\
-            - \"input\": object with \"type\" field (\"srt\" or \"rtp\") and type-specific fields\n\
-            - \"outputs\": array of output objects, each with \"type\", \"id\", \"name\" and type-specific fields\n\
-         3. For SRT inputs: include \"mode\" (\"listener\"/\"caller\"/\"rendezvous\"), \"local_addr\" (e.g. \"0.0.0.0:9000\"), \"latency_ms\" (integer)\n\
-            Optional SRT fields: \"passphrase\" (string, 10-79 chars), \"aes_key_len\" (integer: 16, 24, or 32), \"remote_addr\" (for caller mode)\n\
-         4. For SRT outputs: include \"mode\", \"local_addr\", \"latency_ms\". Add \"remote_addr\" for caller mode\n\
-         5. For RTP outputs: include \"dest_addr\" (e.g. \"239.1.1.1:5004\"), \"dscp\" (integer, default 46)\n\
-         6. For RTMP outputs: include \"dest_url\", \"stream_key\", \"reconnect_delay_secs\"\n\
-         7. For HLS outputs: include \"ingest_url\", \"segment_duration_secs\", \"max_segments\"\n\
-         8. For WebRTC outputs: include \"whip_url\", optionally \"bearer_token\", \"video_only\"\n\
-         9. IMPORTANT: Use exact field names as shown. NOT \"key_length\" — use \"aes_key_len\". NOT \"address\" — use \"local_addr\" or \"dest_addr\".\n\
-         10. Generate realistic port numbers (9000-9999) and reasonable latency (120-500ms)\n\
-         11. If user asks to modify an existing flow (e.g. add output, change settings), return the COMPLETE updated FlowConfig with the SAME \"id\" as the existing flow. Include the original input and ALL outputs (existing + new). The system will automatically replace the old flow with the updated config.\n\
-         12. NEVER create a new flow ID when the user is asking to modify an existing flow. Reuse the existing flow's \"id\"."
+         2. Your response MUST be a JSON object with an \"action\" field indicating what to do.\n\n\
+         SUPPORTED ACTIONS:\n\n\
+         CREATE a new flow:\n\
+         {\"action\": \"create_flow\", \"flow\": {<FlowConfig>}, \"message\": \"description of what was created\"}\n\n\
+         UPDATE an existing flow (change settings, add/remove outputs):\n\
+         {\"action\": \"update_flow\", \"flow\": {<complete updated FlowConfig with SAME id>}, \"message\": \"description of changes\"}\n\
+         IMPORTANT: Include the COMPLETE FlowConfig with ALL fields — the original input AND all outputs (existing + any new ones). Use the SAME \"id\" as the existing flow.\n\n\
+         DELETE a flow:\n\
+         {\"action\": \"delete_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
+         ADD an output to an existing flow:\n\
+         {\"action\": \"add_output\", \"flow_id\": \"the-flow-id\", \"output\": {<output object>}, \"message\": \"description\"}\n\n\
+         REMOVE an output from an existing flow:\n\
+         {\"action\": \"remove_output\", \"flow_id\": \"the-flow-id\", \"output_id\": \"output-id\", \"message\": \"description\"}\n\n\
+         START a stopped flow:\n\
+         {\"action\": \"start_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
+         STOP a running flow:\n\
+         {\"action\": \"stop_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
+         RESTART a flow:\n\
+         {\"action\": \"restart_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
+         ANSWER a question or provide information (no config change):\n\
+         {\"action\": \"info\", \"message\": \"your answer here\"}\n\n\
+         MULTIPLE actions at once:\n\
+         {\"action\": \"multiple\", \"actions\": [<array of action objects>], \"message\": \"summary\"}\n\n\
+         RULES FOR FlowConfig FIELDS:\n\
+         - \"id\": string (unique, lowercase with hyphens, e.g. \"srt-listener-1\")\n\
+         - \"name\": string (human readable)\n\
+         - \"enabled\": true\n\
+         - \"input\": object with \"type\" field and type-specific fields\n\
+         - \"outputs\": array of output objects, each with \"type\", \"id\", \"name\" and type-specific fields\n\
+         - For SRT: \"mode\" (\"listener\"/\"caller\"/\"rendezvous\"), \"local_addr\", \"latency_ms\" (integer)\n\
+         - Optional SRT: \"passphrase\" (10-79 chars), \"aes_key_len\" (16, 24, or 32), \"remote_addr\" (for caller)\n\
+         - For RTP outputs: \"dest_addr\", \"dscp\" (default 46)\n\
+         - For RTMP outputs: \"dest_url\", \"stream_key\"\n\
+         - IMPORTANT: Use exact field names. NOT \"key_length\" — use \"aes_key_len\". NOT \"address\" — use \"local_addr\".\n\
+         - Generate realistic port numbers (9000-9999) and reasonable latency (120-500ms)\n\
+         - When referencing existing flows, use their EXACT \"id\" values from the current flows listed above."
     );
 
-    // Call the AI provider
-    let result = call_ai_provider(provider_name, &api_key, &system_prompt, &req.prompt).await;
+    // Call the AI provider with model preference
+    let result = call_ai_provider(
+        provider_name,
+        &api_key,
+        model_preference.as_deref(),
+        &system_prompt,
+        &req.prompt,
+    )
+    .await;
 
     match result {
         Ok(response_text) => {
             // Try to parse the response as JSON
             match serde_json::from_str::<serde_json::Value>(&response_text) {
-                Ok(config) => Ok(Json(serde_json::json!({
-                    "success": true,
-                    "config": config,
-                    "raw_response": response_text
-                }))),
-                Err(_) => Ok(Json(serde_json::json!({
-                    "success": true,
-                    "raw_response": response_text,
-                    "config": null,
-                    "note": "Response was not valid JSON - showing raw AI response"
-                }))),
+                Ok(parsed) => {
+                    // Check if it's already an action envelope
+                    if parsed.get("action").is_some() {
+                        Ok(Json(serde_json::json!({
+                            "success": true,
+                            "config": parsed,
+                            "raw_response": response_text
+                        })))
+                    } else if parsed.get("id").is_some() && parsed.get("input").is_some() {
+                        // Legacy format: raw FlowConfig — wrap in create_flow action
+                        Ok(Json(serde_json::json!({
+                            "success": true,
+                            "config": {
+                                "action": "create_flow",
+                                "flow": parsed,
+                                "message": "Generated flow configuration"
+                            },
+                            "raw_response": response_text
+                        })))
+                    } else {
+                        // Unknown JSON shape — return as-is
+                        Ok(Json(serde_json::json!({
+                            "success": true,
+                            "config": parsed,
+                            "raw_response": response_text
+                        })))
+                    }
+                }
+                Err(_) => {
+                    // Not valid JSON — treat as info response
+                    Ok(Json(serde_json::json!({
+                        "success": true,
+                        "config": {
+                            "action": "info",
+                            "message": response_text
+                        },
+                        "raw_response": response_text
+                    })))
+                }
             }
         }
         Err(e) => Ok(Json(serde_json::json!({
@@ -129,10 +213,11 @@ pub async fn analyze_anomaly(
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
 
     let provider_name = req.provider.as_deref().unwrap_or("openai");
-    let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
+    let (api_key, model_preference) =
+        get_user_api_key_and_model(&state, &auth.user_id, provider_name).await?;
 
     let system = "You are a media streaming expert. Analyze the situation and provide findings and suggestions. Be concise and actionable.";
-    let result = call_ai_provider(provider_name, &api_key, system, &req.description).await;
+    let result = call_ai_provider(provider_name, &api_key, model_preference.as_deref(), system, &req.description).await;
 
     match result {
         Ok(text) => Ok(Json(serde_json::json!({ "success": true, "response": text }))),
@@ -156,10 +241,11 @@ pub async fn answer_query(
         .map_err(|e| (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))))?;
 
     let provider_name = req.provider.as_deref().unwrap_or("openai");
-    let api_key = get_user_api_key(&state, &auth.user_id, provider_name).await?;
+    let (api_key, model_preference) =
+        get_user_api_key_and_model(&state, &auth.user_id, provider_name).await?;
 
     let system = "You are a bilbycast media streaming system assistant. Answer questions about the system concisely.";
-    let result = call_ai_provider(provider_name, &api_key, system, &req.query).await;
+    let result = call_ai_provider(provider_name, &api_key, model_preference.as_deref(), system, &req.query).await;
 
     match result {
         Ok(text) => Ok(Json(serde_json::json!({ "success": true, "response": text }))),
@@ -266,13 +352,14 @@ pub async fn delete_key(
 
 // ── Internal helpers ──
 
-async fn get_user_api_key(
+/// Get the user's API key and optional model preference for a provider.
+async fn get_user_api_key_and_model(
     state: &AppState,
     user_id: &str,
     provider: &str,
-) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT api_key_enc FROM ai_keys WHERE user_id = ? AND provider = ?",
+) -> Result<(String, Option<String>), (StatusCode, Json<serde_json::Value>)> {
+    let row: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT api_key_enc, model_preference FROM ai_keys WHERE user_id = ? AND provider = ?",
     )
     .bind(user_id)
     .bind(provider)
@@ -283,7 +370,7 @@ async fn get_user_api_key(
         Json(serde_json::json!({ "success": false, "error": "Database error while fetching API key" })),
     ))?;
 
-    let encrypted = row
+    let (encrypted, model_preference) = row
         .ok_or_else(|| (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -299,28 +386,30 @@ async fn get_user_api_key(
                     }
                 )
             })),
-        ))?
-        .0;
+        ))?;
 
-    manager_core::crypto::decrypt(&encrypted, &state.master_key)
+    let api_key = manager_core::crypto::decrypt(&encrypted, &state.master_key)
         .map_err(|_| (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "success": false, "error": "Failed to decrypt API key. The master key may have changed." })),
-        ))
+        ))?;
+
+    Ok((api_key, model_preference))
 }
 
 async fn call_ai_provider(
     provider: &str,
     api_key: &str,
+    model_preference: Option<&str>,
     system_prompt: &str,
     user_prompt: &str,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
 
     match provider {
-        "openai" => call_openai(&client, api_key, system_prompt, user_prompt).await,
-        "anthropic" => call_anthropic(&client, api_key, system_prompt, user_prompt).await,
-        "gemini" => call_gemini(&client, api_key, system_prompt, user_prompt).await,
+        "openai" => call_openai(&client, api_key, model_preference, system_prompt, user_prompt).await,
+        "anthropic" => call_anthropic(&client, api_key, model_preference, system_prompt, user_prompt).await,
+        "gemini" => call_gemini(&client, api_key, model_preference, system_prompt, user_prompt).await,
         _ => Err(format!("Unknown provider: {provider}")),
     }
 }
@@ -328,11 +417,13 @@ async fn call_ai_provider(
 async fn call_openai(
     client: &reqwest::Client,
     api_key: &str,
+    model_preference: Option<&str>,
     system: &str,
     prompt: &str,
 ) -> Result<String, String> {
+    let model = model_preference.unwrap_or("gpt-4.1");
     let body = serde_json::json!({
-        "model": "gpt-4.1",
+        "model": model,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": prompt}
@@ -365,11 +456,13 @@ async fn call_openai(
 async fn call_anthropic(
     client: &reqwest::Client,
     api_key: &str,
+    model_preference: Option<&str>,
     system: &str,
     prompt: &str,
 ) -> Result<String, String> {
+    let model = model_preference.unwrap_or("claude-sonnet-4-6-20260318");
     let body = serde_json::json!({
-        "model": "claude-sonnet-4-6-20260318",
+        "model": model,
         "max_tokens": 4096,
         "system": system,
         "messages": [{"role": "user", "content": prompt}]
@@ -401,11 +494,14 @@ async fn call_anthropic(
 async fn call_gemini(
     client: &reqwest::Client,
     api_key: &str,
+    model_preference: Option<&str>,
     system: &str,
     prompt: &str,
 ) -> Result<String, String> {
+    let model = model_preference.unwrap_or("gemini-2.0-flash");
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={api_key}",
+        model
     );
 
     let body = serde_json::json!({

@@ -280,6 +280,14 @@
       <div class="section-header">
         <h2>Node Configuration</h2>
         <div style="display:flex;gap:8px;">
+          <button class="btn-secondary" onclick="downloadConfig()" title="Download config as JSON file">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download
+          </button>
+          <button class="btn-secondary" onclick="document.getElementById('configFileInput').click()" title="Upload config from JSON file">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload
+          </button>
           <button class="btn-secondary" id="refreshConfigBtn" onclick="loadConfig()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
             Refresh
@@ -289,6 +297,7 @@
             Save Configuration
           </button>
         </div>
+        <input type="file" id="configFileInput" accept=".json" style="display:none;" onchange="handleConfigUpload(this)">
       </div>
       <div id="configLoading" style="text-align:center;padding:24px;color:#64748b;">
         <p>Loading configuration from node...</p>
@@ -354,18 +363,29 @@
       </div>
     </div>
 
-    <!-- AI Config Generation (hidden for relay nodes) -->
-    <div class="section" id="aiSection">
-      <div class="section-header"><h2>AI Config Generation</h2></div>
-      <div class="ai-section">
-        <div class="input-group">
-          <label>Describe the flow you want</label>
-          <input type="text" id="aiPrompt" placeholder="e.g. SRT listener on port 9000 with AES-256 that sends to RTP multicast 239.1.1.1:5004 with 10x10 FEC"/>
-        </div>
-        <button class="btn-primary" id="aiGenerateBtn" onclick="aiGenerate()">Generate</button>
-      </div>
-    </div>
   </main>
+</div>
+
+<!-- Upload Config Preview Modal -->
+<div class="modal-overlay" id="uploadPreviewModal">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-header">
+      <h3 id="uploadPreviewTitle">Upload Configuration Preview</h3>
+      <button class="modal-close" onclick="closeUploadPreview()">&times;</button>
+    </div>
+    <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
+      <div id="uploadPreviewFlows"></div>
+      <div id="uploadPreviewTunnels"></div>
+      <details style="margin-top:12px;">
+        <summary style="cursor:pointer;color:#8b949e;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,monospace;">Show raw JSON</summary>
+        <pre id="uploadPreviewJson" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;font-family:'SF Mono','Fira Code',monospace;font-size:11px;line-height:1.5;overflow:auto;max-height:300px;margin-top:8px;"></pre>
+      </details>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid #30363d;">
+      <button class="btn-secondary" onclick="closeUploadPreview()">Cancel</button>
+      <button class="btn-primary" id="uploadApplyBtn" onclick="applyUploadedConfig()">Apply to Node</button>
+    </div>
+  </div>
 </div>
 
 <!-- New Flow Modal -->
@@ -398,7 +418,12 @@
           <label>Input Type</label>
           <select id="inputType" onchange="updateInputFields()">
             <option value="srt">SRT</option>
-            <option value="rtp">RTP / UDP</option>
+            <option value="rtp">RTP</option>
+            <option value="udp">UDP</option>
+            <option value="rtmp">RTMP</option>
+            <option value="rtsp">RTSP</option>
+            <option value="webrtc">WebRTC (WHIP/WHEP)</option>
+            <option value="whep">WHEP</option>
           </select>
         </div>
       </div>
@@ -456,6 +481,68 @@
         </div>
       </div>
 
+      <!-- UDP Input Fields -->
+      <div id="udpInputFields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group"><label>Bind Address</label><input type="text" id="udpInputBindAddr" placeholder="0.0.0.0:5000 or 239.1.1.1:5000"/><div class="hint">Use multicast address for multicast receive</div></div>
+          <div class="form-group"><label>Interface Address</label><input type="text" id="udpInputInterface" placeholder="Optional, e.g. 192.168.1.1"/></div>
+        </div>
+      </div>
+
+      <!-- RTMP Input Fields -->
+      <div id="rtmpInputFields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group"><label>Listen Address</label><input type="text" id="rtmpInputListenAddr" placeholder="0.0.0.0:1935"/></div>
+          <div class="form-group"><label>App Name</label><input type="text" id="rtmpInputApp" placeholder="live" value="live"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Stream Key</label><input type="text" id="rtmpInputStreamKey" placeholder="Optional, e.g. my_secret_key"/></div>
+        </div>
+      </div>
+
+      <!-- RTSP Input Fields -->
+      <div id="rtspInputFields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group"><label>RTSP URL</label><input type="text" id="rtspInputUrl" placeholder="rtsp://camera.local:554/stream1"/></div>
+          <div class="form-group"><label>Transport</label><select id="rtspInputTransport"><option value="tcp">TCP (interleaved)</option><option value="udp">UDP</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Username</label><input type="text" id="rtspInputUsername" placeholder="Optional"/></div>
+          <div class="form-group"><label>Password</label><input type="password" id="rtspInputPassword" placeholder="Optional"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Reconnect Delay (s)</label><input type="number" id="rtspInputReconnect" value="5" min="1"/></div>
+        </div>
+      </div>
+
+      <!-- WebRTC/WHIP Input Fields -->
+      <div id="webrtcInputFields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group"><label>Bearer Token</label><input type="text" id="webrtcInputBearerToken" placeholder="Optional auth token for publishers"/></div>
+          <div class="form-group"><label>Public IP</label><input type="text" id="webrtcInputPublicIp" placeholder="Optional, for NAT traversal"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>STUN Server</label><input type="text" id="webrtcInputStun" placeholder="Optional, e.g. stun:stun.l.google.com:19302"/></div>
+          <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+            <input type="checkbox" id="webrtcInputVideoOnly"/><label for="webrtcInputVideoOnly" style="margin:0">Video Only</label>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:4px;">WHIP endpoint: <code>/api/v1/flows/{flow_id}/whip</code> — publishers POST SDP offers here</div>
+      </div>
+
+      <!-- WHEP Input Fields -->
+      <div id="whepInputFields" style="display:none;">
+        <div class="form-row">
+          <div class="form-group"><label>WHEP URL</label><input type="text" id="whepInputUrl" placeholder="https://server.example.com/whep/stream"/></div>
+          <div class="form-group"><label>Bearer Token</label><input type="text" id="whepInputBearerToken" placeholder="Optional auth token"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+            <input type="checkbox" id="whepInputVideoOnly"/><label for="whepInputVideoOnly" style="margin:0">Video Only</label>
+          </div>
+        </div>
+      </div>
+
       <hr class="form-divider"/>
 
       <!-- Outputs -->
@@ -473,6 +560,10 @@
         <button class="btn-secondary" onclick="togglePreview()" style="padding:6px 14px; font-size:12px;">Toggle Preview</button>
       </div>
       <pre class="json-preview" id="jsonPreview"></pre>
+    </div>
+    <div id="flowError" style="display:none; background:#991b1b; color:#fca5a5; padding:10px 14px; margin:0 24px 10px; border-radius:6px; font-size:13px; position:relative;">
+      <span id="flowErrorMsg"></span>
+      <button onclick="this.parentElement.style.display='none'" style="position:absolute; top:6px; right:10px; background:none; border:none; color:#fca5a5; font-size:18px; cursor:pointer; padding:0 4px;">&times;</button>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeFlowModal()">Cancel</button>
@@ -494,7 +585,7 @@
         <div class="form-group">
           <label>Output Type</label>
           <select id="addOutType" onchange="updateOutputFields('addOut')">
-            <option value="srt">SRT</option><option value="rtp">RTP / UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC / WHIP</option>
+            <option value="srt">SRT</option><option value="rtp">RTP</option><option value="udp">UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC (WHIP/WHEP)</option>
           </select>
         </div>
         <div class="form-group"><label>Output ID</label><input type="text" id="addOutId" placeholder="e.g. out-2"/></div>
@@ -627,6 +718,7 @@ function apiFetch(url, opts) {
       window._deviceType = node.device_type || 'edge';
       var isRelay = window._deviceType === 'relay';
       var typeLabel = isRelay ? 'Relay Server' : 'Edge Node';
+      window._nodeName = node.name;
       document.getElementById('pageTitle').textContent = node.name + ' \u2014 Configuration';
       document.getElementById('pageDesc').textContent = 'Configure ' + typeLabel.toLowerCase() + ' ' + node.name;
       document.title = node.name + ' - Configuration - bilbycast manager';
@@ -635,8 +727,6 @@ function apiFetch(url, opts) {
       if (isRelay) {
         var flowsSection = document.getElementById('flowsSection');
         if (flowsSection) flowsSection.style.display = 'none';
-        var aiSection = document.getElementById('aiSection');
-        if (aiSection) aiSection.style.display = 'none';
       }
     } else {
       document.getElementById('pageTitle').textContent = 'Node Configuration';
@@ -785,17 +875,23 @@ function saveConfig() {
     body: JSON.stringify(parsed)
   })
   .then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) {
+      return r.json().then(function(data) {
+        throw new Error(data.error || 'Server returned HTTP ' + r.status);
+      }).catch(function(e) {
+        if (e.message) throw e;
+        throw new Error('Server returned HTTP ' + r.status);
+      });
+    }
     return r.json();
   })
   .then(function(data) {
-    if (data.sent) {
+    if (data.success) {
       _currentConfig = parsed;
       _configDirty = false;
-      showToast('Configuration saved and sent to node');
+      showToast('Configuration saved and applied to node');
       document.getElementById('saveConfigBtn').style.display = 'none';
-      // Reload config after a short delay to get the node's response
-      setTimeout(loadConfig, 2000);
+      setTimeout(loadConfig, 500);
     } else {
       showToast('Failed to save: ' + (data.error || 'Unknown error'), true);
     }
@@ -810,6 +906,163 @@ function saveConfig() {
   });
 }
 
+// ── Download config as JSON file ──
+function downloadConfig() {
+  if (!_currentConfig) { showToast('No configuration loaded', true); return; }
+  var blob = new Blob([JSON.stringify(_currentConfig, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (window._nodeName || 'node') + '-config.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Configuration downloaded');
+}
+
+// ── Upload config from file ──
+var _uploadedConfig = null;
+
+function handleConfigUpload(input) {
+  var file = input.files[0];
+  if (!file) return;
+  input.value = ''; // reset so same file can be re-selected
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var text = e.target.result;
+    var config;
+    try {
+      config = JSON.parse(text);
+    } catch (err) {
+      showToast('Invalid JSON file: ' + err.message, true);
+      return;
+    }
+    _uploadedConfig = config;
+    showUploadPreview(config, file.name);
+  };
+  reader.readAsText(file);
+}
+
+function showUploadPreview(config, filename) {
+  document.getElementById('uploadPreviewTitle').textContent = 'Upload Preview — ' + filename;
+
+  // Render flows preview
+  var flowsEl = document.getElementById('uploadPreviewFlows');
+  var flows = (config && Array.isArray(config.flows)) ? config.flows : [];
+  if (flows.length > 0) {
+    var fhtml = '<div style="margin-bottom:8px;font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;">Flows (' + flows.length + ')</div>';
+    for (var i = 0; i < flows.length; i++) {
+      fhtml += buildConfigFlowCardHtml(flows[i], false);
+    }
+    flowsEl.innerHTML = fhtml;
+  } else {
+    flowsEl.innerHTML = '<p style="color:#64748b;font-size:13px;">No flows in this configuration.</p>';
+  }
+
+  // Render tunnels preview
+  var tunnelsEl = document.getElementById('uploadPreviewTunnels');
+  var tunnels = (config && Array.isArray(config.tunnels)) ? config.tunnels : [];
+  if (tunnels.length > 0) {
+    var thtml = '<div style="margin-top:12px;margin-bottom:8px;font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;">Tunnels (' + tunnels.length + ')</div>';
+    for (var ti = 0; ti < tunnels.length; ti++) {
+      var t = tunnels[ti];
+      thtml += '<div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px 14px;margin-bottom:8px;font-size:13px;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,monospace;">';
+      thtml += '<strong>' + esc(t.name || t.id || 'Tunnel') + '</strong>';
+      if (t.protocol) thtml += ' <span style="color:#8b949e;font-size:11px;text-transform:uppercase;">' + esc(t.protocol) + '</span>';
+      if (t.mode) thtml += ' <span style="color:#8b949e;font-size:11px;">' + esc(t.mode) + '</span>';
+      thtml += '</div>';
+    }
+    tunnelsEl.innerHTML = thtml;
+  } else {
+    tunnelsEl.innerHTML = '';
+  }
+
+  // Render JSON preview
+  var jsonEl = document.getElementById('uploadPreviewJson');
+  jsonEl.innerHTML = syntaxHighlightJson(JSON.stringify(config, null, 2));
+
+  document.getElementById('uploadPreviewModal').classList.add('open');
+}
+
+function closeUploadPreview() {
+  document.getElementById('uploadPreviewModal').classList.remove('open');
+}
+
+function applyUploadedConfig() {
+  if (!_uploadedConfig) return;
+  var configJson = JSON.stringify(_uploadedConfig, null, 2);
+  _uploadedConfig = null;
+  document.getElementById('uploadPreviewModal').classList.remove('open');
+
+  // Enter edit mode with the uploaded config
+  document.getElementById('configEditorWrap').style.display = '';
+  document.getElementById('configViewMode').style.display = 'none';
+  document.getElementById('configEditMode').style.display = '';
+  document.getElementById('saveConfigBtn').style.display = '';
+  var editor = document.getElementById('configEditor');
+  editor.value = configJson;
+
+  showToast('Config loaded into editor — click Save Configuration to apply');
+}
+
+// ── Build a flow card from config data (reusable) ──
+function buildConfigFlowCardHtml(f, includeActions) {
+  var flowName = f.name || f.id || 'Unknown';
+  var flowId = f.id || '';
+  var enabled = f.enabled !== false;
+  var inp = f.input || {};
+  var inputType = (inp.type || 'unknown').toUpperCase();
+  var outs = f.outputs || [];
+  var stateLabel = enabled ? 'Enabled' : 'Disabled';
+  var stateColor = enabled ? 'background:#0d419d;color:#58a6ff' : 'background:#272c33;color:#8b949e';
+
+  var html = '<div class="flow-card" data-flow-id="' + esc(flowId) + '" id="flow-card-' + esc(flowId) + '">';
+  // Header
+  html += '<div class="flow-header">';
+  html += '<span class="flow-name">' + esc(flowName) + '</span>';
+  html += '<span class="flow-badges">';
+  html += '<span class="badge" style="' + stateColor + '">' + esc(stateLabel) + '</span>';
+  html += '</span></div>';
+
+  // Input section
+  var inputMode = inp.mode ? ' (' + inp.mode + ')' : '';
+  var inputAddr = (inp.mode === 'caller' || inp.mode === 'rendezvous') ? (inp.remote_addr || '') : (inp.local_addr || '');
+  html += '<div class="flow-section"><div class="flow-section-label">Input (' + esc(inputType) + inputMode + ')</div>';
+  html += '<div class="stats-grid">';
+  if (inputAddr) html += '<div class="stat"><div class="k">Address</div><div class="v">' + esc(inputAddr) + '</div></div>';
+  if (inp.latency_ms) html += '<div class="stat"><div class="k">Latency</div><div class="v">' + inp.latency_ms + ' ms</div></div>';
+  html += '</div></div>';
+
+  // Outputs section
+  if (outs.length > 0) {
+    html += '<div class="flow-section"><div class="flow-section-label">Outputs</div>';
+    html += '<table class="outputs-table"><tr><th>Name</th><th>Type</th><th>Mode</th><th>Address</th></tr>';
+    for (var oi = 0; oi < outs.length; oi++) {
+      var o = outs[oi];
+      var oType = (o.type || 'unknown').toUpperCase();
+      var oMode = o.mode || '-';
+      var oAddr = o.dest_addr || o.dest_url || o.ingest_url || o.whip_url ||
+        ((o.type === 'srt' && (o.mode === 'caller' || o.mode === 'rendezvous')) ? (o.remote_addr || '-') : (o.local_addr || '-'));
+      html += '<tr><td>' + esc(o.name || o.id) + '</td><td>' + esc(oType) + '</td><td>' + esc(oMode) + '</td><td>' + esc(oAddr) + '</td></tr>';
+    }
+    html += '</table></div>';
+  }
+
+  if (includeActions) {
+    html += '<div class="flow-actions-bar">';
+    html += '<button class="action-btn" onclick="editFlow(\'' + esc(flowId) + '\')">Edit</button>';
+    if (enabled) {
+      html += '<button class="action-btn" onclick="stopFlow(\'' + esc(flowId) + '\')">Stop</button>';
+    } else {
+      html += '<button class="action-btn" onclick="startFlow(\'' + esc(flowId) + '\')">Start</button>';
+    }
+    html += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
+    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
 function renderConfigFlowsFromConfig(config) {
   var flows = [];
   if (config && Array.isArray(config.flows)) {
@@ -821,61 +1074,12 @@ function renderConfigFlowsFromConfig(config) {
   var listEl = document.getElementById('flowsList');
   emptyEl.style.display = 'none';
 
-  // Remove existing cards/items
   var items = listEl.querySelectorAll('.flow-card,.flow-item');
   for (var r = 0; r < items.length; r++) items[r].remove();
 
   var html = '';
   for (var i = 0; i < flows.length; i++) {
-    var f = flows[i];
-    var flowName = f.name || f.id || 'Unknown';
-    var flowId = f.id || '';
-    var enabled = f.enabled !== false;
-    var inp = f.input || {};
-    var inputType = (inp.type || 'unknown').toUpperCase();
-    var outs = f.outputs || [];
-    var stateLabel = enabled ? 'Enabled' : 'Disabled';
-    var stateColor = enabled ? 'background:#0d419d;color:#58a6ff' : 'background:#272c33;color:#8b949e';
-
-    html += '<div class="flow-card" data-flow-id="' + esc(flowId) + '" id="flow-card-' + esc(flowId) + '">';
-    // Header
-    html += '<div class="flow-header">';
-    html += '<span class="flow-name">' + esc(flowName) + '</span>';
-    html += '<span class="flow-badges">';
-    html += '<span class="badge" style="' + stateColor + '">' + esc(stateLabel) + '</span>';
-    html += '</span></div>';
-
-    // Input section
-    var inputMode = inp.mode ? ' (' + inp.mode + ')' : '';
-    var inputAddr = inp.mode === 'caller' ? (inp.remote_addr || '') : (inp.local_addr || '');
-    html += '<div class="flow-section"><div class="flow-section-label">Input (' + esc(inputType) + inputMode + ')</div>';
-    html += '<div class="stats-grid">';
-    if (inputAddr) html += '<div class="stat"><div class="k">Address</div><div class="v">' + esc(inputAddr) + '</div></div>';
-    if (inp.latency_ms) html += '<div class="stat"><div class="k">Latency</div><div class="v">' + inp.latency_ms + ' ms</div></div>';
-    html += '<div class="stat"><div class="k">Bitrate</div><div class="v" style="color:#8b949e">Awaiting live data</div></div>';
-    html += '</div></div>';
-
-    // Outputs section
-    if (outs.length > 0) {
-      html += '<div class="flow-section"><div class="flow-section-label">Outputs</div>';
-      html += '<table class="outputs-table"><tr><th>Name</th><th>Type</th><th>Mode</th><th>Address</th></tr>';
-      for (var oi = 0; oi < outs.length; oi++) {
-        var o = outs[oi];
-        var oType = (o.type || 'unknown').toUpperCase();
-        var oMode = o.mode || '-';
-        var oAddr = o.dest_addr || o.local_addr || o.remote_addr || '-';
-        html += '<tr><td>' + esc(o.name || o.id) + '</td><td>' + esc(oType) + '</td><td>' + esc(oMode) + '</td><td>' + esc(oAddr) + '</td></tr>';
-      }
-      html += '</table></div>';
-    }
-
-    // Actions
-    html += '<div class="flow-actions-bar">';
-    html += '<button class="action-btn" onclick="editFlow(\'' + esc(flowId) + '\')">Edit</button>';
-    html += '<button class="action-btn" onclick="openAddOutputModal(\'' + esc(flowId) + '\')">Add Output</button>';
-    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteFlow(\'' + esc(flowId) + '\')">Delete</button>';
-    html += '</div>';
-    html += '</div>';
+    html += buildConfigFlowCardHtml(flows[i], true);
   }
   listEl.insertAdjacentHTML('beforeend', html);
 }
@@ -975,6 +1179,9 @@ function openNewFlowModal() {
   document.getElementById('rtpInputInterface').value = '';
   document.getElementById('rtpInputFecCols').value = '';
   document.getElementById('rtpInputFecRows').value = '';
+  // Reset UDP input fields
+  document.getElementById('udpInputBindAddr').value = '';
+  document.getElementById('udpInputInterface').value = '';
   outputCounter = 0;
   addOutput(); // start with one output
   updateInputFields();
@@ -1065,6 +1272,28 @@ function _openEditFlowModal(flow) {
       document.getElementById('rtpInputFecCols').value = '';
       document.getElementById('rtpInputFecRows').value = '';
     }
+  } else if (itype === 'udp') {
+    document.getElementById('udpInputBindAddr').value = inp.bind_addr || '';
+    document.getElementById('udpInputInterface').value = inp.interface_addr || '';
+  } else if (itype === 'rtmp') {
+    document.getElementById('rtmpInputListenAddr').value = inp.listen_addr || '';
+    document.getElementById('rtmpInputApp').value = inp.app || 'live';
+    document.getElementById('rtmpInputStreamKey').value = inp.stream_key || '';
+  } else if (itype === 'rtsp') {
+    document.getElementById('rtspInputUrl').value = inp.rtsp_url || '';
+    document.getElementById('rtspInputTransport').value = inp.transport || 'tcp';
+    document.getElementById('rtspInputUsername').value = inp.username || '';
+    document.getElementById('rtspInputPassword').value = inp.password || '';
+    document.getElementById('rtspInputReconnect').value = inp.reconnect_delay_secs || 5;
+  } else if (itype === 'webrtc') {
+    document.getElementById('webrtcInputBearerToken').value = inp.bearer_token || '';
+    document.getElementById('webrtcInputPublicIp').value = inp.public_ip || '';
+    document.getElementById('webrtcInputStun').value = inp.stun_server || '';
+    document.getElementById('webrtcInputVideoOnly').checked = !!inp.video_only;
+  } else if (itype === 'whep') {
+    document.getElementById('whepInputUrl').value = inp.whep_url || '';
+    document.getElementById('whepInputBearerToken').value = inp.bearer_token || '';
+    document.getElementById('whepInputVideoOnly').checked = !!inp.video_only;
   }
 
   // Populate outputs
@@ -1121,6 +1350,9 @@ function populateOutput(idx, out) {
       document.getElementById('outRtpFecCols-' + idx).value = out.fec_encode.columns || '';
       document.getElementById('outRtpFecRows-' + idx).value = out.fec_encode.rows || '';
     }
+  } else if (otype === 'udp') {
+    document.getElementById('outUdpDest-' + idx).value = out.dest_addr || '';
+    document.getElementById('outUdpDscp-' + idx).value = out.dscp != null ? out.dscp : 46;
   } else if (otype === 'rtmp') {
     document.getElementById('outRtmpUrl-' + idx).value = out.dest_url || '';
     document.getElementById('outRtmpKey-' + idx).value = out.stream_key || '';
@@ -1130,9 +1362,23 @@ function populateOutput(idx, out) {
     document.getElementById('outHlsDur-' + idx).value = out.segment_duration_secs || 2;
     document.getElementById('outHlsMax-' + idx).value = out.max_segments || 5;
   } else if (otype === 'webrtc') {
-    document.getElementById('outWhipUrl-' + idx).value = out.whip_url || '';
-    document.getElementById('outWhipToken-' + idx).value = out.bearer_token || '';
+    var modeEl = document.getElementById('outWebrtcMode-' + idx);
+    if (modeEl) modeEl.value = out.mode || 'whip_client';
+    toggleWebrtcMode(String(idx));
+    if (out.mode === 'whep_server') {
+      var mvEl = document.getElementById('outWhepMaxViewers-' + idx);
+      if (mvEl) mvEl.value = out.max_viewers || 10;
+      var wtEl = document.getElementById('outWhepToken-' + idx);
+      if (wtEl) wtEl.value = out.bearer_token || '';
+    } else {
+      var urlEl = document.getElementById('outWhipUrl-' + idx);
+      if (urlEl) urlEl.value = out.whip_url || '';
+      var tkEl = document.getElementById('outWhipToken-' + idx);
+      if (tkEl) tkEl.value = out.bearer_token || '';
+    }
     document.getElementById('outWhipVonly-' + idx).value = out.video_only ? 'true' : 'false';
+    var ipEl = document.getElementById('outWebrtcPublicIp-' + idx);
+    if (ipEl) ipEl.value = out.public_ip || '';
   }
 }
 
@@ -1146,6 +1392,11 @@ function updateInputFields() {
   var type = document.getElementById('inputType').value;
   document.getElementById('srtInputFields').style.display = type === 'srt' ? '' : 'none';
   document.getElementById('rtpInputFields').style.display = type === 'rtp' ? '' : 'none';
+  document.getElementById('udpInputFields').style.display = type === 'udp' ? '' : 'none';
+  document.getElementById('rtmpInputFields').style.display = type === 'rtmp' ? '' : 'none';
+  document.getElementById('rtspInputFields').style.display = type === 'rtsp' ? '' : 'none';
+  document.getElementById('webrtcInputFields').style.display = type === 'webrtc' ? '' : 'none';
+  document.getElementById('whepInputFields').style.display = type === 'whep' ? '' : 'none';
 }
 
 function addOutput() {
@@ -1156,7 +1407,7 @@ function addOutput() {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
     '<div class="form-row"><div class="form-group"><label>Output Type</label>' +
     '<select id="outType-' + idx + '" onchange="updateOutputFields(' + idx + ')">' +
-    '<option value="srt">SRT</option><option value="rtp">RTP / UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC / WHIP</option></select></div>' +
+    '<option value="srt">SRT</option><option value="rtp">RTP</option><option value="udp">UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC (WHIP/WHEP)</option></select></div>' +
     '<div class="form-group"><label>Output ID</label><input type="text" id="outId-' + idx + '" placeholder="e.g. out-1"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Output Name</label><input type="text" id="outName-' + idx + '" placeholder="e.g. SRT to London"/></div></div>' +
     '<div id="outFields-' + idx + '"></div></div>';
@@ -1219,6 +1470,9 @@ function updateOutputFields(idx) {
     '<div class="form-group"><label>DSCP</label><input type="number" id="outRtpDscp-'+p+'" value="46" min="0" max="63"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>FEC Columns (L)</label><input type="number" id="outRtpFecCols-'+p+'" placeholder="Optional"/></div>' +
     '<div class="form-group"><label>FEC Rows (D)</label><input type="number" id="outRtpFecRows-'+p+'" placeholder="Optional"/></div></div>';
+  } else if (type === 'udp') {
+    h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><input type="text" id="outUdpDest-'+p+'" placeholder="192.168.1.100:5004"/><div class="hint">Raw MPEG-TS datagrams (no RTP headers)</div></div>' +
+    '<div class="form-group"><label>DSCP</label><input type="number" id="outUdpDscp-'+p+'" value="46" min="0" max="63"/></div></div>';
   } else if (type === 'rtmp') {
     h = '<div class="form-row"><div class="form-group"><label>Destination URL</label><input type="text" id="outRtmpUrl-'+p+'" placeholder="rtmp://live.twitch.tv/app"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Stream Key</label><input type="text" id="outRtmpKey-'+p+'" placeholder="live_123456_secretkey"/></div>' +
@@ -1228,11 +1482,27 @@ function updateOutputFields(idx) {
     '<div class="form-row"><div class="form-group"><label>Segment Duration (s)</label><input type="number" id="outHlsDur-'+p+'" value="2" step="0.5"/></div>' +
     '<div class="form-group"><label>Max Segments</label><input type="number" id="outHlsMax-'+p+'" value="5"/></div></div>';
   } else if (type === 'webrtc') {
-    h = '<div class="form-row"><div class="form-group"><label>WHIP Endpoint URL</label><input type="text" id="outWhipUrl-'+p+'" placeholder="https://example.com/whip"/></div></div>' +
-    '<div class="form-row"><div class="form-group"><label>Bearer Token</label><input type="text" id="outWhipToken-'+p+'" placeholder="Optional"/></div>' +
-    '<div class="form-group"><label>Video Only</label><select id="outWhipVonly-'+p+'"><option value="false">No</option><option value="true">Yes</option></select></div></div>';
+    h = '<div class="form-row"><div class="form-group"><label>Mode</label><select id="outWebrtcMode-'+p+'" onchange="toggleWebrtcMode(\''+p+'\')">' +
+    '<option value="whip_client">WHIP Client (push to endpoint)</option><option value="whep_server">WHEP Server (serve viewers)</option></select></div>' +
+    '<div class="form-group"><label>Video Only</label><select id="outWhipVonly-'+p+'"><option value="false">No</option><option value="true">Yes</option></select></div></div>' +
+    '<div id="outWebrtcWhipFields-'+p+'">' +
+    '<div class="form-row"><div class="form-group"><label>WHIP Endpoint URL</label><input type="text" id="outWhipUrl-'+p+'" placeholder="https://example.com/whip"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Bearer Token</label><input type="text" id="outWhipToken-'+p+'" placeholder="Optional"/></div></div></div>' +
+    '<div id="outWebrtcWhepFields-'+p+'" style="display:none;">' +
+    '<div class="form-row"><div class="form-group"><label>Max Viewers</label><input type="number" id="outWhepMaxViewers-'+p+'" value="10" min="1" max="100"/></div>' +
+    '<div class="form-group"><label>Bearer Token</label><input type="text" id="outWhepToken-'+p+'" placeholder="Optional, required from viewers"/></div></div>' +
+    '<div class="hint">WHEP endpoint: <code>/api/v1/flows/{flow_id}/whep</code></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Public IP</label><input type="text" id="outWebrtcPublicIp-'+p+'" placeholder="Optional, for NAT traversal"/></div></div>';
   }
   container.innerHTML = h;
+}
+
+function toggleWebrtcMode(p) {
+  var mode = val('outWebrtcMode-'+p);
+  var whipEl = document.getElementById('outWebrtcWhipFields-'+p);
+  var whepEl = document.getElementById('outWebrtcWhepFields-'+p);
+  if (whipEl) whipEl.style.display = mode === 'whip_client' ? '' : 'none';
+  if (whepEl) whepEl.style.display = mode === 'whep_server' ? '' : 'none';
 }
 
 function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
@@ -1257,11 +1527,39 @@ function buildFlowConfig() {
       inp.redundancy = r;
     }
     config.input = inp;
-  } else {
+  } else if (itype === 'rtp') {
     var inp = { type: 'rtp', bind_addr: val('rtpInputBindAddr') };
     if (val('rtpInputInterface')) inp.interface_addr = val('rtpInputInterface');
     var fc = ival('rtpInputFecCols'), fr = ival('rtpInputFecRows');
     if (fc && fr) inp.fec_decode = { columns: fc, rows: fr };
+    config.input = inp;
+  } else if (itype === 'udp') {
+    var inp = { type: 'udp', bind_addr: val('udpInputBindAddr') };
+    if (val('udpInputInterface')) inp.interface_addr = val('udpInputInterface');
+    config.input = inp;
+  } else if (itype === 'rtmp') {
+    var inp = { type: 'rtmp', listen_addr: val('rtmpInputListenAddr') || '0.0.0.0:1935' };
+    var appVal = val('rtmpInputApp'); if (appVal && appVal !== 'live') inp.app = appVal;
+    if (val('rtmpInputStreamKey')) inp.stream_key = val('rtmpInputStreamKey');
+    config.input = inp;
+  } else if (itype === 'rtsp') {
+    var inp = { type: 'rtsp', rtsp_url: val('rtspInputUrl') };
+    var transport = val('rtspInputTransport'); if (transport && transport !== 'tcp') inp.transport = transport;
+    if (val('rtspInputUsername')) inp.username = val('rtspInputUsername');
+    if (val('rtspInputPassword')) inp.password = val('rtspInputPassword');
+    var rd = ival('rtspInputReconnect'); if (rd && rd !== 5) inp.reconnect_delay_secs = rd;
+    config.input = inp;
+  } else if (itype === 'webrtc') {
+    var inp = { type: 'webrtc' };
+    if (val('webrtcInputBearerToken')) inp.bearer_token = val('webrtcInputBearerToken');
+    if (val('webrtcInputPublicIp')) inp.public_ip = val('webrtcInputPublicIp');
+    if (val('webrtcInputStun')) inp.stun_server = val('webrtcInputStun');
+    if (document.getElementById('webrtcInputVideoOnly').checked) inp.video_only = true;
+    config.input = inp;
+  } else if (itype === 'whep') {
+    var inp = { type: 'whep', whep_url: val('whepInputUrl') };
+    if (val('whepInputBearerToken')) inp.bearer_token = val('whepInputBearerToken');
+    if (document.getElementById('whepInputVideoOnly').checked) inp.video_only = true;
     config.input = inp;
   }
 
@@ -1301,6 +1599,8 @@ function buildFlowConfig() {
       out.dest_addr = val('outRtpDest-'+idx); out.dscp = parseInt(val('outRtpDscp-'+idx))||46;
       var fc = ival('outRtpFecCols-'+idx), fr = ival('outRtpFecRows-'+idx);
       if (fc && fr) out.fec_encode = { columns: fc, rows: fr };
+    } else if (otype === 'udp') {
+      out.dest_addr = val('outUdpDest-'+idx); out.dscp = parseInt(val('outUdpDscp-'+idx))||46;
     } else if (otype === 'rtmp') {
       out.dest_url = val('outRtmpUrl-'+idx); out.stream_key = val('outRtmpKey-'+idx);
       out.reconnect_delay_secs = parseInt(val('outRtmpReconnect-'+idx))||5;
@@ -1308,9 +1608,18 @@ function buildFlowConfig() {
       out.ingest_url = val('outHlsUrl-'+idx); out.segment_duration_secs = parseFloat(val('outHlsDur-'+idx))||2;
       out.max_segments = parseInt(val('outHlsMax-'+idx))||5;
     } else if (otype === 'webrtc') {
-      out.whip_url = val('outWhipUrl-'+idx);
-      if (val('outWhipToken-'+idx)) out.bearer_token = val('outWhipToken-'+idx);
+      var wmode = val('outWebrtcMode-'+idx) || 'whip_client';
+      out.mode = wmode;
       out.video_only = val('outWhipVonly-'+idx) === 'true';
+      if (val('outWebrtcPublicIp-'+idx)) out.public_ip = val('outWebrtcPublicIp-'+idx);
+      if (wmode === 'whip_client') {
+        out.whip_url = val('outWhipUrl-'+idx);
+        if (val('outWhipToken-'+idx)) out.bearer_token = val('outWhipToken-'+idx);
+      } else {
+        var mv = ival('outWhepMaxViewers-'+idx);
+        if (mv && mv !== 10) out.max_viewers = mv;
+        if (val('outWhepToken-'+idx)) out.bearer_token = val('outWhepToken-'+idx);
+      }
     }
     config.outputs.push(out);
   });
@@ -1329,14 +1638,51 @@ function showToast(msg, isError) {
   var t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast visible' + (isError ? ' error' : '');
-  setTimeout(function(){ t.className = 'toast'; }, 3000);
+  setTimeout(function(){ t.className = 'toast'; }, isError ? 10000 : 3000);
+}
+
+function showFlowError(msg) {
+  var el = document.getElementById('flowError');
+  document.getElementById('flowErrorMsg').textContent = msg;
+  el.style.display = '';
+  showToast(msg, true);
+}
+
+function clearFlowError() {
+  document.getElementById('flowError').style.display = 'none';
+}
+
+function validateFlowClient(config) {
+  if (!config.id) return 'Flow ID is required';
+  if (!config.name) return 'Flow Name is required';
+  if (config.outputs.length === 0) return 'At least one output is required';
+  var inp = config.input;
+  if (!inp) return 'Input configuration is missing';
+  if (inp.type === 'rtp' && !inp.bind_addr) return 'RTP input requires a Bind Address (e.g., 0.0.0.0:5000)';
+  if (inp.type === 'udp' && !inp.bind_addr) return 'UDP input requires a Bind Address (e.g., 0.0.0.0:5000)';
+  if (inp.type === 'srt' && !inp.local_addr) return 'SRT input requires a Local Address (e.g., 0.0.0.0:9000)';
+  if (inp.type === 'srt' && (inp.mode === 'caller' || inp.mode === 'rendezvous') && !inp.remote_addr) return 'SRT ' + inp.mode + ' mode requires a Remote Address';
+  if (inp.type === 'rtmp' && !inp.listen_addr) return 'RTMP input requires a Listen Address (e.g., 0.0.0.0:1935)';
+  if (inp.type === 'rtsp' && !inp.rtsp_url) return 'RTSP input requires an RTSP URL (e.g., rtsp://camera/stream)';
+  if (inp.type === 'whep' && !inp.whep_url) return 'WHEP input requires a WHEP URL';
+  for (var i = 0; i < config.outputs.length; i++) {
+    var o = config.outputs[i];
+    if (!o.id) return 'Output ' + (i+1) + ': ID is required';
+    if (!o.name) return 'Output ' + (i+1) + ': Name is required';
+    if (o.type === 'rtp' && !o.dest_addr) return 'RTP output "' + o.name + '" requires a Destination Address';
+    if (o.type === 'udp' && !o.dest_addr) return 'UDP output "' + o.name + '" requires a Destination Address';
+    if (o.type === 'srt' && !o.local_addr) return 'SRT output "' + o.name + '" requires a Local Address';
+    if (o.type === 'rtmp' && !o.dest_url) return 'RTMP output "' + o.name + '" requires a Destination URL';
+    if (o.type === 'hls' && !o.ingest_url) return 'HLS output "' + o.name + '" requires an Ingest URL';
+  }
+  return null;
 }
 
 function applyFlow() {
+  clearFlowError();
   var config = buildFlowConfig();
-  if (!config.id) { showToast('Flow ID is required', true); return; }
-  if (!config.name) { showToast('Flow Name is required', true); return; }
-  if (config.outputs.length === 0) { showToast('At least one output is required', true); return; }
+  var err = validateFlowClient(config);
+  if (err) { showFlowError(err); return; }
 
   var action;
   if (_flowEditMode) {
@@ -1353,24 +1699,28 @@ function applyFlow() {
   .then(function(r) {
     if (!r.ok) {
       if (r.status === 401) { window.location.href = '/login?next=' + window.location.pathname; }
-      throw new Error('Server returned HTTP ' + r.status);
+      return r.json().then(function(data) {
+        throw new Error(data.error || 'Server returned HTTP ' + r.status);
+      }).catch(function(e) {
+        if (e.message) throw e;
+        throw new Error('Server returned HTTP ' + r.status);
+      });
     }
     return r.json();
   })
   .then(function(data) {
-    if (data.sent) {
+    if (data.success) {
       var verb = _flowEditMode ? 'updated' : 'created';
       showToast('Flow "' + config.name + '" ' + verb + ' on node');
       closeFlowModal();
       document.getElementById('flowId').disabled = false;
       if (!_flowEditMode) addFlowToList(config);
-      // Reload config to reflect changes
-      setTimeout(loadConfig, 1500);
+      setTimeout(loadConfig, 500);
     } else {
-      showToast('Failed: ' + (data.error || 'Unknown error'), true);
+      showFlowError(data.error || 'Unknown error');
     }
   })
-  .catch(function(e) { showToast('Error: ' + e.message, true); });
+  .catch(function(e) { showFlowError(e.message); });
 }
 
 function addFlowToList(config) {
@@ -1516,7 +1866,7 @@ function buildLiveFlowCard(f) {
   // Input section
   var inputType = (inp.input_type || inp.type || 'unknown').toUpperCase();
   var inputMode = inp.mode ? ' / ' + inp.mode : '';
-  var inputAddr = inp.remote_addr || inp.local_addr || '';
+  var inputAddr = (inp.mode === 'caller' || inp.mode === 'rendezvous') ? (inp.remote_addr || '') : (inp.local_addr || inp.bind_addr || '');
   html += '<div class="flow-section"><div class="flow-section-label">Input (' + esc(inputType + inputMode) + ')' +
     (inputAddr ? ' &mdash; ' + esc(inputAddr) : '') + '</div>';
   html += '<div class="stats-grid" id="flow-input-stats-' + esc(flowId) + '">';
@@ -1732,18 +2082,22 @@ function sendNodeCommand(action, callback) {
   })
   .then(function(r) {
     if (!r.ok) {
-      if (r.status === 502) throw new Error('Node is not connected');
-      throw new Error('HTTP ' + r.status);
+      return r.json().then(function(data) {
+        throw new Error(data.error || 'HTTP ' + r.status);
+      }).catch(function(e) {
+        if (e.message) throw e;
+        throw new Error('HTTP ' + r.status);
+      });
     }
     return r.json();
   })
   .then(function(data) {
-    if (data.sent) {
+    if (data.success) {
       if (callback) callback(null, data);
-      // Reload config after a delay to pick up changes and detect errors
-      setTimeout(loadConfig, 1500);
+      // Reload config after a short delay to pick up changes
+      setTimeout(loadConfig, 500);
     } else {
-      if (callback) callback(data.error || 'Unknown error');
+      if (callback) callback(data.error || 'Command failed');
     }
   })
   .catch(function(e) { if (callback) callback(e.message); });
@@ -1831,6 +2185,8 @@ function buildOutputConfig(p) {
     out.dest_addr = val('outRtpDest-'+p); out.dscp = parseInt(val('outRtpDscp-'+p))||46;
     var fc = ival('outRtpFecCols-'+p), fr = ival('outRtpFecRows-'+p);
     if (fc && fr) out.fec_encode = { columns: fc, rows: fr };
+  } else if (otype === 'udp') {
+    out.dest_addr = val('outUdpDest-'+p); out.dscp = parseInt(val('outUdpDscp-'+p))||46;
   } else if (otype === 'rtmp') {
     out.dest_url = val('outRtmpUrl-'+p); out.stream_key = val('outRtmpKey-'+p);
     out.reconnect_delay_secs = parseInt(val('outRtmpReconnect-'+p))||5;
@@ -1907,51 +2263,6 @@ function loadNodesForTunnel(p) {
     }
   })
   .catch(function() {});
-}
-
-function aiGenerate() {
-  var prompt = val('aiPrompt');
-  if (!prompt) { showToast('Enter a description first', true); return; }
-
-  showToast('Generating config with AI...');
-
-  fetch('/api/v1/ai/generate-config', {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
-      prompt: prompt,
-      provider: 'openai',
-      node_id: window._nodeId,
-      existing_flows: _liveFlows
-    })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.success && data.config) {
-      // Auto-open the New Flow modal and fill it with AI-generated config
-      showToast('AI config generated! Review and apply.');
-      // Show the config in a preview
-      var preview = document.getElementById('jsonPreview');
-      if (preview) {
-        preview.textContent = JSON.stringify(data.config, null, 2);
-        preview.classList.add('visible');
-      }
-      // Try to apply directly
-      if (confirm('AI generated a flow config. Apply it to the node now?')) {
-        sendNodeCommand({ type: 'create_flow', flow: data.config }, function(err) {
-          if (err) showToast('Failed to apply: ' + err, true);
-          else showToast('Flow created successfully from AI config!');
-        });
-      }
-    } else if (data.success && data.raw_response) {
-      showToast('AI responded (see console for details)');
-      console.log('AI raw response:', data.raw_response);
-      alert('AI Response:\n\n' + data.raw_response.substring(0, 500));
-    } else {
-      showToast('AI error: ' + (data.error || 'Unknown'), true);
-    }
-  })
-  .catch(function(e) { showToast('Error: ' + e.message, true); });
 }
 
 // ═══════════════════════════════════════════════════════

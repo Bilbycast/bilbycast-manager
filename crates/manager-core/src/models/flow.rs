@@ -26,8 +26,18 @@ fn default_true() -> bool {
 pub enum InputConfig {
     #[serde(rename = "rtp")]
     Rtp(RtpInputConfig),
+    #[serde(rename = "udp")]
+    Udp(UdpInputConfig),
     #[serde(rename = "srt")]
     Srt(SrtInputConfig),
+    #[serde(rename = "rtmp")]
+    Rtmp(RtmpInputConfig),
+    #[serde(rename = "rtsp")]
+    Rtsp(RtspInputConfig),
+    #[serde(rename = "webrtc")]
+    Webrtc(WebrtcInputConfig),
+    #[serde(rename = "whep")]
+    Whep(WhepInputConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +57,14 @@ pub struct RtpInputConfig {
     pub max_bitrate_mbps: Option<f64>,
 }
 
+/// Raw UDP input — receives datagrams without requiring RTP headers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdpInputConfig {
+    pub bind_addr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_addr: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SrtInputConfig {
     pub mode: SrtMode,
@@ -63,6 +81,77 @@ pub struct SrtInputConfig {
     pub redundancy: Option<SrtRedundancyConfig>,
 }
 
+/// RTMP input — accepts incoming RTMP publish connections.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RtmpInputConfig {
+    pub listen_addr: String,
+    #[serde(default = "default_rtmp_app")]
+    pub app: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_key: Option<String>,
+    #[serde(default = "default_max_publishers")]
+    pub max_publishers: u32,
+}
+
+fn default_rtmp_app() -> String {
+    "live".to_string()
+}
+
+fn default_max_publishers() -> u32 {
+    1
+}
+
+/// RTSP input — pulls media from IP cameras or media servers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RtspInputConfig {
+    pub rtsp_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub transport: RtspTransport,
+    #[serde(default = "default_rtsp_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_rtsp_reconnect")]
+    pub reconnect_delay_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum RtspTransport {
+    #[default]
+    #[serde(rename = "tcp")]
+    Tcp,
+    #[serde(rename = "udp")]
+    Udp,
+}
+
+fn default_rtsp_timeout() -> u64 { 10 }
+fn default_rtsp_reconnect() -> u64 { 5 }
+
+/// WebRTC/WHIP input — accepts contributions from publishers via WHIP (RFC 9725).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebrtcInputConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bearer_token: Option<String>,
+    #[serde(default)]
+    pub video_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_ip: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stun_server: Option<String>,
+}
+
+/// WHEP input — pulls media from an external WHEP server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhepInputConfig {
+    pub whep_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bearer_token: Option<String>,
+    #[serde(default)]
+    pub video_only: bool,
+}
+
 fn default_latency() -> u64 {
     120
 }
@@ -73,6 +162,8 @@ fn default_latency() -> u64 {
 pub enum OutputConfig {
     #[serde(rename = "rtp")]
     Rtp(RtpOutputConfig),
+    #[serde(rename = "udp")]
+    Udp(UdpOutputConfig),
     #[serde(rename = "srt")]
     Srt(SrtOutputConfig),
     #[serde(rename = "rtmp")]
@@ -87,6 +178,7 @@ impl OutputConfig {
     pub fn id(&self) -> &str {
         match self {
             Self::Rtp(c) => &c.id,
+            Self::Udp(c) => &c.id,
             Self::Srt(c) => &c.id,
             Self::Rtmp(c) => &c.id,
             Self::Hls(c) => &c.id,
@@ -97,6 +189,7 @@ impl OutputConfig {
     pub fn name(&self) -> &str {
         match self {
             Self::Rtp(c) => &c.name,
+            Self::Udp(c) => &c.name,
             Self::Srt(c) => &c.name,
             Self::Rtmp(c) => &c.name,
             Self::Hls(c) => &c.name,
@@ -107,6 +200,7 @@ impl OutputConfig {
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::Rtp(_) => "rtp",
+            Self::Udp(_) => "udp",
             Self::Srt(_) => "srt",
             Self::Rtmp(_) => "rtmp",
             Self::Hls(_) => "hls",
@@ -132,6 +226,20 @@ pub struct RtpOutputConfig {
 
 fn default_dscp() -> u8 {
     46
+}
+
+/// Raw UDP output — sends MPEG-TS datagrams without RTP headers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdpOutputConfig {
+    pub id: String,
+    pub name: String,
+    pub dest_addr: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bind_addr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interface_addr: Option<String>,
+    #[serde(default = "default_dscp")]
+    pub dscp: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,13 +297,30 @@ fn default_max_segments() -> usize {
     5
 }
 
+/// WebRTC output mode.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum WebrtcOutputMode {
+    #[default]
+    #[serde(rename = "whip_client")]
+    WhipClient,
+    #[serde(rename = "whep_server")]
+    WhepServer,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebrtcOutputConfig {
     pub id: String,
     pub name: String,
-    pub whip_url: String,
+    #[serde(default)]
+    pub mode: WebrtcOutputMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whip_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bearer_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_viewers: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_ip: Option<String>,
     #[serde(default)]
     pub video_only: bool,
 }

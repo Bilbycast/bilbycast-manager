@@ -79,12 +79,26 @@ Note: Import is currently defined but not yet fully implemented.
 
 | Method | Path                           | Description                          |
 |--------|--------------------------------|--------------------------------------|
-| POST   | `/api/v1/ai/generate-config`   | Generate edge node config via AI     |
+| POST   | `/api/v1/ai/generate-config`   | AI flow management (action-based)    |
 | POST   | `/api/v1/ai/analyze`           | AI-powered anomaly analysis          |
 | POST   | `/api/v1/ai/query`             | Natural language query about nodes   |
 | GET    | `/api/v1/ai/keys`              | List stored AI provider keys         |
 | POST   | `/api/v1/ai/keys`              | Store an AI provider API key         |
 | DELETE | `/api/v1/ai/keys`              | Delete an AI provider API key        |
+
+### `POST /api/v1/ai/generate-config`
+
+Request body: `{ "prompt": "...", "provider": "openai|anthropic|gemini", "node_id": "optional", "existing_flows": [] }`
+
+The AI returns an action envelope in `config`:
+
+```json
+{ "success": true, "config": { "action": "<type>", ... }, "raw_response": "..." }
+```
+
+Supported action types: `create_flow`, `update_flow`, `delete_flow`, `add_output`, `remove_output`, `start_flow`, `stop_flow`, `restart_flow`, `info`, `multiple`.
+
+If `node_id` is provided and the node is online, real flow configs are fetched from the hub cache for context. The user's stored `model_preference` is used when calling the AI provider.
 
 ---
 

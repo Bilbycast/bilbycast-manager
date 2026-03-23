@@ -58,11 +58,15 @@ pub const PROTOCOL_DOCS: &str = r#"
 Supported protocols for bilbycast-edge flows:
 
 INPUT TYPES:
-1. RTP/UDP - Receive RTP packets over UDP (unicast or multicast)
+1. RTP - Receive RTP packets over UDP (unicast or multicast). Requires valid RTP v2 headers.
    - bind_addr: local address to bind (e.g., "0.0.0.0:5000" or multicast "239.1.1.1:5000")
    - Optional: FEC decode (SMPTE 2022-1), source filtering, payload type filtering, rate limiting
 
-2. SRT - Receive RTP over SRT (Secure Reliable Transport)
+2. UDP - Receive raw UDP datagrams (no RTP header required). For raw MPEG-TS over UDP from OBS, ffmpeg, srt-live-transmit, etc.
+   - bind_addr: local address to bind (e.g., "0.0.0.0:5000" or multicast "239.1.1.1:5000")
+   - Optional: interface_addr for multicast interface
+
+3. SRT - Receive RTP over SRT (Secure Reliable Transport)
    - Modes: caller (initiates connection), listener (waits for connection), rendezvous (both sides connect)
    - local_addr: local bind address
    - remote_addr: required for caller/rendezvous modes
@@ -71,17 +75,22 @@ INPUT TYPES:
    - Optional: AES encryption (passphrase + key length 16/24/32)
    - Optional: SMPTE 2022-7 redundancy — add "redundancy" object with leg 2 config (mode, local_addr, remote_addr, latency_ms, passphrase, aes_key_len). Merges two independent SRT legs for hitless protection switching.
 
-3. RTMP - Accept publish connections from OBS, ffmpeg, etc.
+4. RTMP - Accept publish connections from OBS, ffmpeg, etc.
    - listen_addr: address to listen on (e.g., "0.0.0.0:1935")
    - app: RTMP application name (default "live")
    - Optional: stream_key for authentication
 
 OUTPUT TYPES:
-1. RTP/UDP - Send RTP packets over UDP
+1. RTP - Send RTP-wrapped packets over UDP (with RTP headers)
    - dest_addr: destination (e.g., "192.168.1.100:5004")
-   - Optional: FEC encode, DSCP QoS marking
+   - Optional: FEC encode (SMPTE 2022-1), DSCP QoS marking
 
-2. SRT - Send RTP over SRT
+2. UDP - Send raw MPEG-TS over UDP (no RTP headers, 7×188-byte datagrams)
+   - dest_addr: destination (e.g., "192.168.1.100:5004")
+   - Optional: bind_addr, interface_addr (for multicast), DSCP QoS marking
+   - Strips RTP headers if input is RTP-wrapped. Standard IP/TS transport for ffplay, VLC, multicast.
+
+3. SRT - Send RTP over SRT
    - Same connection options as SRT input (mode, local_addr, remote_addr, latency_ms, passphrase, aes_key_len)
    - Optional: SMPTE 2022-7 redundancy — add "redundancy" object with leg 2 config for dual-leg sending. Duplicates every packet to two independent SRT paths. Example:
      "redundancy": { "mode": "caller", "local_addr": "0.0.0.0:0", "remote_addr": "backup-host:9001", "latency_ms": 120 }
@@ -95,9 +104,18 @@ OUTPUT TYPES:
    - ingest_url: HLS ingest endpoint
    - segment_duration_secs: target segment length (default 2.0)
 
-5. WebRTC/WHIP - WebRTC via WHIP protocol
-   - whip_url: WHIP endpoint for signaling
-   - Optional: bearer token, video_only mode
+5. WebRTC/WHIP Output - push media via WHIP client or serve via WHEP server
+   - mode: "whip_client" (push to endpoint) or "whep_server" (serve viewers)
+   - WHIP client: whip_url required, optional bearer_token
+   - WHEP server: optional max_viewers (default 10), bearer_token
+   - Optional: video_only mode, public_ip for NAT
+
+INPUT TYPES also support WebRTC:
+- WebRTC/WHIP Input: accept contributions from OBS/browsers via WHIP (type: "webrtc")
+  - Optional: bearer_token, public_ip, stun_server, video_only
+  - Publishers POST SDP offers to /api/v1/flows/{flow_id}/whip
+- WHEP Input: pull media from external WHEP server (type: "whep")
+  - whep_url required, optional bearer_token, video_only
 
 IP TUNNELING:
 When two edge nodes are both behind NAT firewalls and need to exchange SRT or other
@@ -135,14 +153,18 @@ pub const FLOW_CONFIG_SCHEMA: &str = r#"
   "name": "string - human-readable name",
   "enabled": "boolean - auto-start on startup (default true)",
   "input": {
-    "type": "rtp | srt | rtmp",
+    "type": "rtp | udp | srt | rtmp | rtsp | webrtc | whep",
     // For RTP: "bind_addr", optionally "interface_addr", "fec_decode", "allowed_sources", etc.
+    // For UDP: "bind_addr", optionally "interface_addr" (no FEC or RTP-specific features)
     // For SRT: "mode", "local_addr", optionally "remote_addr", "latency_ms", "peer_idle_timeout_secs", "passphrase", "redundancy": {...}
     // For RTMP: "listen_addr", optionally "app", "stream_key"
+    // For RTSP: "rtsp_url", optionally "username", "password", "transport" (tcp|udp), "reconnect_delay_secs"
+    // For WebRTC (WHIP server): optionally "bearer_token", "video_only", "public_ip", "stun_server" — publishers POST SDP to /api/v1/flows/{id}/whip
+    // For WHEP (client): "whep_url", optionally "bearer_token", "video_only" — pulls media from external WHEP server
   },
   "outputs": [
     {
-      "type": "rtp | srt | rtmp | hls | webrtc",
+      "type": "rtp | udp | srt | rtmp | hls | webrtc",
       "id": "string - unique output ID within flow",
       "name": "string - human-readable name",
       // Type-specific fields as documented above

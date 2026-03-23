@@ -623,11 +623,17 @@
   }
 
   function getInputAddr(inp) {
-    return inp.bind_addr || inp.local_addr || inp.listen_addr || inp.remote_addr || '';
+    if (inp.mode === 'caller' || inp.mode === 'rendezvous') return inp.remote_addr || '';
+    return inp.local_addr || inp.bind_addr || inp.listen_addr || '';
   }
 
   function getOutputAddr(out) {
-    return out.dest_addr || out.remote_addr || out.dest_url || out.ingest_url || out.whip_url || '';
+    if (out.dest_addr) return out.dest_addr;
+    if (out.dest_url) return out.dest_url;
+    if (out.ingest_url) return out.ingest_url;
+    if (out.whip_url) return out.whip_url;
+    if (out.mode === 'caller' || out.mode === 'rendezvous') return out.remote_addr || '';
+    return out.local_addr || '';
   }
 
   function bezierLength(x1, y1, x2, y2, steps) {
@@ -962,8 +968,13 @@
 
     // Input section
     var inputRedundant = !!(inp.srt_leg2_stats || inp.redundancy_switches);
-    html += '<div class="flow-section"><div class="flow-section-title">Input (' + esc(inp.input_type || 'unknown') + ')' +
+    var isWebrtcInput = (inp.input_type === 'webrtc' || inp.input_type === 'whep');
+    var inputModeLabel = inp.mode ? ' / ' + inp.mode : '';
+    var inputAddrLabel = getInputAddr(inp);
+    html += '<div class="flow-section"><div class="flow-section-title">Input (' + esc((inp.input_type || 'unknown') + inputModeLabel) + ')' +
+      (inputAddrLabel ? ' &mdash; <span style="color:#8b949e">' + esc(inputAddrLabel) + '</span>' : '') +
       (inputRedundant ? ' <span style="background:rgba(59,130,246,0.15);color:#60a5fa;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;font-weight:600;">2022-7</span>' : '') +
+      (isWebrtcInput ? ' <span style="background:rgba(168,85,247,0.15);color:#c084fc;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px;font-weight:600;">' + (inp.input_type === 'webrtc' ? 'WHIP' : 'WHEP') + '</span>' : '') +
       '</div>';
     html += '<div class="stats-grid">';
     html += '<div class="stat"><div class="k">State</div><div class="v">' + esc(inp.state || '-') + '</div></div>';
@@ -1098,7 +1109,8 @@
       for (var i = 0; i < outs.length; i++) {
         var o = outs[i];
         html += '<tr>';
-        html += '<td>' + esc(o.output_name || o.output_id) + (o.srt_leg2_stats ? ' <span style="color:#60a5fa;font-size:10px;">[2022-7]</span>' : '') + (o.tunnel ? ' <span style="color:#f59e0b;font-size:10px;">[Tunnel: ' + esc(o.tunnel.mode || '') + ']</span>' : '') + '</td>';
+        var webrtcBadge = (o.output_type === 'webrtc') ? ' <span style="color:#c084fc;font-size:10px;">[' + (o.whip_url ? 'WHIP' : 'WHEP') + ']</span>' : '';
+        html += '<td>' + esc(o.output_name || o.output_id) + (o.srt_leg2_stats ? ' <span style="color:#60a5fa;font-size:10px;">[2022-7]</span>' : '') + webrtcBadge + (o.tunnel ? ' <span style="color:#f59e0b;font-size:10px;">[Tunnel: ' + esc(o.tunnel.mode || '') + ']</span>' : '') + '</td>';
         html += '<td>' + esc(o.output_type || '-') + '</td>';
         html += '<td>' + esc(o.state || '-') + '</td>';
         html += '<td>' + fmt_num(o.packets_sent) + '</td>';

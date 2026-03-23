@@ -29,4 +29,7 @@ pub struct AppState {
     pub login_limiter: Arc<RateLimiter>,
     /// Whether the server is using a self-signed TLS certificate.
     pub is_self_signed_cert: bool,
+    /// Whether the server is running behind a TLS-terminating proxy/load balancer.
+    /// When true: no TLS on the server, no Secure cookie flag, no HSTS header.
+    pub is_behind_proxy: bool,
 }

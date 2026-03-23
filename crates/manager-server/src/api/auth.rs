@@ -174,13 +174,15 @@ pub async fn login(
 
     let user_info = manager_core::models::UserInfo::from(user);
 
-    // Session cookie: always HttpOnly + Secure (never expose to JS)
-    // CSRF cookie: Secure but NOT HttpOnly (JS needs to read it for X-CSRF-Token header)
+    // Session cookie: always HttpOnly (never expose to JS)
+    // CSRF cookie: NOT HttpOnly (JS needs to read it for X-CSRF-Token header)
+    // Secure flag: only in direct TLS mode (omitted behind proxy — LB handles TLS)
+    let secure = if state.is_behind_proxy { "" } else { " Secure;" };
     let session_cookie = format!(
-        "session={token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400"
+        "session={token}; HttpOnly;{secure} SameSite=Lax; Path=/; Max-Age=86400"
     );
     let csrf_cookie = format!(
-        "csrf_token={csrf_token}; Secure; SameSite=Lax; Path=/; Max-Age=86400"
+        "csrf_token={csrf_token};{secure} SameSite=Lax; Path=/; Max-Age=86400"
     );
 
     let mut headers = HeaderMap::new();
@@ -244,10 +246,11 @@ pub async fn logout(
     .await;
 
     // Clear cookies — flags must match the original Set-Cookie
+    let secure = if state.is_behind_proxy { "" } else { " Secure;" };
     let clear_session =
-        "session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0".to_string();
+        format!("session=; HttpOnly;{secure} SameSite=Lax; Path=/; Max-Age=0");
     let clear_csrf =
-        "csrf_token=; Secure; SameSite=Lax; Path=/; Max-Age=0".to_string();
+        format!("csrf_token=;{secure} SameSite=Lax; Path=/; Max-Age=0");
 
     let mut resp_headers = HeaderMap::new();
     resp_headers.append(
@@ -326,11 +329,12 @@ pub async fn login_form(
         &state.db, Some(&user.id), "auth.login", Some("user"), Some(&user.id), None, None,
     ).await;
 
+    let secure = if state.is_behind_proxy { "" } else { " Secure;" };
     let session_cookie = format!(
-        "session={token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400"
+        "session={token}; HttpOnly;{secure} SameSite=Lax; Path=/; Max-Age=86400"
     );
     let csrf_cookie = format!(
-        "csrf_token={csrf_token}; Secure; SameSite=Lax; Path=/; Max-Age=86400"
+        "csrf_token={csrf_token};{secure} SameSite=Lax; Path=/; Max-Age=86400"
     );
 
     let mut headers = HeaderMap::new();

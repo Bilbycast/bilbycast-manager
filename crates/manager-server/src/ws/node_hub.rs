@@ -6,11 +6,11 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use chrono::Utc;
 use dashmap::DashMap;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
-use manager_core::models::{EventSeverity, NodeStatus, WsEnvelope};
+use manager_core::models::{CommandAckPayload, EventSeverity, NodeStatus, WsEnvelope};
 
 // ───────────────────────────────────────────────────────
 // Node auth rate limiter / lockout
@@ -98,6 +98,7 @@ pub struct NodeHub {
     connections: DashMap<String, ConnectedNode>,
     browser_tx: broadcast::Sender<String>,
     auth_limiter: Arc<NodeAuthLimiter>,
+    pending_commands: DashMap<String, oneshot::Sender<CommandAckPayload>>,
 }
 
 impl NodeHub {
@@ -109,15 +110,17 @@ impl NodeHub {
             connections: DashMap::new(),
             browser_tx,
             auth_limiter,
+            pending_commands: DashMap::new(),
         }
     }
 
-    /// Send a command to a connected node.
-    pub async fn send_command(
+    /// Queue a command to a connected node without waiting for acknowledgement.
+    /// Used internally by `request_config` which has its own polling logic.
+    async fn queue_command(
         &self,
         node_id: &str,
         action: serde_json::Value,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<String, String> {
         let conn = self
             .connections
             .get(node_id)
@@ -138,10 +141,48 @@ impl NodeHub {
             .await
             .map_err(|e| e.to_string())?;
 
-        Ok(serde_json::json!({
-            "command_id": command_id,
-            "sent": true
-        }))
+        Ok(command_id)
+    }
+
+    /// Send a command to a connected node and wait for the acknowledgement.
+    /// Returns the actual success/failure from the node, not just "sent".
+    pub async fn send_command(
+        &self,
+        node_id: &str,
+        action: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        // Create oneshot channel for the ack
+        let (tx, rx) = oneshot::channel::<CommandAckPayload>();
+
+        // Queue the command (this also validates the node is connected)
+        let command_id = self.queue_command(node_id, action).await?;
+
+        // Store the sender so the ack handler can resolve it
+        self.pending_commands.insert(command_id.clone(), tx);
+
+        // Wait for ack with 10s timeout
+        match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
+            Ok(Ok(ack)) => {
+                if ack.success {
+                    Ok(serde_json::json!({
+                        "command_id": ack.command_id,
+                        "success": true
+                    }))
+                } else {
+                    Err(ack.error.unwrap_or_else(|| "Command failed on node".into()))
+                }
+            }
+            Ok(Err(_)) => {
+                // Sender was dropped (entry removed from pending_commands or node disconnected)
+                self.pending_commands.remove(&command_id);
+                Err("Node disconnected before acknowledging command".into())
+            }
+            Err(_) => {
+                // Timeout
+                self.pending_commands.remove(&command_id);
+                Err("Command timed out waiting for node response (10s)".into())
+            }
+        }
     }
 
     /// Get cached config for a node.
@@ -160,8 +201,8 @@ impl NodeHub {
             return Ok(Some(config));
         }
 
-        // Send GetConfig command
-        self.send_command(node_id, serde_json::json!({"type": "get_config"})).await?;
+        // Send GetConfig command (fire-and-forget — we poll for the config_response below)
+        self.queue_command(node_id, serde_json::json!({"type": "get_config"})).await?;
 
         // Poll for up to 3 seconds for the config_response to arrive
         for _ in 0..30 {
@@ -597,10 +638,29 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
             }
         }
         "command_ack" => {
-            tracing::info!("Command ack from {node_id}: {}", envelope.payload);
-            // Clear cached config so the next get_config request fetches fresh data
+            let command_id = envelope.payload["command_id"].as_str().unwrap_or("");
+            let success = envelope.payload["success"].as_bool().unwrap_or(false);
+            let error = envelope.payload["error"].as_str().map(String::from);
+
+            tracing::info!(
+                "Command ack from {node_id}: id={command_id} success={success} error={error:?}"
+            );
+
+            // Clear cached config so the next request fetches fresh data
             if let Some(mut conn) = state.node_hub.connections.get_mut(node_id) {
                 conn.cached_config = None;
+            }
+
+            // Resolve the pending command if someone is waiting
+            if !command_id.is_empty()
+                && let Some((_, tx)) = state.node_hub.pending_commands.remove(command_id)
+            {
+                let ack = CommandAckPayload {
+                    command_id: command_id.to_string(),
+                    success,
+                    error,
+                };
+                let _ = tx.send(ack);
             }
         }
         "pong" => {}

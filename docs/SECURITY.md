@@ -96,7 +96,7 @@ session=<JWT>; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
 ```
 
 - **HttpOnly** — prevents JavaScript from accessing the session token, mitigating XSS-based token theft
-- **Secure** — cookie is only sent over HTTPS
+- **Secure** — cookie is only sent over HTTPS (omitted in `behind_proxy` mode since the LB handles TLS)
 - **SameSite=Lax** — provides baseline CSRF protection at the browser level
 
 The JWT is **never** included in the JSON response body. A separate non-httpOnly `csrf_token` cookie is set alongside it for CSRF protection (see below).
@@ -181,7 +181,11 @@ Node secrets are encrypted with AES-256-GCM before storage in the database. The 
 
 ### TLS (HTTPS/WSS)
 
-TLS is **mandatory**. The server requires a TLS certificate and private key to start. Configure via environment variables or config file:
+The manager supports two TLS modes, configured via `tls_mode` in the TOML config or `BILBYCAST_TLS_MODE` environment variable:
+
+#### Direct Mode (`tls_mode = "direct"`, default)
+
+The manager handles TLS itself. Requires a TLS certificate and private key:
 
 ```bash
 BILBYCAST_TLS_CERT=/path/to/cert.pem
@@ -196,7 +200,29 @@ cert_path = "certs/server.crt"
 key_path = "certs/server.key"
 ```
 
-TLS is provided by **rustls** (a pure-Rust TLS implementation). The server will refuse to start without valid TLS configuration.
+TLS is provided by **rustls** (pure-Rust TLS). The server will refuse to start without valid TLS configuration in direct mode. Cookies include the `Secure` flag, and HSTS headers are sent on all responses.
+
+#### Behind Proxy Mode (`tls_mode = "behind_proxy"`)
+
+A load balancer or reverse proxy terminates TLS in front of the manager. The manager listens on plain HTTP/WS:
+
+```toml
+tls_mode = "behind_proxy"
+```
+
+Or via environment variable:
+
+```bash
+BILBYCAST_TLS_MODE=behind_proxy
+```
+
+In this mode:
+- No TLS certificate or key is needed
+- Cookies do **not** include the `Secure` flag (the LB's HTTPS ensures browser security)
+- HSTS headers are **not** sent (the LB should handle HSTS)
+- Edge/relay nodes still use `wss://` to connect to the load balancer's public address
+
+**Security requirement:** The connection between the load balancer and the manager must be on a trusted network (localhost, private VLAN, Kubernetes pod network). Credentials and session tokens transit this link in plaintext.
 
 ### Self-Signed Certificate Detection
 
