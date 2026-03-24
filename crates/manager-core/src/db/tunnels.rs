@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::models::tunnel::*;
 
-pub async fn create_tunnel(pool: &SqlitePool, req: &CreateTunnelRequest) -> Result<Tunnel> {
+pub async fn create_tunnel(pool: &SqlitePool, req: &CreateTunnelRequest, tunnel_key_enc: Option<&str>) -> Result<Tunnel> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let protocol = req.protocol.as_str();
@@ -20,7 +20,7 @@ pub async fn create_tunnel(pool: &SqlitePool, req: &CreateTunnelRequest) -> Resu
     let flow_ids_json = req.associated_flow_ids.as_ref().map(|ids| serde_json::to_string(ids).unwrap_or_default());
 
     sqlx::query(
-        "INSERT INTO tunnels (id, name, protocol, mode, ingress_node_id, ingress_listen_port, egress_node_id, egress_forward_addr, relay_addr, associated_flow_ids, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)"
+        "INSERT INTO tunnels (id, name, protocol, mode, ingress_node_id, ingress_listen_port, egress_node_id, egress_forward_addr, relay_addr, relay_node_id, tunnel_key_enc, associated_flow_ids, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)"
     )
     .bind(&id)
     .bind(&req.name)
@@ -31,6 +31,8 @@ pub async fn create_tunnel(pool: &SqlitePool, req: &CreateTunnelRequest) -> Resu
     .bind(&req.egress_node_id)
     .bind(&req.egress_forward_addr)
     .bind(&req.relay_addr)
+    .bind(&req.relay_node_id)
+    .bind(tunnel_key_enc)
     .bind(&flow_ids_json)
     .bind(&now)
     .bind(&now)
@@ -120,8 +122,10 @@ struct TunnelRow {
     egress_node_id: String,
     egress_forward_addr: String,
     relay_addr: Option<String>,
+    relay_node_id: Option<String>,
     #[allow(dead_code)]
     tunnel_psk_enc: Option<String>,
+    tunnel_key_enc: Option<String>,
     status: String,
     associated_flow_ids: Option<String>,
     created_at: String,
@@ -149,6 +153,8 @@ impl TunnelRow {
             egress_node_id: self.egress_node_id,
             egress_forward_addr: self.egress_forward_addr,
             relay_addr: self.relay_addr,
+            relay_node_id: self.relay_node_id,
+            tunnel_key_enc: self.tunnel_key_enc,
             status: TunnelStatus::from_str(&self.status).unwrap_or(TunnelStatus::Pending),
             associated_flow_ids: flow_ids,
             created_at: chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", self.created_at.trim_end_matches('Z')))
@@ -172,8 +178,11 @@ struct TunnelWithNodesRow {
     egress_node_id: String,
     egress_forward_addr: String,
     relay_addr: Option<String>,
+    relay_node_id: Option<String>,
     #[allow(dead_code)]
     tunnel_psk_enc: Option<String>,
+    #[allow(dead_code)]
+    tunnel_key_enc: Option<String>,
     status: String,
     associated_flow_ids: Option<String>,
     #[allow(dead_code)]
@@ -201,6 +210,7 @@ impl TunnelWithNodesRow {
             egress_node_name: self.egress_node_name,
             egress_forward_addr: self.egress_forward_addr,
             relay_addr: self.relay_addr,
+            relay_node_id: self.relay_node_id,
             status: self.status,
             associated_flow_ids: flow_ids,
         }

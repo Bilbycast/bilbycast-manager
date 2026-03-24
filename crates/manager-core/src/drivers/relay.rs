@@ -24,6 +24,9 @@ impl Default for RelayDriver {
 }
 
 /// Known relay command types: (name, description, minimum_role).
+/// Note: authorize_edge, revoke_edge, list_authorized_edges have been removed —
+/// the relay is now stateless with no auth/ACL. End-to-end encryption is handled
+/// by the edges using a shared symmetric key distributed by the manager.
 const RELAY_COMMANDS: &[(&str, &str, &str)] = &[
     (
         "get_config",

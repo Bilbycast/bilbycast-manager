@@ -228,7 +228,7 @@ The architecture uses a **device driver pattern** for managing different types o
 
 ### Currently registered drivers:
 - **EdgeDriver** (`edge.rs`) — bilbycast-edge transport nodes. Commands: get_config, update_config, create/update/delete/start/stop/restart_flow, add/remove_output
-- **RelayDriver** (`relay.rs`) — bilbycast-relay servers. Commands: get_config, disconnect_edge, close_tunnel, list_tunnels, list_edges
+- **RelayDriver** (`relay.rs`) — bilbycast-relay servers (stateless forwarders, no auth). Commands: get_config, disconnect_edge, close_tunnel, list_tunnels, list_edges
 
 ### To add a new device type (e.g., encoder, decoder):
 

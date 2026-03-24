@@ -104,6 +104,10 @@ pub struct Tunnel {
     pub egress_node_id: String,
     pub egress_forward_addr: String,
     pub relay_addr: Option<String>,
+    /// Node ID of the relay server (for relay mode tunnels).
+    pub relay_node_id: Option<String>,
+    /// Encrypted tunnel encryption key (ChaCha20-Poly1305), stored encrypted at rest.
+    pub tunnel_key_enc: Option<String>,
     pub status: TunnelStatus,
     pub associated_flow_ids: Option<Vec<String>>,
     pub created_at: DateTime<Utc>,
@@ -121,6 +125,9 @@ pub struct CreateTunnelRequest {
     pub egress_node_id: String,
     pub egress_forward_addr: String,
     pub relay_addr: Option<String>,
+    /// Node ID of the relay server (required for relay mode).
+    /// The manager will automatically authorize both edges on this relay.
+    pub relay_node_id: Option<String>,
     pub associated_flow_ids: Option<Vec<String>>,
 }
 
@@ -149,6 +156,7 @@ pub struct TunnelSummary {
     pub egress_node_name: Option<String>,
     pub egress_forward_addr: String,
     pub relay_addr: Option<String>,
+    pub relay_node_id: Option<String>,
     pub status: String,
     pub associated_flow_ids: Option<Vec<String>>,
 }

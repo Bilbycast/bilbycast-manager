@@ -4,7 +4,7 @@
 
 Bilbycast provides IP tunneling to transport UDP and TCP data between edge nodes at different locations when they cannot communicate directly (e.g., both behind NAT firewalls). This is essential for remote broadcast production where venue equipment needs to send/receive data to/from a production hub.
 
-The tunneling system uses QUIC (via the `quinn` crate) with mandatory TLS 1.3 encryption. All traffic through the tunnel is encrypted end-to-end.
+The tunneling system uses QUIC (via the `quinn` crate) for transport with mandatory TLS 1.3. Data is encrypted end-to-end between edge nodes using ChaCha20-Poly1305 (AEAD) with a 32-byte shared key. The relay server is stateless -- it forwards encrypted traffic without any authentication, shared secrets, or access control lists. Security relies entirely on the edge-to-edge encryption: even if an attacker connects to the relay and guesses a tunnel UUID, they cannot decrypt traffic or inject valid packets (AEAD tag verification fails).
 
 ## Architecture
 
@@ -150,31 +150,20 @@ This is the most common use case: transporting an SRT stream between two edge no
 
 ### Step 1: Deploy bilbycast-relay
 
-Deploy `bilbycast-relay` on a cloud server with a public IP:
+Deploy `bilbycast-relay` on a cloud server with a public IP. The relay is stateless and requires no configuration:
 
 ```bash
-# Generate config
-cat > relay-config.json << EOF
-{
-  "quic_addr": "0.0.0.0:4433",
-  "api_addr": "0.0.0.0:4480",
-  "shared_secret": "your-long-random-secret-here"
-}
-EOF
-
-# Run
-bilbycast-relay --config relay-config.json
+# Run (no config needed -- relay is a stateless forwarder)
+bilbycast-relay
 ```
 
-### Step 2: Generate edge tokens
+Optionally specify listen addresses:
 
 ```bash
-# Generate tokens for each edge node
-bilbycast-relay --generate-token edge-venue-01
-bilbycast-relay --generate-token edge-hub-01
+bilbycast-relay --quic-addr 0.0.0.0:4433 --api-addr 0.0.0.0:4480
 ```
 
-### Step 3: Create the tunnel via Manager
+### Step 2: Create the tunnel via Manager
 
 Use the Manager UI or API to create a UDP tunnel:
 
@@ -225,9 +214,11 @@ PUT /api/v1/nodes/{id}
 
 ## Security
 
-- **QUIC with TLS 1.3**: All tunnel traffic is encrypted in transit
-- **HMAC-SHA256 tokens**: Edge nodes authenticate to the relay using tokens signed with a shared secret
-- **No database on relay**: The relay server is stateless - tokens are verified cryptographically without a database
+- **End-to-end encryption**: All tunnel traffic is encrypted between edge nodes using ChaCha20-Poly1305 (AEAD) with a 32-byte shared key (`tunnel_encryption_key`). The manager generates a random key per tunnel and distributes it to both edges, encrypted at rest with AES-256-GCM
+- **Stateless relay**: The relay has no authentication, no shared secrets, and no access control. It simply forwards encrypted traffic by tunnel UUID. This simplifies deployment and eliminates relay-side credential management
+- **Tunnel ID security**: Tunnel IDs are 128-bit random UUIDs. Even if an attacker guesses a UUID, they cannot decrypt traffic (no key) or inject packets (AEAD tag verification fails)
+- **QUIC with TLS 1.3**: Transport-level encryption between each edge and the relay
+- **28 bytes overhead per packet**: 12-byte nonce + 16-byte authentication tag. TCP uses framing: [4-byte BE length][nonce+ciphertext+tag]. UDP encrypts payload before tunnel_id prefix encoding
 - **SRT encryption**: When using SRT over a tunnel, SRT's own AES encryption provides an additional layer (defense-in-depth)
 - **ALPN protocol separation**: Relay connections use `bilbycast-relay` ALPN; direct connections use `bilbycast-direct` ALPN
 
@@ -235,8 +226,8 @@ PUT /api/v1/nodes/{id}
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| Tunnel stays "pending" | Edges not connected to relay | Check relay address, tokens, and firewall rules for QUIC (UDP port 4433) |
+| Tunnel stays "pending" | Edges not connected to relay | Check relay address and firewall rules for QUIC (UDP port 4433) |
 | High latency through relay | Relay server geographically distant | Deploy relay closer to the midpoint between venue and hub |
 | Intermittent drops | QUIC keepalive timeout | Check network stability; relay sends keepalives every 15s |
-| Auth failures | Wrong shared secret | Regenerate tokens with the correct secret |
+| Decryption errors | Mismatched tunnel_encryption_key | Ensure both edges received the same key from the manager |
 | "peer doesn't support any known protocol" | ALPN mismatch | Ensure edge and relay are using compatible versions |

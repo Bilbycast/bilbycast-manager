@@ -244,7 +244,7 @@
     <a href="/ai/assistant" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="12" cy="12" r="3"/></svg>AI Config</a>
     <a href="/ai/settings" class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>AI Keys</a>
   </nav>
-  <div class="sidebar-footer">v0.1.0</div>
+  <div class="sidebar-footer">v{{VERSION}}</div>
 </aside>
 
 <div class="main-wrapper">
@@ -357,8 +357,8 @@
       <div id="tunnelsList">
         <div class="flows-empty" id="tunnelsEmpty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40"><path d="M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/></svg>
-          <p>No tunnels active</p>
-          <span>Tunnel data is loaded from the live node connection. If the node is offline, tunnels won't appear here.</span>
+          <p>No tunnels configured</p>
+          <span>Create a tunnel using "New Tunnel" or configure tunnels in the node's JSON config.</span>
         </div>
       </div>
     </div>
@@ -656,8 +656,19 @@
         <hr class="form-divider"/>
         <div class="form-section-title">Relay Server</div>
         <div class="form-row full">
-          <div class="form-group"><label>Relay Server Address</label><input type="text" id="tunRelayAddr" placeholder="e.g. relay.example.com:4433"/><div class="hint">Required for relay mode</div></div>
+          <div class="form-group">
+            <label>Relay Server</label>
+            <select id="tunRelaySelect" onchange="onRelaySelectChange()">
+              <option value="">Select relay server...</option>
+              <option value="__manual__">Enter address manually...</option>
+            </select>
+            <div class="hint">Select an online relay server or enter an address manually</div>
+          </div>
         </div>
+        <div class="form-row full" id="tunRelayManualRow" style="display:none;">
+          <div class="form-group"><label>Relay Address</label><input type="text" id="tunRelayAddr" placeholder="e.g. relay.example.com:4433"/></div>
+        </div>
+        <input type="hidden" id="tunRelayNodeId" value=""/>
       </div>
 
       <hr class="form-divider"/>
@@ -737,8 +748,9 @@ function apiFetch(url, opts) {
     document.getElementById('pageTitle').textContent = 'Node Configuration';
   });
 
-  // Load config on page load (tunnels come via WebSocket)
+  // Load config and tunnels on page load
   loadConfig();
+  loadTunnels();
 })();
 
 var _currentConfig = null;
@@ -1085,44 +1097,8 @@ function renderConfigFlowsFromConfig(config) {
 }
 
 function renderConfigTunnelsFromConfig(config) {
-  var tunnels = [];
-  if (config && Array.isArray(config.tunnels)) {
-    tunnels = config.tunnels;
-  }
-  if (tunnels.length === 0) return;
-
-  var emptyEl = document.getElementById('tunnelsEmpty');
-  var listEl = document.getElementById('tunnelsList');
-  emptyEl.style.display = 'none';
-
-  var items = listEl.querySelectorAll('.tunnel-card,.tunnel-item');
-  for (var r = 0; r < items.length; r++) items[r].remove();
-
-  var html = '';
-  for (var i = 0; i < tunnels.length; i++) {
-    var t = tunnels[i];
-    var proto = (t.protocol || 'tcp').toUpperCase();
-    var dir = (t.direction || 'egress').toLowerCase();
-    var mode = t.mode || 'direct';
-    var dirClass = dir === 'ingress' ? 'role-ingress' : 'role-egress';
-    var localAddr = t.local_addr || t.direct_listen_addr || '-';
-
-    html += '<div class="tunnel-card" data-tunnel-id="' + esc(t.id) + '">';
-    html += '<div class="tunnel-header">';
-    html += '<span class="tunnel-name">' + esc(t.name || t.id) + '</span>';
-    html += '<span class="flow-badges">';
-    html += '<span class="tunnel-badge proto">' + esc(proto) + '</span>';
-    html += '<span class="tunnel-badge mode">' + esc(mode) + '</span>';
-    html += '<span class="tunnel-badge ' + dirClass + '">' + esc(dir) + '</span>';
-    html += '<span class="badge" style="background:#272c33;color:#8b949e">CONFIG</span>';
-    html += '</span></div>';
-    html += '<div class="tunnel-section"><div class="stats-grid">';
-    html += '<div class="stat"><div class="k">Local Address</div><div class="v">' + esc(localAddr) + '</div></div>';
-    if (t.peer_addr) html += '<div class="stat"><div class="k">Peer Address</div><div class="v">' + esc(t.peer_addr) + '</div></div>';
-    if (t.relay_addr) html += '<div class="stat"><div class="k">Relay</div><div class="v">' + esc(t.relay_addr) + '</div></div>';
-    html += '</div></div></div>';
-  }
-  listEl.insertAdjacentHTML('beforeend', html);
+  // Config data is already in _currentConfig; just trigger unified re-render
+  renderUnifiedTunnels();
 }
 
 function editFlowInEditor(flowId) {
@@ -1989,88 +1965,204 @@ function hexToRgbStr(hex) {
   return r + ',' + g + ',' + b;
 }
 
-// ── Render tunnels from live WebSocket stats ──
-function renderLiveTunnels(tunnels) {
+// ── Unified tunnel rendering — merges config, DB, and live data ──
+function renderUnifiedTunnels() {
   var listEl = document.getElementById('tunnelsList');
   var emptyEl = document.getElementById('tunnelsEmpty');
 
-  // Normalize relay tunnel format
-  var isRelay = window._deviceType === 'relay';
-  if (isRelay && tunnels) {
-    tunnels = tunnels.map(function(t) {
-      if (t.tunnel_id && !t.id) {
-        var s = t.stats || {};
-        return {
-          id: t.tunnel_id,
-          name: (t.protocol || 'TCP').toUpperCase() + ': ' + (t.ingress_edge_id || '?') + ' \u2194 ' + (t.egress_edge_id || '?'),
-          protocol: t.protocol,
-          direction: 'relay',
-          mode: 'relay',
-          state: t.status || 'unknown',
-          local_addr: (t.ingress_edge_id || '') + ' \u2192 ' + (t.egress_edge_id || ''),
-          stats: {
-            bytes_sent: s.bytes_ingress || 0,
-            bytes_received: s.bytes_egress || 0,
-            packets_sent: s.tcp_streams_total || 0,
-            packets_received: s.udp_datagrams_total || 0,
-            send_errors: 0
-          }
-        };
-      }
-      return t;
-    });
+  // Clear all existing tunnel cards/items
+  var old = listEl.querySelectorAll('.tunnel-card,.tunnel-item');
+  for (var r = 0; r < old.length; r++) old[r].remove();
+
+  // Build merged map — keyed by ID, with name-based fallback matching
+  // so that the same logical tunnel from different sources (config, DB, live)
+  // merges into one entry even if their IDs differ.
+  var merged = {};    // id → tunnel object
+  var nameMap = {};   // lowercase name → id (for fallback matching)
+
+  // Helper: find existing entry by ID or name
+  function findKey(id, name) {
+    if (id && merged[id]) return id;
+    if (name) {
+      var lc = name.toLowerCase();
+      if (nameMap[lc] && merged[nameMap[lc]]) return nameMap[lc];
+    }
+    return null;
+  }
+  function registerName(name, key) {
+    if (name) nameMap[name.toLowerCase()] = key;
   }
 
-  // Remove old tunnel cards (but preserve config-rendered tunnel-cards)
-  var oldLive = listEl.querySelectorAll('.tunnel-card[data-live="true"]');
-  for (var r = 0; r < oldLive.length; r++) oldLive[r].remove();
-
-  if (!tunnels || tunnels.length === 0) {
-    // Only show empty if no config tunnels exist either
-    var configCards = listEl.querySelectorAll('.tunnel-card:not([data-live="true"])');
-    if (configCards.length === 0) {
-      emptyEl.style.display = '';
+  // 1. Config tunnels (from _currentConfig)
+  if (_currentConfig && Array.isArray(_currentConfig.tunnels)) {
+    for (var i = 0; i < _currentConfig.tunnels.length; i++) {
+      var ct = _currentConfig.tunnels[i];
+      if (!ct.id) continue;
+      merged[ct.id] = {
+        id: ct.id, name: ct.name || ct.id,
+        protocol: ct.protocol || 'tcp', direction: ct.direction || 'egress',
+        mode: ct.mode || 'direct',
+        local_addr: ct.local_addr || ct.direct_listen_addr || '',
+        peer_addr: ct.peer_addr || '', relay_addr: ct.relay_addr || '',
+        source: 'config', hasDbRecord: false, isLive: false,
+        state: null, stats: null, dbTunnel: null, dbStatus: null
+      };
+      registerName(ct.name || ct.id, ct.id);
     }
+  }
+
+  // 2. DB tunnels (from _tunnels)
+  for (var i = 0; i < _tunnels.length; i++) {
+    var dt = _tunnels[i];
+    var isIngress = (dt.ingress_node_id === window._nodeId);
+    // Try to match with existing entry by ID or name
+    var existingKey = findKey(dt.id, dt.name);
+    var key = existingKey || dt.id;
+    var existing = merged[key] || {
+      id: key, name: dt.name || key,
+      protocol: dt.protocol || 'udp', direction: isIngress ? 'ingress' : 'egress',
+      mode: dt.mode || 'relay',
+      local_addr: '', peer_addr: '', relay_addr: dt.relay_addr || '',
+      source: 'db', isLive: false, state: null, stats: null, dbStatus: null
+    };
+    existing.hasDbRecord = true;
+    existing.dbTunnel = dt;
+    existing.name = dt.name || existing.name;
+    if (dt.status) existing.dbStatus = dt.status;
+    existing.direction = isIngress ? 'ingress' : 'egress';
+    if (dt.relay_addr) existing.relay_addr = dt.relay_addr;
+    merged[key] = existing;
+    registerName(dt.name, key);
+  }
+
+  // 3. Live tunnels (from _liveTunnels, with relay normalization)
+  var liveTunnels = _liveTunnels || [];
+  var isRelay = window._deviceType === 'relay';
+  for (var i = 0; i < liveTunnels.length; i++) {
+    var lt = liveTunnels[i];
+    // Normalize relay format
+    if (isRelay && lt.tunnel_id && !lt.id) {
+      var s = lt.stats || {};
+      lt = {
+        id: lt.tunnel_id,
+        name: (lt.protocol || 'TCP').toUpperCase() + ': ' + (lt.ingress_edge_id || '?') + ' \u2194 ' + (lt.egress_edge_id || '?'),
+        protocol: lt.protocol, direction: 'relay', mode: 'relay',
+        state: lt.status || 'unknown',
+        local_addr: (lt.ingress_edge_id || '') + ' \u2192 ' + (lt.egress_edge_id || ''),
+        stats: { bytes_sent: s.bytes_ingress||0, bytes_received: s.bytes_egress||0,
+          packets_sent: s.tcp_streams_total||0, packets_received: s.udp_datagrams_total||0, send_errors: 0 }
+      };
+    }
+    if (!lt.id) continue;
+    // Try to match with existing entry by ID or name
+    var existingKey = findKey(lt.id, lt.name);
+    var key = existingKey || lt.id;
+    var existing = merged[key] || {
+      id: key, name: lt.name || key,
+      protocol: lt.protocol || 'tcp', direction: lt.direction || 'unknown',
+      mode: lt.mode || 'direct',
+      local_addr: lt.local_addr || '', peer_addr: '', relay_addr: '',
+      source: 'live', hasDbRecord: false, dbTunnel: null, dbStatus: null
+    };
+    existing.isLive = true;
+    existing.state = lt.state || 'unknown';
+    existing.stats = lt.stats || null;
+    if (lt.local_addr) existing.local_addr = lt.local_addr;
+    if (lt.name && !existing.hasDbRecord) existing.name = lt.name;
+    if (lt.direction) existing.direction = lt.direction;
+    merged[key] = existing;
+    registerName(lt.name || lt.id, key);
+  }
+
+  // Convert map to array
+  var tunnelList = [];
+  for (var k in merged) {
+    if (merged.hasOwnProperty(k)) tunnelList.push(merged[k]);
+  }
+
+  if (tunnelList.length === 0) {
+    emptyEl.style.display = '';
     return;
   }
-
   emptyEl.style.display = 'none';
-  // Also remove any config-rendered tunnel cards since live data is more complete
-  var configCards = listEl.querySelectorAll('.tunnel-card');
-  for (var c = 0; c < configCards.length; c++) configCards[c].remove();
 
+  // Render
   var html = '';
-  for (var i = 0; i < tunnels.length; i++) {
-    var t = tunnels[i];
+  for (var i = 0; i < tunnelList.length; i++) {
+    var t = tunnelList[i];
     var proto = (t.protocol || 'tcp').toUpperCase();
     var dir = (t.direction || 'unknown').toLowerCase();
     var mode = t.mode || 'direct';
-    var tState = t.state || 'unknown';
-    var dirClass = dir === 'ingress' ? 'role-ingress' : 'role-egress';
-    var stateColor = tState === 'ready' || tState === 'active' ? 'status-active' : (tState === 'connecting' ? 'status-pending' : (tState === 'error' ? 'status-error' : 'status-disabled'));
-    var stats = t.stats || {};
+    var dirClass = dir === 'ingress' ? 'role-ingress' : (dir === 'relay' ? 'role-ingress' : 'role-egress');
 
-    html += '<div class="tunnel-card" data-tunnel-id="' + esc(t.id) + '" data-live="true">';
+    // Status badge: live state > DB status > CONFIG
+    var statusLabel, statusClass;
+    if (t.isLive && t.state) {
+      statusLabel = t.state;
+      statusClass = (t.state === 'ready' || t.state === 'active') ? 'status-active' :
+        (t.state === 'connecting' ? 'status-pending' : (t.state === 'error' ? 'status-error' : 'status-disabled'));
+    } else if (t.dbStatus) {
+      statusLabel = t.dbStatus;
+      statusClass = t.dbStatus === 'active' ? 'status-active' : (t.dbStatus === 'pending' ? 'status-pending' : 'status-disabled');
+    } else {
+      statusLabel = 'CONFIG';
+      statusClass = '';
+    }
+    var statusStyle = statusClass ? '' : 'background:#272c33;color:#8b949e';
+
+    html += '<div class="tunnel-card" data-tunnel-id="' + esc(t.id) + '">';
     html += '<div class="tunnel-header">';
-    html += '<span class="tunnel-name">' + esc(t.name || t.id) + '</span>';
+    html += '<span class="tunnel-name">' + esc(t.name) + '</span>';
     html += '<span class="flow-badges">';
     html += '<span class="tunnel-badge proto">' + esc(proto) + '</span>';
     html += '<span class="tunnel-badge mode">' + esc(mode) + '</span>';
     html += '<span class="tunnel-badge ' + dirClass + '">' + esc(dir) + '</span>';
-    html += '<span class="tunnel-badge ' + stateColor + '">' + esc(tState) + '</span>';
+    html += '<span class="tunnel-badge ' + statusClass + '"' + (statusStyle ? ' style="' + statusStyle + '"' : '') + '>' + esc(statusLabel) + '</span>';
     html += '</span></div>';
 
+    // Stats/info section
     html += '<div class="tunnel-section"><div class="stats-grid">';
-    if (t.local_addr) html += '<div class="stat"><div class="k">Local Address</div><div class="v">' + esc(t.local_addr) + '</div></div>';
-    html += '<div class="stat"><div class="k">Bytes Sent</div><div class="v">' + fmt_bytes(stats.bytes_sent) + '</div></div>';
-    html += '<div class="stat"><div class="k">Bytes Received</div><div class="v">' + fmt_bytes(stats.bytes_received) + '</div></div>';
-    if (stats.packets_sent) html += '<div class="stat"><div class="k">Pkts Sent</div><div class="v">' + fmt_num(stats.packets_sent) + '</div></div>';
-    if (stats.packets_received) html += '<div class="stat"><div class="k">Pkts Received</div><div class="v">' + fmt_num(stats.packets_received) + '</div></div>';
-    if (stats.connections_active !== undefined) html += '<div class="stat"><div class="k">Connections</div><div class="v">' + stats.connections_active + ' / ' + fmt_num(stats.connections_total) + '</div></div>';
-    if (stats.send_errors) html += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="color:#f85149">' + fmt_num(stats.send_errors) + '</div></div>';
-    html += '</div></div></div>';
+    if (t.isLive && t.stats) {
+      // Live stats
+      if (t.local_addr) html += '<div class="stat"><div class="k">Local Address</div><div class="v">' + esc(t.local_addr) + '</div></div>';
+      html += '<div class="stat"><div class="k">Bytes Sent</div><div class="v">' + fmt_bytes(t.stats.bytes_sent) + '</div></div>';
+      html += '<div class="stat"><div class="k">Bytes Received</div><div class="v">' + fmt_bytes(t.stats.bytes_received) + '</div></div>';
+      if (t.stats.packets_sent) html += '<div class="stat"><div class="k">Pkts Sent</div><div class="v">' + fmt_num(t.stats.packets_sent) + '</div></div>';
+      if (t.stats.packets_received) html += '<div class="stat"><div class="k">Pkts Received</div><div class="v">' + fmt_num(t.stats.packets_received) + '</div></div>';
+      if (t.stats.connections_active !== undefined) html += '<div class="stat"><div class="k">Connections</div><div class="v">' + t.stats.connections_active + ' / ' + fmt_num(t.stats.connections_total) + '</div></div>';
+      if (t.stats.send_errors) html += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="color:#f85149">' + fmt_num(t.stats.send_errors) + '</div></div>';
+    } else {
+      // Config/DB info
+      if (t.local_addr) html += '<div class="stat"><div class="k">Local Address</div><div class="v">' + esc(t.local_addr) + '</div></div>';
+      if (t.peer_addr) html += '<div class="stat"><div class="k">Peer Address</div><div class="v">' + esc(t.peer_addr) + '</div></div>';
+      if (t.relay_addr) html += '<div class="stat"><div class="k">Relay</div><div class="v">' + esc(t.relay_addr) + '</div></div>';
+      if (t.dbTunnel) {
+        var dt = t.dbTunnel;
+        var peerName = (dt.ingress_node_id === window._nodeId)
+          ? (dt.egress_node_name || dt.egress_node_id || '')
+          : (dt.ingress_node_name || dt.ingress_node_id || '');
+        if (peerName) html += '<div class="stat"><div class="k">Peer Node</div><div class="v">' + esc(peerName) + '</div></div>';
+        if (dt.ingress_listen_port) html += '<div class="stat"><div class="k">Port</div><div class="v">' + dt.ingress_listen_port + '</div></div>';
+        if (dt.egress_forward_addr) html += '<div class="stat"><div class="k">Forward To</div><div class="v">' + esc(dt.egress_forward_addr) + '</div></div>';
+      }
+    }
+    html += '</div></div>';
+
+    // Action buttons — Edit only if DB record exists, Delete always
+    html += '<div style="display:flex;gap:8px;margin-top:8px;">';
+    if (t.hasDbRecord) {
+      html += '<button class="action-btn" onclick="editTunnel(\'' + esc(t.id) + '\')">Edit</button>';
+    }
+    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteTunnel(\'' + esc(t.id) + '\',\'' + esc(t.name).replace(/'/g, "\\'") + '\')">Delete</button>';
+    html += '</div></div>';
   }
   listEl.insertAdjacentHTML('beforeend', html);
+}
+
+// ── Render tunnels from live WebSocket stats (delegates to unified renderer) ──
+function renderLiveTunnels(tunnels) {
+  // _liveTunnels is already set by the WebSocket handler before calling this
+  renderUnifiedTunnels();
 }
 
 // ── Send command to node ──
@@ -2285,50 +2377,8 @@ function loadTunnels() {
 }
 
 function renderTunnels(tunnels) {
-  var emptyEl = document.getElementById('tunnelsEmpty');
-  var listEl = document.getElementById('tunnelsList');
-  var items = listEl.querySelectorAll('.tunnel-item');
-  for (var i = 0; i < items.length; i++) items[i].remove();
-
-  if (!tunnels || tunnels.length === 0) {
-    emptyEl.style.display = '';
-    return;
-  }
-  emptyEl.style.display = 'none';
-
-  var html = '';
-  for (var i = 0; i < tunnels.length; i++) {
-    var t = tunnels[i];
-    var isIngress = (t.ingress_node_id === window._nodeId);
-    var role = isIngress ? 'Ingress' : 'Egress';
-    var roleClass = isIngress ? 'role-ingress' : 'role-egress';
-    var peerName = isIngress
-      ? (t.egress_node_name || t.egress_node_id)
-      : (t.ingress_node_name || t.ingress_node_id);
-    var status = t.status || 'pending';
-    var proto = (t.protocol || 'udp').toUpperCase();
-    var mode = t.mode || 'relay';
-
-    html += '<div class="tunnel-item">';
-    html += '<div style="flex:1;min-width:0;">';
-    html += '<div class="flow-name">' + esc(t.name) + '</div>';
-    html += '<div style="margin-top:4px;">';
-    html += '<span class="tunnel-badge proto">' + esc(proto) + '</span>';
-    html += '<span class="tunnel-badge mode">' + esc(mode) + '</span>';
-    html += '<span class="tunnel-badge status-' + esc(status) + '">' + esc(status) + '</span>';
-    html += '<span class="tunnel-badge ' + roleClass + '">' + esc(role) + '</span>';
-    html += '</div>';
-    html += '<div class="flow-desc" style="margin-top:4px;">';
-    html += 'Peer: ' + esc(peerName) + ' &mdash; Port ' + t.ingress_listen_port + ' &rarr; ' + esc(t.egress_forward_addr);
-    if (t.relay_addr) html += ' &mdash; Relay: ' + esc(t.relay_addr);
-    html += '</div>';
-    html += '</div>';
-    html += '<div class="flow-actions" style="flex-shrink:0;">';
-    html += '<button class="action-btn" onclick="editTunnel(\'' + esc(t.id) + '\')">Edit</button>';
-    html += '<button class="action-btn" style="color:#f87171;border-color:#7f1d1d;" onclick="deleteTunnel(\'' + esc(t.id) + '\',\'' + esc(t.name).replace(/'/g, "\\'") + '\')">Delete</button>';
-    html += '</div></div>';
-  }
-  listEl.insertAdjacentHTML('beforeend', html);
+  // DB data is already in _tunnels; just trigger unified re-render
+  renderUnifiedTunnels();
 }
 
 function openTunnelModal() {
@@ -2345,10 +2395,14 @@ function openTunnelModal() {
   document.getElementById('tunIngressPort').value = '';
   document.getElementById('tunEgressAddr').value = '';
   document.getElementById('tunRelayAddr').value = '';
+  document.getElementById('tunRelayNodeId').value = '';
+  document.getElementById('tunRelaySelect').value = '';
+  document.getElementById('tunRelayManualRow').style.display = 'none';
   document.getElementById('tunFlowIds').value = '';
   document.getElementById('tunStatusGroup').style.display = 'none';
   toggleTunnelMode();
   loadNodesForTunnelModal();
+  loadRelayServers();
   document.getElementById('tunnelModal').classList.add('open');
 }
 
@@ -2359,6 +2413,56 @@ function closeTunnelModal() {
 function toggleTunnelMode() {
   var mode = val('tunMode');
   document.getElementById('tunRelayRow').style.display = (mode === 'relay') ? '' : 'none';
+}
+
+function loadRelayServers() {
+  fetch('/api/v1/nodes?device_type=relay', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var nodes = data.nodes || data || [];
+      var sel = document.getElementById('tunRelaySelect');
+      while (sel.options.length > 2) sel.remove(2);
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var addr = extractRelayQuicAddr(n);
+        if (!addr) continue;
+        var label = n.name + ' (' + (n.status || 'unknown') + ') \u2014 ' + addr;
+        var opt = new Option(label, addr);
+        opt.dataset.nodeId = n.id;
+        opt.disabled = (n.status !== 'online');
+        sel.appendChild(opt);
+      }
+    })
+    .catch(function() {});
+}
+
+function extractRelayQuicAddr(node) {
+  var addr = null;
+  if (node.last_health) {
+    var h = typeof node.last_health === 'string' ? JSON.parse(node.last_health) : node.last_health;
+    if (h.quic_addr) addr = h.quic_addr;
+    else if (h.listen_addresses && h.listen_addresses.quic) addr = h.listen_addresses.quic;
+  }
+  if (!addr && node.ip_address) addr = node.ip_address + ':4433';
+  if (!addr) return null;
+  // Replace 0.0.0.0 with 127.0.0.1 — 0.0.0.0 is a listen address, not reachable
+  return addr.replace(/^0\.0\.0\.0:/, '127.0.0.1:');
+}
+
+function onRelaySelectChange() {
+  var sel = document.getElementById('tunRelaySelect');
+  var v = sel.value;
+  if (v === '__manual__') {
+    document.getElementById('tunRelayManualRow').style.display = '';
+    document.getElementById('tunRelayAddr').value = '';
+    document.getElementById('tunRelayNodeId').value = '';
+    document.getElementById('tunRelayAddr').focus();
+  } else {
+    document.getElementById('tunRelayManualRow').style.display = 'none';
+    document.getElementById('tunRelayAddr').value = v;
+    var opt = sel.options[sel.selectedIndex];
+    document.getElementById('tunRelayNodeId').value = opt && opt.dataset.nodeId ? opt.dataset.nodeId : '';
+  }
 }
 
 function loadNodesForTunnelModal() {
@@ -2376,6 +2480,7 @@ function loadNodesForTunnelModal() {
     while (egressSel.options.length > 1) egressSel.remove(1);
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
+      if (n.device_type === 'relay') continue;
       var label = n.name + ' (' + (n.status || 'unknown') + ')';
       ingressSel.appendChild(new Option(label, n.id));
       egressSel.appendChild(new Option(label, n.id));
@@ -2395,6 +2500,7 @@ function editTunnel(tunnelId) {
   if (!t) { showToast('Tunnel not found', true); return; }
 
   loadNodesForTunnelModal();
+  loadRelayServers();
 
   document.getElementById('tunEditId').value = t.id;
   document.getElementById('tunnelModalTitle').textContent = 'Edit Tunnel';
@@ -2408,6 +2514,26 @@ function editTunnel(tunnelId) {
   document.getElementById('tunEgressAddr').value = t.egress_forward_addr || '';
   document.getElementById('tunRelayAddr').value = t.relay_addr || '';
   document.getElementById('tunFlowIds').value = (t.associated_flow_ids || []).join(', ');
+
+  // Pre-select relay in dropdown or show manual input
+  var relayAddr = t.relay_addr || '';
+  setTimeout(function() {
+    var relaySel = document.getElementById('tunRelaySelect');
+    var matched = false;
+    for (var i = 0; i < relaySel.options.length; i++) {
+      if (relaySel.options[i].value === relayAddr) {
+        relaySel.value = relayAddr;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched && relayAddr) {
+      relaySel.value = '__manual__';
+      document.getElementById('tunRelayManualRow').style.display = '';
+    } else {
+      document.getElementById('tunRelayManualRow').style.display = 'none';
+    }
+  }, 200);
 
   // Show status dropdown in edit mode
   document.getElementById('tunStatusGroup').style.display = '';
@@ -2473,7 +2599,9 @@ function submitTunnel() {
     if (!egressNode) { showToast('Select an egress node', true); return; }
     if (!ingressPort || ingressPort < 1024 || ingressPort > 65535) { showToast('Ingress port must be 1024-65535', true); return; }
     if (!egressAddr) { showToast('Egress forward address is required', true); return; }
+    var relayNodeId = val('tunRelayNodeId');
     if (mode === 'relay' && !relayAddr) { showToast('Relay server address is required for relay mode', true); return; }
+    if (mode === 'relay' && !relayNodeId) { showToast('Select a managed relay server (manual address not supported for auto-key management)', true); return; }
 
     var body = {
       name: name,
@@ -2485,6 +2613,7 @@ function submitTunnel() {
       egress_forward_addr: egressAddr
     };
     if (relayAddr) body.relay_addr = relayAddr;
+    if (relayNodeId) body.relay_node_id = relayNodeId;
     var flowIds = val('tunFlowIds');
     if (flowIds) {
       body.associated_flow_ids = flowIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
@@ -2508,17 +2637,37 @@ function submitTunnel() {
 
 function deleteTunnel(tunnelId, tunnelName) {
   if (!confirm('Are you sure you want to delete tunnel "' + tunnelName + '"?')) return;
+  // Try DB delete first (also pushes to both nodes)
   fetch('/api/v1/tunnels/' + encodeURIComponent(tunnelId), {
     method: 'DELETE',
     headers: authHeaders()
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (r.ok) return r.json();
+    // Tunnel not in DB — send delete command directly to this node
+    return fetch('/api/v1/nodes/' + encodeURIComponent(window._nodeId) + '/command', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action: { type: 'delete_tunnel', tunnel_id: tunnelId } })
+    }).then(function(r2) { return r2.json(); });
+  })
   .then(function(data) {
-    if (data.error) { showToast('Error: ' + data.error, true); return; }
+    if (data && data.error) { showToast('Error: ' + data.error, true); return; }
     showToast('Tunnel deleted');
+    // Remove from all local caches so unified render doesn't resurrect it
+    if (_currentConfig && Array.isArray(_currentConfig.tunnels)) {
+      _currentConfig.tunnels = _currentConfig.tunnels.filter(function(t) { return t.id !== tunnelId && (t.name || '') !== tunnelName; });
+    }
+    _liveTunnels = _liveTunnels.filter(function(t) { return (t.id || t.tunnel_id) !== tunnelId; });
     loadTunnels();
   })
   .catch(function(e) { showToast('Error: ' + e.message, true); });
+}
+
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 </script>
 </body>

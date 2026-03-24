@@ -307,6 +307,10 @@ Tunnel management endpoints enforce role-based access:
 - `create_tunnel`, `update_tunnel`, `delete_tunnel` -- require Admin role
 - `list_node_tunnels` additionally checks node-level access via `allowed_node_ids`
 
+### Tunnel End-to-End Encryption
+
+Tunnel data is encrypted between edge nodes using ChaCha20-Poly1305 (AEAD) with a 32-byte shared key. The manager generates a random `tunnel_encryption_key` per tunnel, encrypts it at rest with AES-256-GCM (same master key as node secrets), and pushes it to both edge nodes. The relay server is stateless and has no access to encryption keys -- it forwards opaque encrypted traffic by tunnel UUID. Even if an attacker connects to the relay and guesses a tunnel UUID, they cannot decrypt traffic or inject valid packets (AEAD authentication tag verification will fail).
+
 ### Node API Data Protection
 
 The `registration_token` field is excluded from all node API responses to prevent credential exposure. It is only used internally during the registration flow.
