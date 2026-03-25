@@ -100,6 +100,16 @@ pub async fn update_node_status(
     Ok(())
 }
 
+/// Mark all nodes as offline (used on server startup for clean state).
+pub async fn mark_all_nodes_offline(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let now = Utc::now().to_rfc3339();
+    sqlx::query("UPDATE nodes SET status = 'offline', updated_at = ? WHERE status = 'online'")
+        .bind(&now)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Mark node as registered (consume token, store auth credentials).
 pub async fn complete_registration(
     pool: &SqlitePool,

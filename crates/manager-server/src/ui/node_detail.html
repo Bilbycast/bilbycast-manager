@@ -230,7 +230,7 @@
       AI Keys
     </a>
   </nav>
-  <div class="sidebar-footer">v0.1.0</div>
+  <div class="sidebar-footer">v{{VERSION}}</div>
 </aside>
 
 <!-- Main -->
@@ -312,6 +312,13 @@
         <span>Configure flows to start streaming</span>
       </div>
       <div id="flowsList"></div>
+    </div>
+
+    <!-- Relay overview stats (only visible for relay nodes) -->
+    <div class="section" id="relayOverviewSection" style="display:none;">
+      <h2>Relay Overview</h2>
+      <div class="stats-grid" id="relayOverviewStats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+      </div>
     </div>
 
     <!-- Tunnels container -->
@@ -1363,7 +1370,8 @@
       h += '<div class="stat"><div class="k">Bytes Ingress</div><div class="v">' + fmt_bytes(stats.bytes_sent || 0) + '</div></div>';
       h += '<div class="stat"><div class="k">Bytes Egress</div><div class="v">' + fmt_bytes(stats.bytes_received || 0) + '</div></div>';
       if (proto === 'TCP') {
-        h += '<div class="stat"><div class="k">TCP Streams</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
+        h += '<div class="stat"><div class="k">Active Streams</div><div class="v">' + fmt_num(stats.connections_active || 0) + '</div></div>';
+        h += '<div class="stat"><div class="k">Total Streams</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
       } else {
         h += '<div class="stat"><div class="k">UDP Datagrams</div><div class="v">' + fmt_num(stats.packets_received || 0) + '</div></div>';
       }
@@ -1379,6 +1387,33 @@
       h += '<div class="stat"><div class="k">Send Errors</div><div class="v" style="' + errStyle + '">' + fmt_num(stats.send_errors || 0) + '</div></div>';
     }
     return h;
+  }
+
+  // ── Render relay overview stats ──
+
+  function renderRelayOverview(stats) {
+    var section = $('relayOverviewSection');
+    var container = $('relayOverviewStats');
+    if (!section || !container) return;
+    section.style.display = '';
+
+    var bw = stats.total_bandwidth_bps || 0;
+    var fwd = stats.total_bytes_forwarded || ((stats.total_bytes_ingress || 0) + (stats.total_bytes_egress || 0));
+
+    var html = '';
+    html += '<div class="stat"><div class="k">Total Bandwidth</div><div class="v" style="color:#38bdf8;">' + fmt_bitrate(bw) + '</div></div>';
+    html += '<div class="stat"><div class="k">Total Forwarded</div><div class="v">' + fmt_bytes(fwd) + '</div></div>';
+    html += '<div class="stat"><div class="k">Bytes Ingress</div><div class="v">' + fmt_bytes(stats.total_bytes_ingress || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Bytes Egress</div><div class="v">' + fmt_bytes(stats.total_bytes_egress || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Active Tunnels</div><div class="v">' + fmt_num(stats.active_tunnels || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Connected Edges</div><div class="v">' + fmt_num(stats.connected_edges || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Active TCP Streams</div><div class="v">' + fmt_num(stats.active_tcp_streams || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Total TCP Streams</div><div class="v">' + fmt_num(stats.total_tcp_streams || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Total UDP Datagrams</div><div class="v">' + fmt_num(stats.total_udp_datagrams || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">QUIC Connections</div><div class="v">' + fmt_num(stats.connections_total || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Peak Tunnels</div><div class="v">' + fmt_num(stats.peak_tunnels || 0) + '</div></div>';
+    html += '<div class="stat"><div class="k">Peak Edges</div><div class="v">' + fmt_num(stats.peak_edges || 0) + '</div></div>';
+    container.innerHTML = html;
   }
 
   // ── Render tunnels section ──
@@ -1416,7 +1451,7 @@
             packets_sent: s.tcp_streams_total || 0,
             packets_received: s.udp_datagrams_total || 0,
             send_errors: 0,
-            connections_active: 0,
+            connections_active: s.tcp_streams_active || 0,
             connections_total: s.tcp_streams_total || 0
           }
         };
@@ -1822,7 +1857,7 @@
             }
             var tunnels = myNode.stats.tunnels || [];
             renderTunnels(tunnels);
-            // For relay nodes, update the counter card with tunnel/edge info
+            // For relay nodes, update the counter card and relay overview section
             if (isRelay) {
               var activeTunnels = myNode.stats.active_tunnels || tunnels.length;
               var connEdges = myNode.stats.connected_edges || 0;
@@ -1830,6 +1865,7 @@
               if (myNode.stats.uptime_secs) {
                 $('nodeUptime').textContent = fmt_uptime(myNode.stats.uptime_secs);
               }
+              renderRelayOverview(myNode.stats);
             }
           }
         }

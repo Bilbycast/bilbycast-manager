@@ -12,6 +12,7 @@ pub mod settings;
 pub mod ai;
 pub mod export;
 pub mod tunnels;
+pub mod topology;
 
 use axum::Router;
 use axum::routing::{get, post, delete};
@@ -39,6 +40,7 @@ pub fn build_api_router(state: AppState) -> Router<AppState> {
         .route("/api/v1/device-types", get(nodes::list_device_types))
         // Nodes
         .route("/api/v1/nodes", get(nodes::list_nodes).post(nodes::create_node))
+        .route("/api/v1/nodes/endpoints", get(nodes::list_endpoints))
         .route(
             "/api/v1/nodes/{id}",
             get(nodes::get_node)
@@ -73,6 +75,8 @@ pub fn build_api_router(state: AppState) -> Router<AppState> {
                 .delete(tunnels::delete_tunnel),
         )
         .route("/api/v1/nodes/{id}/tunnels", get(tunnels::list_node_tunnels))
+        // Topology
+        .route("/api/v1/topology/positions", get(topology::get_positions).put(topology::save_positions).delete(topology::clear_positions))
         // AI
         .route("/api/v1/ai/generate-config", post(ai::generate_config))
         .route("/api/v1/ai/analyze", post(ai::analyze_anomaly))

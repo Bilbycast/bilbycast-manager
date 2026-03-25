@@ -223,6 +223,26 @@
   .cert-warn-banner.visible { display: block; }
   .cert-warn-banner a { color: #fde68a; text-decoration: underline; }
 
+  /* Endpoint discovery */
+  .addr-with-discover { display: flex; gap: 6px; align-items: flex-start; }
+  .addr-with-discover input { flex: 1; }
+  .endpoint-discover-btn { flex-shrink: 0; background: #334155; border: 1px solid #475569; border-radius: 8px; padding: 9px 10px; cursor: pointer; color: #94a3b8; transition: all 0.15s; display: flex; align-items: center; justify-content: center; }
+  .endpoint-discover-btn:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  .endpoint-discover-btn svg { width: 16px; height: 16px; }
+  .endpoint-dropdown { position: absolute; z-index: 100; background: #1e293b; border: 1px solid #475569; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); min-width: 340px; max-width: 480px; max-height: 320px; overflow-y: auto; margin-top: 4px; }
+  .endpoint-dropdown-header { padding: 10px 14px 8px; font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+  .endpoint-dropdown-header .ep-refresh { background: none; border: none; color: #64748b; cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+  .endpoint-dropdown-header .ep-refresh:hover { color: #e2e8f0; background: #334155; }
+  .endpoint-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #1e293b; transition: background 0.1s; }
+  .endpoint-item:hover { background: rgba(96,165,250,0.1); }
+  .endpoint-item:last-child { border-bottom: none; }
+  .endpoint-item .ep-node { font-size: 11px; color: #64748b; font-weight: 600; }
+  .endpoint-item .ep-flow { font-size: 12px; color: #94a3b8; }
+  .endpoint-item .ep-addr { font-size: 13px; color: #60a5fa; font-weight: 600; margin-top: 2px; }
+  .endpoint-item .ep-type-badge { display: inline-block; font-size: 10px; background: #334155; color: #94a3b8; padding: 1px 6px; border-radius: 4px; margin-left: 6px; text-transform: uppercase; }
+  .endpoint-empty { padding: 20px 14px; text-align: center; color: #475569; font-size: 13px; }
+  .endpoint-addr-note { padding: 8px 14px; font-size: 11px; color: #64748b; border-top: 1px solid #334155; background: #0f172a; border-radius: 0 0 10px 10px; }
+
 </style>
 </head>
 <body>
@@ -422,8 +442,8 @@
             <option value="udp">UDP</option>
             <option value="rtmp">RTMP</option>
             <option value="rtsp">RTSP</option>
-            <option value="webrtc">WebRTC (WHIP/WHEP)</option>
-            <option value="whep">WHEP</option>
+            <option value="webrtc">WebRTC WHIP (receive contributions)</option>
+            <option value="whep">WebRTC WHEP (pull from server)</option>
           </select>
         </div>
       </div>
@@ -435,7 +455,7 @@
           <div class="form-group"><label>Local Address</label><input type="text" id="srtInputLocalAddr" placeholder="0.0.0.0:9000"/></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>Remote Address (caller/rendezvous)</label><input type="text" id="srtInputRemoteAddr" placeholder="remote-host:9000"/><div class="hint">Required for caller and rendezvous modes</div></div>
+          <div class="form-group"><label>Remote Address (caller/rendezvous)</label><div class="addr-with-discover"><input type="text" id="srtInputRemoteAddr" placeholder="remote-host:9000"/><button type="button" class="endpoint-discover-btn" title="Discover endpoints from other nodes" onclick="showEndpointPicker('srtInputRemoteAddr','input','srt','srtInputMode')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div><div class="hint">Required for caller and rendezvous modes</div></div>
           <div class="form-group"><label>Latency (ms)</label><input type="number" id="srtInputLatency" value="120" min="0"/></div>
           <div class="form-group"><label>Peer Idle Timeout (s)</label><input type="number" id="srtInputPeerIdleTimeout" value="30" min="5"/><div class="hint">Drop connection after this many seconds without data (default 30)</div></div>
         </div>
@@ -472,7 +492,7 @@
       <!-- RTP Input Fields -->
       <div id="rtpInputFields" style="display:none;">
         <div class="form-row">
-          <div class="form-group"><label>Bind Address</label><input type="text" id="rtpInputBindAddr" placeholder="0.0.0.0:5000 or 239.1.1.1:5000"/><div class="hint">Use multicast address for multicast receive</div></div>
+          <div class="form-group"><label>Bind Address</label><div class="addr-with-discover"><input type="text" id="rtpInputBindAddr" placeholder="0.0.0.0:5000 or 239.1.1.1:5000"/><button type="button" class="endpoint-discover-btn" title="Discover RTP outputs from other nodes" onclick="showEndpointPicker('rtpInputBindAddr','input','rtp',null)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div><div class="hint">Use multicast address for multicast receive</div></div>
           <div class="form-group"><label>Interface Address</label><input type="text" id="rtpInputInterface" placeholder="Optional, e.g. 192.168.1.1"/></div>
         </div>
         <div class="form-row">
@@ -484,7 +504,7 @@
       <!-- UDP Input Fields -->
       <div id="udpInputFields" style="display:none;">
         <div class="form-row">
-          <div class="form-group"><label>Bind Address</label><input type="text" id="udpInputBindAddr" placeholder="0.0.0.0:5000 or 239.1.1.1:5000"/><div class="hint">Use multicast address for multicast receive</div></div>
+          <div class="form-group"><label>Bind Address</label><div class="addr-with-discover"><input type="text" id="udpInputBindAddr" placeholder="0.0.0.0:5000 or 239.1.1.1:5000"/><button type="button" class="endpoint-discover-btn" title="Discover UDP outputs from other nodes" onclick="showEndpointPicker('udpInputBindAddr','input','udp',null)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div><div class="hint">Use multicast address for multicast receive</div></div>
           <div class="form-group"><label>Interface Address</label><input type="text" id="udpInputInterface" placeholder="Optional, e.g. 192.168.1.1"/></div>
         </div>
       </div>
@@ -585,7 +605,7 @@
         <div class="form-group">
           <label>Output Type</label>
           <select id="addOutType" onchange="updateOutputFields('addOut')">
-            <option value="srt">SRT</option><option value="rtp">RTP</option><option value="udp">UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC (WHIP/WHEP)</option>
+            <option value="srt">SRT</option><option value="rtp">RTP</option><option value="udp">UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC WHIP/WHEP (send)</option>
           </select>
         </div>
         <div class="form-group"><label>Output ID</label><input type="text" id="addOutId" placeholder="e.g. out-2"/></div>
@@ -755,6 +775,156 @@ function apiFetch(url, opts) {
 
 var _currentConfig = null;
 var _configDirty = false;
+
+// ─── Endpoint Discovery ───────────────────────────────
+var _endpointsCache = null;
+var _endpointsCacheTime = 0;
+var _endpointsCacheTTL = 30000; // 30 seconds
+
+function fetchEndpoints(callback) {
+  var now = Date.now();
+  if (_endpointsCache && (now - _endpointsCacheTime) < _endpointsCacheTTL) {
+    callback(_endpointsCache);
+    return;
+  }
+  fetch('/api/v1/nodes/endpoints', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      _endpointsCache = data;
+      _endpointsCacheTime = Date.now();
+      callback(data);
+    })
+    .catch(function() { callback([]); });
+}
+
+function getCompatibleEndpoints(endpoints, direction, type, mode) {
+  var results = [];
+  var currentNodeId = window._nodeId;
+  for (var n = 0; n < endpoints.length; n++) {
+    var node = endpoints[n];
+    if (node.node_id === currentNodeId) continue;
+    for (var f = 0; f < (node.flows || []).length; f++) {
+      var flow = node.flows[f];
+      if (direction === 'output') {
+        // Configuring an output — look for compatible inputs on other nodes
+        var inp = flow.input;
+        if (!inp) continue;
+        if (type === 'srt' && inp.type === 'srt') {
+          var compatMode = null;
+          if (mode === 'caller') compatMode = 'listener';
+          else if (mode === 'listener') compatMode = 'caller';
+          else if (mode === 'rendezvous') compatMode = 'rendezvous';
+          if (compatMode && inp.mode === compatMode) {
+            var addr = inp.local_addr || '';
+            if (addr) results.push({ node_id: node.node_id, node_name: node.node_name, flow_id: flow.flow_id, flow_name: flow.flow_name, address: addr, type: 'srt', mode: inp.mode, direction: 'input' });
+          }
+        } else if (type === 'udp' && inp.type === 'udp') {
+          var addr = inp.bind_addr || '';
+          if (addr) results.push({ node_id: node.node_id, node_name: node.node_name, flow_id: flow.flow_id, flow_name: flow.flow_name, address: addr, type: 'udp', direction: 'input' });
+        } else if (type === 'rtp' && inp.type === 'rtp') {
+          var addr = inp.bind_addr || '';
+          if (addr) results.push({ node_id: node.node_id, node_name: node.node_name, flow_id: flow.flow_id, flow_name: flow.flow_name, address: addr, type: 'rtp', direction: 'input' });
+        }
+      } else {
+        // Configuring an input — look for compatible outputs on other nodes
+        var outputs = flow.outputs || [];
+        for (var o = 0; o < outputs.length; o++) {
+          var out = outputs[o];
+          if (type === 'srt' && out.type === 'srt') {
+            var compatMode = null;
+            if (mode === 'caller') compatMode = 'listener';
+            else if (mode === 'listener') compatMode = 'caller';
+            else if (mode === 'rendezvous') compatMode = 'rendezvous';
+            if (compatMode && out.mode === compatMode) {
+              var addr = out.local_addr || '';
+              if (addr) results.push({ node_id: node.node_id, node_name: node.node_name, flow_id: flow.flow_id, flow_name: flow.flow_name, output_id: out.id, output_name: out.name, address: addr, type: 'srt', mode: out.mode, direction: 'output' });
+            }
+          } else if (type === 'udp' && out.type === 'udp') {
+            var addr = out.dest_addr || '';
+            if (addr) results.push({ node_id: node.node_id, node_name: node.node_name, flow_id: flow.flow_id, flow_name: flow.flow_name, output_id: out.id, output_name: out.name, address: addr, type: 'udp', direction: 'output' });
+          } else if (type === 'rtp' && out.type === 'rtp') {
+            var addr = out.dest_addr || '';
+            if (addr) results.push({ node_id: node.node_id, node_name: node.node_name, flow_id: flow.flow_id, flow_name: flow.flow_name, output_id: out.id, output_name: out.name, address: addr, type: 'rtp', direction: 'output' });
+          }
+        }
+      }
+    }
+  }
+  return results;
+}
+
+function closeEndpointDropdown() {
+  var existing = document.getElementById('endpointDropdown');
+  if (existing) existing.remove();
+}
+
+function showEndpointPicker(inputId, direction, type, modeElementId) {
+  closeEndpointDropdown();
+  var inputEl = document.getElementById(inputId);
+  if (!inputEl) return;
+  var mode = modeElementId ? (document.getElementById(modeElementId) || {}).value : null;
+
+  // Create dropdown positioned relative to the input's parent
+  var parent = inputEl.closest('.form-group') || inputEl.parentNode;
+  parent.style.position = 'relative';
+
+  var dropdown = document.createElement('div');
+  dropdown.id = 'endpointDropdown';
+  dropdown.className = 'endpoint-dropdown';
+  dropdown.innerHTML = '<div class="endpoint-dropdown-header"><span>Loading endpoints...</span></div>';
+  parent.appendChild(dropdown);
+
+  fetchEndpoints(function(data) {
+    var items = getCompatibleEndpoints(data, direction, type, mode);
+    var html = '<div class="endpoint-dropdown-header"><span>Select from online nodes</span><button class="ep-refresh" onclick="_endpointsCache=null;showEndpointPicker(\'' + inputId + '\',\'' + direction + '\',\'' + type + '\',\'' + (modeElementId||'') + '\')">Refresh</button></div>';
+    if (items.length === 0) {
+      html += '<div class="endpoint-empty">No compatible ' + type.toUpperCase() + ' endpoints found on other online nodes</div>';
+    } else {
+      var hasWildcard = false;
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (it.address.indexOf('0.0.0.0') === 0) hasWildcard = true;
+        var label = it.direction === 'input' ? 'Input' : (it.output_name || it.output_id || 'Output');
+        html += '<div class="endpoint-item" data-addr="' + it.address.replace(/"/g, '&quot;') + '">' +
+          '<div class="ep-node">' + escapeHtml(it.node_name) + '<span class="ep-type-badge">' + it.type + (it.mode ? ' ' + it.mode : '') + '</span></div>' +
+          '<div class="ep-flow">' + escapeHtml(it.flow_name) + ' &mdash; ' + escapeHtml(label) + '</div>' +
+          '<div class="ep-addr">' + escapeHtml(it.address) + '</div>' +
+          '</div>';
+      }
+      if (hasWildcard) {
+        html += '<div class="endpoint-addr-note">Addresses with 0.0.0.0 show the bind port — replace with the node\'s actual IP</div>';
+      }
+    }
+    dropdown.innerHTML = html;
+
+    // Click handler for items
+    var itemEls = dropdown.querySelectorAll('.endpoint-item');
+    for (var j = 0; j < itemEls.length; j++) {
+      itemEls[j].addEventListener('click', function() {
+        inputEl.value = this.getAttribute('data-addr');
+        inputEl.dispatchEvent(new Event('input'));
+        closeEndpointDropdown();
+      });
+    }
+  });
+
+  // Close on outside click
+  setTimeout(function() {
+    document.addEventListener('click', function handler(e) {
+      var dd = document.getElementById('endpointDropdown');
+      if (!dd || !dd.contains(e.target)) {
+        closeEndpointDropdown();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 10);
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// ─── End Endpoint Discovery ───────────────────────────
 
 function loadConfig() {
   document.getElementById('configLoading').style.display = '';
@@ -1383,7 +1553,7 @@ function addOutput() {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
     '<div class="form-row"><div class="form-group"><label>Output Type</label>' +
     '<select id="outType-' + idx + '" onchange="updateOutputFields(' + idx + ')">' +
-    '<option value="srt">SRT</option><option value="rtp">RTP</option><option value="udp">UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC (WHIP/WHEP)</option></select></div>' +
+    '<option value="srt">SRT</option><option value="rtp">RTP</option><option value="udp">UDP</option><option value="rtmp">RTMP</option><option value="hls">HLS</option><option value="webrtc">WebRTC WHIP/WHEP (send)</option></select></div>' +
     '<div class="form-group"><label>Output ID</label><input type="text" id="outId-' + idx + '" placeholder="e.g. out-1"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Output Name</label><input type="text" id="outName-' + idx + '" placeholder="e.g. SRT to London"/></div></div>' +
     '<div id="outFields-' + idx + '"></div></div>';
@@ -1407,7 +1577,7 @@ function updateOutputFields(idx) {
   if (type === 'srt') {
     h = '<div class="form-row"><div class="form-group"><label>Mode</label><select id="outSrtMode-'+p+'"><option value="caller">Caller</option><option value="listener">Listener</option><option value="rendezvous">Rendezvous</option></select></div>' +
     '<div class="form-group"><label>Local Address</label><input type="text" id="outSrtLocal-'+p+'" placeholder="0.0.0.0:0"/></div></div>' +
-    '<div class="form-row"><div class="form-group"><label>Remote Address</label><input type="text" id="outSrtRemote-'+p+'" placeholder="remote:9000"/></div>' +
+    '<div class="form-row"><div class="form-group"><label>Remote Address</label><div class="addr-with-discover"><input type="text" id="outSrtRemote-'+p+'" placeholder="remote:9000"/><button type="button" class="endpoint-discover-btn" title="Discover endpoints from other nodes" onclick="showEndpointPicker(\'outSrtRemote-'+p+'\',\'output\',\'srt\',\'outSrtMode-'+p+'\')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>' +
     '<div class="form-group"><label>Latency (ms)</label><input type="number" id="outSrtLatency-'+p+'" value="120"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Peer Idle Timeout (s)</label><input type="number" id="outSrtPeerIdle-'+p+'" value="30"/></div>' +
     '<div class="form-group"><label>Passphrase</label><input type="text" id="outSrtPass-'+p+'" placeholder="Optional"/></div></div>' +
@@ -1442,12 +1612,12 @@ function updateOutputFields(idx) {
     '<div class="form-group"><label>Leg 2 AES Key Length</label><select id="outSrtR_Aes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>' +
     '</div></div>';
   } else if (type === 'rtp') {
-    h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><input type="text" id="outRtpDest-'+p+'" placeholder="192.168.1.100:5004"/></div>' +
+    h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><div class="addr-with-discover"><input type="text" id="outRtpDest-'+p+'" placeholder="192.168.1.100:5004"/><button type="button" class="endpoint-discover-btn" title="Discover RTP inputs from other nodes" onclick="showEndpointPicker(\'outRtpDest-'+p+'\',\'output\',\'rtp\',null)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>' +
     '<div class="form-group"><label>DSCP</label><input type="number" id="outRtpDscp-'+p+'" value="46" min="0" max="63"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>FEC Columns (L)</label><input type="number" id="outRtpFecCols-'+p+'" placeholder="Optional"/></div>' +
     '<div class="form-group"><label>FEC Rows (D)</label><input type="number" id="outRtpFecRows-'+p+'" placeholder="Optional"/></div></div>';
   } else if (type === 'udp') {
-    h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><input type="text" id="outUdpDest-'+p+'" placeholder="192.168.1.100:5004"/><div class="hint">Raw MPEG-TS datagrams (no RTP headers)</div></div>' +
+    h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><div class="addr-with-discover"><input type="text" id="outUdpDest-'+p+'" placeholder="192.168.1.100:5004"/><button type="button" class="endpoint-discover-btn" title="Discover UDP inputs from other nodes" onclick="showEndpointPicker(\'outUdpDest-'+p+'\',\'output\',\'udp\',null)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div><div class="hint">Raw MPEG-TS datagrams (no RTP headers)</div></div>' +
     '<div class="form-group"><label>DSCP</label><input type="number" id="outUdpDscp-'+p+'" value="46" min="0" max="63"/></div></div>';
   } else if (type === 'rtmp') {
     h = '<div class="form-row"><div class="form-group"><label>Destination URL</label><input type="text" id="outRtmpUrl-'+p+'" placeholder="rtmp://live.twitch.tv/app"/></div></div>' +

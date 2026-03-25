@@ -121,7 +121,7 @@ Message types from manager: `ping`, `command`, `register_ack`, `auth_ok`, `auth_
 
 **Edge commands** (via `POST /api/v1/nodes/{id}/command`): `get_config`, `update_config`, `create_flow`, `update_flow`, `delete_flow`, `start_flow`, `stop_flow`, `restart_flow`, `add_output`, `remove_output`.
 
-**Relay commands** (via `POST /api/v1/nodes/{id}/command`): `get_config`, `disconnect_edge` (requires `edge_id`), `close_tunnel` (requires `tunnel_id`), `list_tunnels`, `list_edges`.
+**Relay commands** (via `POST /api/v1/nodes/{id}/command`): `get_config`, `disconnect_edge` (requires `edge_id`), `close_tunnel` (requires `tunnel_id`), `list_tunnels`, `list_edges`, `authorize_tunnel` (requires `tunnel_id`, `ingress_token`, `egress_token` — pre-authorizes HMAC-SHA256 bind tokens for a tunnel), `revoke_tunnel` (requires `tunnel_id` — removes bind authorization).
 
 ---
 

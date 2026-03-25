@@ -200,7 +200,7 @@
       AI Keys
     </a>
   </nav>
-  <div class="sidebar-footer">v0.1.0</div>
+  <div class="sidebar-footer">v{{VERSION}}</div>
 </aside>
 
 <!-- Main -->
@@ -245,6 +245,13 @@
             Flow
           </button>
         </div>
+        <button class="view-btn" id="btnResetLayout" title="Reset all node positions to automatic layout" style="margin-left:4px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          Reset
+        </button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#94a3b8;cursor:pointer;margin-right:8px;">
+          <input type="checkbox" id="hideOffline" style="accent-color:#38bdf8;cursor:pointer;"> Hide offline nodes
+        </label>
         <div class="topo-stat online"><span class="val" id="statOnline">0</span> online</div>
         <div class="topo-stat"><span class="val" id="statTotal">0</span> nodes</div>
         <div class="topo-stat"><span class="val" id="statFlows">0</span> flows</div>
@@ -343,6 +350,61 @@
   var layoutStable = false;
   var layoutIterations = 0;
   var currentView = 'graph'; // 'graph' or 'flow'
+  var _positionsFetched = { graph: false, flow: false }; // track first load
+
+  // ── Position persistence (database-backed) ──
+  var _saveDebounceTimer = null;
+
+  function fetchSavedPositions(view, callback) {
+    apiFetch('/api/v1/topology/positions?view=' + encodeURIComponent(view), {
+      headers: authHeaders()
+    })
+    .then(function(r) { return r.ok ? r.json() : { positions: {} }; })
+    .then(function(data) { callback(data.positions || {}); })
+    .catch(function() { callback({}); });
+  }
+
+  function applySavedPositions(positions) {
+    for (var i = 0; i < topoNodes.length; i++) {
+      var n = topoNodes[i];
+      var saved = positions[n.id];
+      if (saved) {
+        n.x = saved.x;
+        n.y = saved.y;
+        n.userPinned = true;
+        n.vx = 0;
+        n.vy = 0;
+      }
+    }
+  }
+
+  function saveNodePositions(view) {
+    // Debounce: wait 300ms after last call before saving
+    if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer);
+    _saveDebounceTimer = setTimeout(function() {
+      var positions = {};
+      for (var i = 0; i < topoNodes.length; i++) {
+        var n = topoNodes[i];
+        if (n.userPinned && !n.isExternal) {
+          positions[n.id] = { x: n.x, y: n.y };
+        }
+      }
+      apiFetch('/api/v1/topology/positions', {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ view: view, positions: positions })
+      }).catch(function() {}); // fire-and-forget
+    }, 300);
+  }
+
+  function clearSavedPositions(view, callback) {
+    apiFetch('/api/v1/topology/positions?view=' + encodeURIComponent(view), {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+    .then(function() { if (callback) callback(); })
+    .catch(function() { if (callback) callback(); });
+  }
 
   // ── Coordinate transforms ──
   function screenToWorld(sx, sy) {
@@ -359,6 +421,15 @@
       x: (wx - camera.x) * camera.zoom + rect.width / 2,
       y: (wy - camera.y) * camera.zoom + rect.height / 2
     };
+  }
+
+  // ── Geometry helpers ──
+  function closestPointOnSegment(px, py, ax, ay, bx, by) {
+    var dx = bx - ax, dy = by - ay;
+    var lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return { x: ax, y: ay };
+    var t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    return { x: ax + t * dx, y: ay + t * dy };
   }
 
   // ── Force-directed layout ──
@@ -415,6 +486,30 @@
       b.fy -= fy;
     }
 
+    // Node-link repulsion: push nodes away from link lines they are not part of
+    var LINK_REPULSION = 8000;
+    var LINK_MIN_DIST = 100;
+    for (var l = 0; l < topoLinks.length; l++) {
+      var lk = topoLinks[l];
+      var la = topoNodes[lk.source];
+      var lb = topoNodes[lk.target];
+      if (!la || !lb) continue;
+      for (var i = 0; i < topoNodes.length; i++) {
+        if (i === lk.source || i === lk.target) continue;
+        var n = topoNodes[i];
+        var cp = closestPointOnSegment(n.x, n.y, la.x, la.y, lb.x, lb.y);
+        var dx = n.x - cp.x;
+        var dy = n.y - cp.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < LINK_MIN_DIST) {
+          var clampedDist = Math.max(dist, 40);
+          var force = LINK_REPULSION / (clampedDist * clampedDist);
+          n.fx += (dx / dist) * force;
+          n.fy += (dy / dist) * force;
+        }
+      }
+    }
+
     // Center gravity
     var totalKE = 0;
     for (var i = 0; i < topoNodes.length; i++) {
@@ -422,7 +517,7 @@
       n.fx -= n.x * CENTER_PULL;
       n.fy -= n.y * CENTER_PULL;
 
-      if (!n.pinned) {
+      if (!n.pinned && !n.userPinned) {
         n.vx = (n.vx + n.fx) * DAMPING;
         n.vy = (n.vy + n.fy) * DAMPING;
         n.x += n.vx;
@@ -501,7 +596,7 @@
         protocol: protocol,
         direction: direction,
         x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0,
-        pinned: false, flows: [],
+        pinned: false, userPinned: false, flows: [],
         srtInput: false, srtOutput: false,
         _needsPosition: true
       };
@@ -530,8 +625,13 @@
           }
         }
         if (inputType === 'srt' && input.mode === 'listener' && input.local_addr) {
-          // SRT listener input: external callers connect to us (shown as generic source)
-          // We'll detect these from the stats if bitrate > 0
+          // SRT listener input: external callers connect to us
+          var ext = getOrCreateExternal('SRT Caller → ' + input.local_addr, 'srt', 'source');
+          if (ext) {
+            ext.name = 'SRT Caller';
+            ext.srtOutput = true;
+            ext._targetNodeIdx = i;
+          }
         }
         if (inputType === 'rtmp') {
           // RTMP input: external encoder pushes to us
@@ -539,11 +639,47 @@
           var ext = getOrCreateExternal('RTMP Publisher → ' + rtmpAddr, 'rtmp', 'source');
           if (ext) {
             ext.name = 'RTMP Publisher';
-            ext._targetNodeIdx = i; // track which node this connects to
+            ext._targetNodeIdx = i;
           }
         }
         if (inputType === 'rtp' && input.bind_addr) {
-          // RTP input: if receiving data, there's an external source
+          // RTP input: external source sending to us
+          if (!isLocalOrManaged(input.bind_addr, managedIPs)) {
+            var ext = getOrCreateExternal('RTP Source → ' + input.bind_addr, 'rtp', 'source');
+            if (ext) {
+              ext.name = 'RTP Source';
+              ext._targetNodeIdx = i;
+            }
+          }
+        }
+        if (inputType === 'udp' && input.bind_addr) {
+          // UDP input: external source sending to us
+          var ext = getOrCreateExternal('UDP Source → ' + input.bind_addr, 'udp', 'source');
+          if (ext) {
+            ext.name = 'UDP Source';
+            ext._targetNodeIdx = i;
+          }
+        }
+        if (inputType === 'rtsp') {
+          // RTSP input: pulling from external RTSP server
+          var rtspAddr = input.rtsp_url || input.url || '';
+          if (rtspAddr) {
+            var ext = getOrCreateExternal(rtspAddr, 'rtsp', 'source');
+            if (ext) {
+              try { ext.name = 'RTSP ' + rtspAddr.replace('rtsp://', '').split('/')[0]; } catch(e) {}
+              ext._targetNodeIdx = i;
+            }
+          }
+        }
+        if (inputType === 'webrtc' || inputType === 'whep') {
+          var whepUrl = input.whep_url || input.url || '';
+          if (whepUrl) {
+            var ext = getOrCreateExternal(whepUrl, 'webrtc', 'source');
+            if (ext) {
+              ext.name = 'WebRTC Source';
+              ext._targetNodeIdx = i;
+            }
+          }
         }
 
         // Check outputs for external destinations
@@ -581,6 +717,16 @@
           if (outType === 'webrtc' && out.whip_url) {
             getOrCreateExternal(out.whip_url, 'webrtc', 'destination');
           }
+
+          if (outType === 'udp' && out.dest_addr) {
+            if (!isLocalOrManaged(out.dest_addr, managedIPs)) {
+              getOrCreateExternal(out.dest_addr, 'udp', 'destination');
+            }
+          }
+
+          if (outType === 'rtsp' && out.dest_url) {
+            getOrCreateExternal(out.dest_url, 'rtsp', 'destination');
+          }
         }
       }
     }
@@ -609,26 +755,67 @@
       if (ni.isRelay) {
         // Relay node: draw links from relay to each connected edge
         var relayTunnels = ni.tunnels || [];
+        var relayEdges = ni.edges || [];
+
         for (var rt = 0; rt < relayTunnels.length; rt++) {
           var rtun = relayTunnels[rt];
           var proto = (rtun.protocol || 'tcp').toUpperCase();
-          var ingressEdgeId = rtun.ingress_edge_id;
-          var egressEdgeId = rtun.egress_edge_id;
+          var foundIngress = false, foundEgress = false;
 
-          // Find the edge nodes by matching their edge_id to the relay's tunnel endpoints
-          // Edge nodes have tunnel mode=relay matching this tunnel ID
-          if (ingressEdgeId) {
-            var ingressIdx = findManagedNodeByEdgeId(ingressEdgeId);
+          // Primary: match by ingress/egress edge_id (works when edges identify with manager UUID)
+          if (rtun.ingress_edge_id) {
+            var ingressIdx = findManagedNodeByEdgeId(rtun.ingress_edge_id);
             if (ingressIdx >= 0 && ingressIdx !== i) {
               addLink(ingressIdx, i, proto + ' via Relay', 'tunnel');
+              foundIngress = true;
             }
           }
-          if (egressEdgeId) {
-            var egressIdx = findManagedNodeByEdgeId(egressEdgeId);
+          if (rtun.egress_edge_id) {
+            var egressIdx = findManagedNodeByEdgeId(rtun.egress_edge_id);
             if (egressIdx >= 0 && egressIdx !== i) {
               addLink(i, egressIdx, proto + ' via Relay', 'tunnel');
+              foundEgress = true;
             }
           }
+
+          // Fallback: match by tunnel UUID against edge nodes' tunnel lists.
+          // Both relay and edge share the same tunnel UUID, so we can find
+          // which edge nodes have this tunnel configured as mode=relay.
+          var tid = rtun.tunnel_id;
+          if (tid && (!foundIngress || !foundEgress)) {
+            for (var j = 0; j < topoNodes.length; j++) {
+              if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+              var edgeTunnels = topoNodes[j].tunnels || [];
+              for (var et = 0; et < edgeTunnels.length; et++) {
+                var etun = edgeTunnels[et];
+                if (etun.id !== tid) continue;
+                if ((etun.mode || '').toLowerCase() !== 'relay') continue;
+                var dir = (etun.direction || '').toLowerCase();
+                if (dir === 'ingress' && !foundIngress) {
+                  addLink(j, i, proto + ' via Relay', 'tunnel');
+                  foundIngress = true;
+                }
+                if (dir === 'egress' && !foundEgress) {
+                  addLink(i, j, proto + ' via Relay', 'tunnel');
+                  foundEgress = true;
+                }
+              }
+            }
+          }
+        }
+
+        // Final fallback: connected-edges list (addLink deduplicates)
+        for (var re = 0; re < relayEdges.length; re++) {
+          var redge = relayEdges[re];
+          if (!redge.edge_id) continue;
+          var edgeIdx = findManagedNodeByEdgeId(redge.edge_id);
+          if (edgeIdx >= 0 && edgeIdx !== i) {
+            addLink(edgeIdx, i, 'Relay', 'tunnel');
+          }
+        }
+
+        if (relayTunnels.length > 0 || relayEdges.length > 0) {
+          console.debug('[topology] Relay "' + ni.name + '": ' + relayTunnels.length + ' tunnels, ' + relayEdges.length + ' connected edges');
         }
         continue;
       }
@@ -658,21 +845,16 @@
     // The relay's tunnel has ingress_edge_id/egress_edge_id which are the edge's relay_edge_id
     // We need to match these to actual topology nodes
     function findManagedNodeByEdgeId(edgeId) {
+      // Primary match: by node id (manager node_id UUID sent via Identify)
       for (var k = 0; k < topoNodes.length; k++) {
         if (topoNodes[k].isExternal || topoNodes[k].isRelay) continue;
-        // Check if this edge has relay tunnels with matching relay_edge_id
-        var eTunnels = topoNodes[k].tunnels || [];
-        for (var et = 0; et < eTunnels.length; et++) {
-          if ((eTunnels[et].mode || '').toLowerCase() === 'relay') {
-            // The edge's relay_edge_id is what the relay sees as the edge's identity
-            // Try matching by node name pattern or relay_edge_id in config
-            // Simplest: the relay sees edge-3/edge-4 which may match the node name
-            if (topoNodes[k].name && topoNodes[k].name.toLowerCase() === edgeId.toLowerCase()) {
-              return k;
-            }
-          }
+        if (topoNodes[k].id === edgeId) {
+          return k;
         }
-        // Also try matching by node name directly (relay uses edge_id from auth)
+      }
+      // Fallback: match by node name (backward compatibility)
+      for (var k = 0; k < topoNodes.length; k++) {
+        if (topoNodes[k].isExternal || topoNodes[k].isRelay) continue;
         if (topoNodes[k].name && topoNodes[k].name.toLowerCase() === edgeId.toLowerCase()) {
           return k;
         }
@@ -715,6 +897,47 @@
             addLink(extIdx, i, 'RTMP', 'rtmp');
           }
         }
+        if (inputType === 'srt' && input.mode === 'listener' && input.local_addr) {
+          var extKey = 'srt:SRT Caller → ' + input.local_addr;
+          var extIdx = findNodeIndex(externalMap[extKey]);
+          if (extIdx >= 0) {
+            addLink(extIdx, i, 'SRT', 'srt');
+          }
+        }
+        if (inputType === 'rtp' && input.bind_addr && !isLocalOrManaged(input.bind_addr, managedIPs)) {
+          var extKey = 'rtp:RTP Source → ' + input.bind_addr;
+          var extIdx = findNodeIndex(externalMap[extKey]);
+          if (extIdx >= 0) {
+            addLink(extIdx, i, 'RTP', 'rtp');
+          }
+        }
+        if (inputType === 'udp' && input.bind_addr) {
+          var extKey = 'udp:UDP Source → ' + input.bind_addr;
+          var extIdx = findNodeIndex(externalMap[extKey]);
+          if (extIdx >= 0) {
+            addLink(extIdx, i, 'UDP', 'udp');
+          }
+        }
+        if (inputType === 'rtsp') {
+          var rtspAddr = input.rtsp_url || input.url || '';
+          if (rtspAddr) {
+            var extKey = 'rtsp:' + rtspAddr;
+            var extIdx = findNodeIndex(externalMap[extKey]);
+            if (extIdx >= 0) {
+              addLink(extIdx, i, 'RTSP', 'rtsp');
+            }
+          }
+        }
+        if (inputType === 'webrtc' || inputType === 'whep') {
+          var whepUrl = input.whep_url || input.url || '';
+          if (whepUrl) {
+            var extKey = 'webrtc:' + whepUrl;
+            var extIdx = findNodeIndex(externalMap[extKey]);
+            if (extIdx >= 0) {
+              addLink(extIdx, i, 'WebRTC', 'webrtc');
+            }
+          }
+        }
 
         // Output links: managed node → target
         var outputs = flow.outputs || [];
@@ -754,6 +977,26 @@
             var extKey = 'hls:' + out.ingest_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
             if (targetIdx >= 0) addLink(i, targetIdx, 'HLS', 'hls');
+          }
+
+          if (outType === 'webrtc' && out.whip_url) {
+            var extKey = 'webrtc:' + out.whip_url;
+            targetIdx = findNodeIndex(externalMap[extKey]);
+            if (targetIdx >= 0) addLink(i, targetIdx, 'WebRTC', 'webrtc');
+          }
+
+          if (outType === 'udp' && out.dest_addr) {
+            if (!isLocalOrManaged(out.dest_addr, managedIPs)) {
+              var extKey = 'udp:' + out.dest_addr;
+              targetIdx = findNodeIndex(externalMap[extKey]);
+              if (targetIdx >= 0) addLink(i, targetIdx, 'UDP', 'udp');
+            }
+          }
+
+          if (outType === 'rtsp' && out.dest_url) {
+            var extKey = 'rtsp:' + out.dest_url;
+            targetIdx = findNodeIndex(externalMap[extKey]);
+            if (targetIdx >= 0) addLink(i, targetIdx, 'RTSP', 'rtsp');
           }
         }
       }
@@ -857,11 +1100,13 @@
     }
 
     // Draw links — compute offset for parallel links between same node pairs
+    var hideOff = document.getElementById('hideOffline').checked;
     for (var l = 0; l < topoLinks.length; l++) {
       var link = topoLinks[l];
       var a = topoNodes[link.source];
       var b = topoNodes[link.target];
       if (!a || !b) continue;
+      if (hideOff && (a.status === 'offline' || b.status === 'offline')) continue;
       // Count how many links share this source/target pair (in either direction)
       var pairCount = 0;
       var pairIdx = 0;
@@ -881,7 +1126,10 @@
 
     // Draw nodes (managed first, external on top)
     for (var i = 0; i < topoNodes.length; i++) {
-      if (!topoNodes[i].isExternal) drawNode(topoNodes[i], topoNodes[i] === hoveredNode);
+      if (!topoNodes[i].isExternal) {
+        if (hideOff && topoNodes[i].status === 'offline') continue;
+        drawNode(topoNodes[i], topoNodes[i] === hoveredNode);
+      }
     }
     for (var i = 0; i < topoNodes.length; i++) {
       if (topoNodes[i].isExternal) drawExternalNode(topoNodes[i], topoNodes[i] === hoveredNode);
@@ -1427,6 +1675,9 @@
       case 'rtp': return '#2dd4bf';
       case 'tcp': return '#fb923c';
       case 'file': return '#94a3b8';
+      case 'rtsp': return '#facc15';
+      case 'hls': return '#34d399';
+      case 'webrtc': return '#f472b6';
       case 'tunnel': return '#c084fc';
       default: return '#94a3b8';
     }
@@ -1647,6 +1898,10 @@
 
   canvas.addEventListener('mouseup', function (e) {
     if (dragNode) {
+      if (didDrag && !dragNode.isExternal) {
+        dragNode.userPinned = true;
+        saveNodePositions(currentView);
+      }
       dragNode.pinned = false;
       dragNode = null;
     }
@@ -1739,8 +1994,17 @@
     currentView = 'graph';
     this.classList.add('active');
     document.getElementById('btnFlowView').classList.remove('active');
+    // Clear flow-view pins and restore graph-view pins
+    for (var i = 0; i < topoNodes.length; i++) topoNodes[i].userPinned = false;
     layoutStable = false;
     layoutIterations = 0;
+    if (!_positionsFetched.graph) {
+      _positionsFetched.graph = true;
+    }
+    fetchSavedPositions('graph', function(positions) {
+      applySavedPositions(positions);
+      layoutStable = false;
+    });
   });
 
   document.getElementById('btnFlowView').addEventListener('click', function () {
@@ -1748,8 +2012,33 @@
     currentView = 'flow';
     this.classList.add('active');
     document.getElementById('btnGraphView').classList.remove('active');
+    // Clear graph-view pins before computing flow layout
+    for (var i = 0; i < topoNodes.length; i++) topoNodes[i].userPinned = false;
     computeFlowLayout();
+    if (!_positionsFetched.flow) {
+      _positionsFetched.flow = true;
+    }
+    fetchSavedPositions('flow', function(positions) {
+      applySavedPositions(positions);
+    });
     setTimeout(fitToView, 100);
+  });
+
+  document.getElementById('btnResetLayout').addEventListener('click', function () {
+    // Unpin all nodes
+    for (var i = 0; i < topoNodes.length; i++) {
+      topoNodes[i].userPinned = false;
+    }
+    // Clear saved positions from DB
+    clearSavedPositions(currentView);
+    // Re-run layout
+    if (currentView === 'graph') {
+      layoutStable = false;
+      layoutIterations = 0;
+    } else {
+      computeFlowLayout();
+    }
+    setTimeout(fitToView, 200);
   });
 
   // ── Signal flow layout ──
@@ -1846,22 +2135,71 @@
         if (r > 0) totalH += ROW_GAP;
       }
 
-      // Position nodes centered vertically
+      // Position nodes centered vertically (skip userPinned nodes)
       var cy = -totalH / 2;
       var minNodeY = Infinity;
       for (var r = 0; r < colData.indices.length; r++) {
         var ni = colData.indices[r];
         var node = topoNodes[ni];
         var nh = node.isExternal ? EXT_H : getNodeHeight(node);
-        node.x = cx;
-        node.y = cy + nh / 2;
+        if (!node.userPinned) {
+          node.x = cx;
+          node.y = cy + nh / 2;
+        }
         if (node.y - nh / 2 < minNodeY) minNodeY = node.y - nh / 2;
         cy += nh + ROW_GAP;
         node.vx = 0;
         node.vy = 0;
       }
 
-      flowColumnPositions.push({ x: cx, label: colData.label, minY: minNodeY });
+      flowColumnPositions.push({ x: cx, label: colData.label, minY: minNodeY, indices: colData.indices });
+    }
+
+    // ── Post-processing: avoid node-on-line overlaps ──
+    // For links that cross intermediate columns, nudge nodes to avoid overlap.
+    // Each node is nudged at most once to prevent accumulation.
+    var LINE_CLEARANCE = 30;
+    var nudgedNodes = {};
+    for (var l = 0; l < topoLinks.length; l++) {
+      var lk = topoLinks[l];
+      var srcNode = topoNodes[lk.source];
+      var tgtNode = topoNodes[lk.target];
+      if (!srcNode || !tgtNode) continue;
+
+      // Check each column's nodes for overlap with this link
+      for (var fc = 0; fc < flowColumnPositions.length; fc++) {
+        var col = flowColumnPositions[fc];
+        var colX = col.x;
+        // Only check columns between source and target
+        var minX = Math.min(srcNode.x, tgtNode.x);
+        var maxX = Math.max(srcNode.x, tgtNode.x);
+        if (colX <= minX || colX >= maxX) continue;
+
+        // Estimate link Y at this column's X (linear interpolation)
+        var t = (colX - srcNode.x) / (tgtNode.x - srcNode.x || 1);
+        var lineY = srcNode.y + t * (tgtNode.y - srcNode.y);
+
+        // Check each node in this column
+        for (var r = 0; r < (col.indices || []).length; r++) {
+          var ni = col.indices[r];
+          if (nudgedNodes[ni]) continue; // only nudge each node once
+          var node = topoNodes[ni];
+          if (node.userPinned) continue;
+          if (ni === lk.source || ni === lk.target) continue;
+          var nh = node.isExternal ? EXT_H : getNodeHeight(node);
+          var nodeTop = node.y - nh / 2 - LINE_CLEARANCE;
+          var nodeBot = node.y + nh / 2 + LINE_CLEARANCE;
+
+          if (lineY > nodeTop && lineY < nodeBot) {
+            // Nudge node away from line — push in direction of least overlap
+            var nudgeDown = lineY - nodeTop + LINE_CLEARANCE;
+            var nudgeUp = nodeBot - lineY + LINE_CLEARANCE;
+            var nudge = (nudgeUp < nudgeDown) ? -nudgeUp : nudgeDown;
+            node.y += nudge;
+            nudgedNodes[ni] = true;
+          }
+        }
+      }
     }
   }
 
@@ -1991,12 +2329,28 @@
           fx: 0,
           fy: 0,
           pinned: false,
+          userPinned: false,
           flows: flows,
           tunnels: tunnels,
           edges: edges,
           srtInput: hasSrtInput,
           srtOutput: hasSrtOutput
         });
+      }
+    }
+
+    // Keep existing nodes not in the update as offline (don't discard them)
+    var remainingKeys = Object.keys(existingMap);
+    for (var r = 0; r < remainingKeys.length; r++) {
+      var kept = existingMap[remainingKeys[r]];
+      if (!kept.isExternal) {
+        kept.status = 'offline';
+        kept.flows = [];
+        kept.tunnels = [];
+        kept.edges = [];
+        kept.srtInput = false;
+        kept.srtOutput = false;
+        newNodes.push(kept);
       }
     }
 
@@ -2037,7 +2391,7 @@
       }
     }
 
-    // Auto-fit on very first data load
+    // Auto-fit on very first data load, and fetch saved positions from DB
     if (prevNodeCount === 0 && topoNodes.length > 0) {
       if (currentView === 'graph') {
         layoutStable = false;
@@ -2045,6 +2399,14 @@
         setTimeout(function () { fitToView(); }, 500);
       } else {
         setTimeout(fitToView, 100);
+      }
+      // Fetch saved positions on first load
+      if (!_positionsFetched[currentView]) {
+        _positionsFetched[currentView] = true;
+        fetchSavedPositions(currentView, function(positions) {
+          applySavedPositions(positions);
+          if (currentView === 'graph') { layoutStable = false; }
+        });
       }
     }
   }

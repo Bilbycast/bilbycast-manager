@@ -526,7 +526,7 @@
     </a>
   </nav>
 
-  <div class="sidebar-footer">v0.1.0</div>
+  <div class="sidebar-footer">v{{VERSION}}</div>
 </aside>
 
 <!-- Main -->
@@ -888,6 +888,15 @@
                 bitrate: formatBitrate(totalBitrate),
                 uptime: n.uptime_secs != null ? formatUptimeSecs(n.uptime_secs) : (existing.uptime || '--')
               };
+            }
+          });
+          // Mark nodes NOT in the update as offline
+          var onlineIds = {};
+          msg.nodes.forEach(function(n) { onlineIds[n.node_id || n.id || n.name] = true; });
+          Object.keys(_knownNodes).forEach(function(k) {
+            if (!onlineIds[k] && _knownNodes[k].status === 'online') {
+              _knownNodes[k].status = 'offline';
+              _knownNodes[k].bitrate = '--';
             }
           });
           renderNodes();

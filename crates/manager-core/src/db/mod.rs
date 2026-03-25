@@ -11,6 +11,7 @@ pub mod settings;
 pub mod audit;
 pub mod tunnels;
 pub mod sessions;
+pub mod topology_positions;
 
 use sqlx::SqlitePool;
 

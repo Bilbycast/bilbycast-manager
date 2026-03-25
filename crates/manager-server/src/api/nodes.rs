@@ -58,6 +58,32 @@ pub async fn list_nodes(
     Ok(Json(filtered))
 }
 
+/// List flow endpoints from all online edge nodes for endpoint discovery.
+/// Returns a summary of inputs/outputs with their types, modes, and addresses.
+pub async fn list_endpoints(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Json<serde_json::Value> {
+    if !auth.role.has_permission(UserRole::Viewer) {
+        return Json(serde_json::json!([]));
+    }
+    let all = state.node_hub.get_all_flow_endpoints();
+    // Filter to nodes the user can access
+    let filtered: Vec<serde_json::Value> = all
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter(|n| {
+            n.get("node_id")
+                .and_then(|id| id.as_str())
+                .map(|id| auth.can_access_node(id))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    Json(serde_json::json!(filtered))
+}
+
 /// List all registered device drivers with their capabilities.
 pub async fn list_device_types(
     State(state): State<AppState>,

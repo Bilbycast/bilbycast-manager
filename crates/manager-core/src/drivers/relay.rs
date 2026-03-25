@@ -53,6 +53,16 @@ const RELAY_COMMANDS: &[(&str, &str, &str)] = &[
         "List all connected edge nodes",
         "operator",
     ),
+    (
+        "authorize_tunnel",
+        "Pre-authorize bind tokens for a tunnel (enables bind authentication)",
+        "admin",
+    ),
+    (
+        "revoke_tunnel",
+        "Remove bind authorization for a tunnel",
+        "admin",
+    ),
 ];
 
 impl DeviceDriver for RelayDriver {
@@ -92,32 +102,55 @@ impl DeviceDriver for RelayDriver {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
+        let total_bytes_forwarded = stats
+            .get("total_bytes_forwarded")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(total_bytes_ingress + total_bytes_egress);
+        let total_bandwidth_bps = stats
+            .get("total_bandwidth_bps")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_tcp_streams = stats
+            .get("total_tcp_streams")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let active_tcp_streams = stats
+            .get("active_tcp_streams")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_udp_datagrams = stats
+            .get("total_udp_datagrams")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let peak_tunnels = stats
+            .get("peak_tunnels")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let peak_edges = stats
+            .get("peak_edges")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let connections_total = stats
+            .get("connections_total")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
         DeviceMetricsSummary {
             metrics: vec![
-                (
-                    "active_tunnels".into(),
-                    serde_json::json!(active_tunnels),
-                ),
-                (
-                    "total_tunnels".into(),
-                    serde_json::json!(total_tunnels),
-                ),
-                (
-                    "connected_edges".into(),
-                    serde_json::json!(connected_edges),
-                ),
-                (
-                    "total_bytes_ingress".into(),
-                    serde_json::json!(total_bytes_ingress),
-                ),
-                (
-                    "total_bytes_egress".into(),
-                    serde_json::json!(total_bytes_egress),
-                ),
-                (
-                    "uptime_secs".into(),
-                    serde_json::json!(uptime_secs),
-                ),
+                ("active_tunnels".into(), serde_json::json!(active_tunnels)),
+                ("total_tunnels".into(), serde_json::json!(total_tunnels)),
+                ("connected_edges".into(), serde_json::json!(connected_edges)),
+                ("total_bytes_ingress".into(), serde_json::json!(total_bytes_ingress)),
+                ("total_bytes_egress".into(), serde_json::json!(total_bytes_egress)),
+                ("total_bytes_forwarded".into(), serde_json::json!(total_bytes_forwarded)),
+                ("total_bandwidth_bps".into(), serde_json::json!(total_bandwidth_bps)),
+                ("total_tcp_streams".into(), serde_json::json!(total_tcp_streams)),
+                ("active_tcp_streams".into(), serde_json::json!(active_tcp_streams)),
+                ("total_udp_datagrams".into(), serde_json::json!(total_udp_datagrams)),
+                ("peak_tunnels".into(), serde_json::json!(peak_tunnels)),
+                ("peak_edges".into(), serde_json::json!(peak_edges)),
+                ("connections_total".into(), serde_json::json!(connections_total)),
+                ("uptime_secs".into(), serde_json::json!(uptime_secs)),
             ],
             items: tunnels.cloned().unwrap_or_default(),
         }
@@ -169,11 +202,26 @@ impl DeviceDriver for RelayDriver {
                     .ok_or_else(|| "disconnect_edge requires 'edge_id' field".to_string())?;
                 Ok(())
             }
-            "close_tunnel" => {
+            "close_tunnel" | "revoke_tunnel" => {
                 action
                     .get("tunnel_id")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "close_tunnel requires 'tunnel_id' field".to_string())?;
+                    .ok_or_else(|| format!("{cmd_type} requires 'tunnel_id' field"))?;
+                Ok(())
+            }
+            "authorize_tunnel" => {
+                action
+                    .get("tunnel_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "authorize_tunnel requires 'tunnel_id' field".to_string())?;
+                action
+                    .get("ingress_token")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "authorize_tunnel requires 'ingress_token' field".to_string())?;
+                action
+                    .get("egress_token")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "authorize_tunnel requires 'egress_token' field".to_string())?;
                 Ok(())
             }
             _ => Ok(()),

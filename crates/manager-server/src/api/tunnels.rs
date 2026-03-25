@@ -9,7 +9,9 @@ use axum::http::StatusCode;
 use axum::Json;
 use serde_json::json;
 
+use hmac::{Hmac, Mac};
 use rand::RngExt;
+use sha2::Sha256;
 
 use crate::app_state::AppState;
 use crate::middleware::auth::AuthUser;
@@ -17,6 +19,22 @@ use manager_core::db;
 use manager_core::models::tunnel::*;
 use manager_core::models::UserRole;
 use manager_core::validation;
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Compute an HMAC-SHA256 bind token for relay tunnel authentication.
+fn compute_bind_token(tunnel_id: &str, direction: &str, bind_secret: &str) -> String {
+    let identity = format!("{tunnel_id}:{direction}");
+    let mut mac =
+        HmacSha256::new_from_slice(bind_secret.as_bytes()).expect("HMAC key can be any length");
+    mac.update(identity.as_bytes());
+    let result = mac.finalize();
+    result
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
 
 /// Generate a cryptographically random 32-byte key (hex-encoded, 64 chars).
 /// Used for tunnel encryption keys (ChaCha20-Poly1305) and direct-mode PSKs.
@@ -95,6 +113,9 @@ pub async fn create_tunnel(
     let tunnel_key_enc = manager_core::crypto::encrypt(&tunnel_encryption_key, &state.master_key)
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Failed to encrypt tunnel key"}))))?;
 
+    // Generate bind secret for relay tunnel authentication
+    let tunnel_bind_secret = generate_random_key();
+
     // For direct mode, also generate a PSK for QUIC transport authentication
     let tunnel_psk = if matches!(req.mode, TunnelMode::Direct) {
         Some(generate_random_key())
@@ -142,10 +163,29 @@ pub async fn create_tunnel(
     entry_config["tunnel_encryption_key"] = json!(tunnel_encryption_key);
     exit_config["tunnel_encryption_key"] = json!(tunnel_encryption_key);
 
+    // Both modes get the bind secret for relay authentication
+    entry_config["tunnel_bind_secret"] = json!(tunnel_bind_secret);
+    exit_config["tunnel_bind_secret"] = json!(tunnel_bind_secret);
+
     if matches!(req.mode, TunnelMode::Relay) {
-        // Relay is stateless — no auth needed, edges just connect
+        // Relay mode: send authorize_tunnel to relay so it can verify bind tokens
         entry_config["relay_addr"] = json!(req.relay_addr);
         exit_config["relay_addr"] = json!(req.relay_addr);
+
+        // Pre-authorize the tunnel on the relay
+        if let Some(ref relay_node_id) = req.relay_node_id {
+            let ingress_token = compute_bind_token(&tunnel.id, "ingress", &tunnel_bind_secret);
+            let egress_token = compute_bind_token(&tunnel.id, "egress", &tunnel_bind_secret);
+            let authorize_cmd = json!({
+                "type": "authorize_tunnel",
+                "tunnel_id": tunnel.id,
+                "ingress_token": ingress_token,
+                "egress_token": egress_token,
+            });
+            if let Err(e) = state.node_hub.send_command(relay_node_id, authorize_cmd).await {
+                tracing::warn!("Failed to authorize tunnel on relay {relay_node_id}: {e}");
+            }
+        }
     } else {
         // Direct mode: exit node listens for QUIC, entry node connects
         let psk = tunnel_psk.as_ref().unwrap();
@@ -216,11 +256,16 @@ pub async fn delete_tunnel(
 
     match db::tunnels::delete_tunnel(&state.db, &id).await {
         Ok(true) => {
-            // Push delete to both edge nodes
+            // Push delete to both edge nodes and revoke on relay
             if let Some(t) = tunnel {
                 let cmd = json!({"type": "delete_tunnel", "tunnel_id": id});
                 let _ = state.node_hub.send_command(&t.ingress_node_id, cmd.clone()).await;
                 let _ = state.node_hub.send_command(&t.egress_node_id, cmd).await;
+                // Revoke bind authorization on relay
+                if let Some(ref relay_node_id) = t.relay_node_id {
+                    let revoke_cmd = json!({"type": "revoke_tunnel", "tunnel_id": id});
+                    let _ = state.node_hub.send_command(relay_node_id, revoke_cmd).await;
+                }
             }
             Ok(Json(json!({ "deleted": true })))
         }

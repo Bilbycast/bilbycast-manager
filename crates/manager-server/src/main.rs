@@ -195,6 +195,9 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
 
     let port = port_override.unwrap_or(server_config.listen_port);
 
+    // Mark all nodes offline on startup (clean slate — nodes will reconnect)
+    manager_core::db::nodes::mark_all_nodes_offline(&pool).await?;
+
     // Check if setup has been run
     let count = manager_core::db::users::count_users(&pool).await?;
     if count == 0 {
@@ -282,6 +285,20 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
         is_self_signed_cert: is_self_signed,
         is_behind_proxy,
     };
+
+    // Periodic broadcast to browsers so they stay in sync (handles the case
+    // where no nodes are connected and therefore no stats trigger a broadcast).
+    {
+        let hub = state.node_hub.clone();
+        let registry = state.driver_registry.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                hub.broadcast_to_browsers(Some(&registry));
+            }
+        });
+    }
 
     let app = build_router(state);
 

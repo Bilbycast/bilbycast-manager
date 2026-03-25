@@ -100,6 +100,19 @@ pub async fn generate_config(
         }
     }
 
+    // Add available nodes context for tunnel creation
+    if let Ok(nodes) = manager_core::db::nodes::list_nodes(&state.db).await {
+        let nodes_ctx: Vec<serde_json::Value> = nodes.iter().map(|n| serde_json::json!({
+            "id": n.id, "name": n.name, "device_type": n.device_type, "status": n.status
+        })).collect();
+        if !nodes_ctx.is_empty() {
+            system_prompt.push_str(&format!(
+                "Available nodes (use these IDs for tunnel ingress/egress):\n{}\n\n",
+                serde_json::to_string_pretty(&nodes_ctx).unwrap_or_default()
+            ));
+        }
+    }
+
     system_prompt.push_str(
         "CRITICAL INSTRUCTIONS:\n\
          1. Respond with ONLY valid JSON — no markdown fences, no explanations, no extra text.\n\
@@ -122,10 +135,24 @@ pub async fn generate_config(
          {\"action\": \"stop_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
          RESTART a flow:\n\
          {\"action\": \"restart_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
+         CREATE a tunnel between two edge nodes:\n\
+         {\"action\": \"create_tunnel\", \"tunnel\": {\"name\": \"tunnel-name\", \"protocol\": \"tcp\", \"mode\": \"direct\", \"ingress_node_id\": \"node-id\", \"ingress_listen_port\": 9100, \"egress_node_id\": \"node-id\", \"egress_forward_addr\": \"127.0.0.1:9100\"}, \"message\": \"description\"}\n\
+         For relay mode, add \"relay_addr\": \"relay-host:4433\" to the tunnel object.\n\n\
+         DELETE a tunnel:\n\
+         {\"action\": \"delete_tunnel\", \"tunnel_id\": \"the-tunnel-id\", \"message\": \"description\"}\n\n\
          ANSWER a question or provide information (no config change):\n\
          {\"action\": \"info\", \"message\": \"your answer here\"}\n\n\
          MULTIPLE actions at once:\n\
          {\"action\": \"multiple\", \"actions\": [<array of action objects>], \"message\": \"summary\"}\n\n\
+         RULES FOR TUNNEL FIELDS:\n\
+         - \"name\": descriptive tunnel name (lowercase with hyphens)\n\
+         - \"protocol\": \"tcp\" (reliable, ordered) or \"udp\" (media/SRT)\n\
+         - \"mode\": \"relay\" (both behind NAT, requires relay_addr) or \"direct\" (one side has public IP)\n\
+         - \"ingress_node_id\": node ID that RECEIVES tunnel traffic (entry point) — use exact IDs from available nodes list\n\
+         - \"ingress_listen_port\": port on ingress node to listen on (1024-65535)\n\
+         - \"egress_node_id\": node ID that SENDS traffic into the tunnel (exit point) — use exact IDs from available nodes list\n\
+         - \"egress_forward_addr\": where egress node delivers tunnel traffic, e.g. \"127.0.0.1:9100\"\n\
+         - \"relay_addr\": relay server QUIC address (REQUIRED for relay mode, omit for direct mode)\n\n\
          RULES FOR FlowConfig FIELDS:\n\
          - \"id\": string (unique, lowercase with hyphens, e.g. \"srt-listener-1\")\n\
          - \"name\": string (human readable)\n\

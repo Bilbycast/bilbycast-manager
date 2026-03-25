@@ -361,7 +361,7 @@
       AI Keys
     </a>
   </nav>
-  <div class="sidebar-footer">v0.1.0</div>
+  <div class="sidebar-footer">v{{VERSION}}</div>
 </aside>
 
 <div class="main-wrapper">
@@ -720,6 +720,12 @@
       case 'restart_flow':
         addActionMessage(message || ('Restart flow "' + config.flow_id + '"'), nodeId, 'restart_flow', config);
         break;
+      case 'create_tunnel':
+        addAiConfigMessage(config.tunnel, message, nodeId, 'create_tunnel');
+        break;
+      case 'delete_tunnel':
+        addActionMessage(message || ('Delete tunnel "' + config.tunnel_id + '"'), nodeId, 'delete_tunnel', config);
+        break;
       case 'info':
         addAiTextMessage(message);
         break;
@@ -748,8 +754,8 @@
     var div = document.createElement('div');
     div.className = 'message ai';
 
-    var btnLabel = { 'delete_flow': 'Delete Flow', 'stop_flow': 'Stop Flow', 'start_flow': 'Start Flow', 'restart_flow': 'Restart Flow', 'remove_output': 'Remove Output' }[actionType] || 'Execute';
-    var btnClass = { 'delete_flow': 'delete', 'stop_flow': 'stop', 'start_flow': 'start', 'restart_flow': 'restart', 'remove_output': 'delete' }[actionType] || 'start';
+    var btnLabel = { 'delete_flow': 'Delete Flow', 'stop_flow': 'Stop Flow', 'start_flow': 'Start Flow', 'restart_flow': 'Restart Flow', 'remove_output': 'Remove Output', 'delete_tunnel': 'Delete Tunnel' }[actionType] || 'Execute';
+    var btnClass = { 'delete_flow': 'delete', 'stop_flow': 'stop', 'start_flow': 'start', 'restart_flow': 'restart', 'remove_output': 'delete', 'delete_tunnel': 'delete' }[actionType] || 'start';
 
     var html =
       '<div class="message-label">AI Assistant</div>' +
@@ -964,7 +970,13 @@
     var baseUrl = '/api/v1/nodes/' + encodeURIComponent(nodeId);
     var applyPromise;
 
-    if (actionType === 'add_output' && parentFlowId) {
+    if (actionType === 'create_tunnel') {
+      applyPromise = fetch('/api/v1/tunnels', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(config)
+      });
+    } else if (actionType === 'add_output' && parentFlowId) {
       // Send add_output command via the command endpoint
       applyPromise = fetch(baseUrl + '/command', {
         method: 'POST',
@@ -1052,6 +1064,11 @@
 
     if (actionType === 'delete_flow') {
       actionPromise = fetch(baseUrl + '/flows/' + encodeURIComponent(actionData.flow_id), {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+    } else if (actionType === 'delete_tunnel') {
+      actionPromise = fetch('/api/v1/tunnels/' + encodeURIComponent(actionData.tunnel_id), {
         method: 'DELETE',
         headers: authHeaders()
       });

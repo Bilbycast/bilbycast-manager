@@ -170,10 +170,14 @@ impl NodeHub {
         match tokio::time::timeout(std::time::Duration::from_secs(10), rx).await {
             Ok(Ok(ack)) => {
                 if ack.success {
-                    Ok(serde_json::json!({
+                    let mut result = serde_json::json!({
                         "command_id": ack.command_id,
                         "success": true
-                    }))
+                    });
+                    if let Some(data) = ack.data {
+                        result["data"] = data;
+                    }
+                    Ok(result)
                 } else {
                     Err(ack.error.unwrap_or_else(|| "Command failed on node".into()))
                 }
@@ -220,6 +224,105 @@ impl NodeHub {
         Ok(None)
     }
 
+    /// Get a summary of all flow endpoints from online edge nodes.
+    /// Reads only from cached configs — no WebSocket commands are sent.
+    /// Used by the endpoint discovery UI to let users select compatible
+    /// remote addresses from other nodes instead of typing them manually.
+    pub fn get_all_flow_endpoints(&self) -> serde_json::Value {
+        let mut result = Vec::new();
+        for entry in self.connections.iter() {
+            let node = entry.value();
+            if node.device_type != "edge" {
+                continue;
+            }
+            let config = match &node.cached_config {
+                Some(c) => c,
+                None => continue,
+            };
+            let flows = match config.get("flows").and_then(|f| f.as_array()) {
+                Some(f) => f,
+                None => continue,
+            };
+            let mut flow_summaries = Vec::new();
+            for flow in flows {
+                let flow_id = flow.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let flow_name = flow.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let enabled = flow.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+
+                // Extract input summary
+                let input_summary = flow.get("input").map(|inp| {
+                    let itype = inp.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let mut summary = serde_json::json!({"type": itype});
+                    if let Some(v) = inp.get("mode").and_then(|v| v.as_str()) {
+                        summary["mode"] = serde_json::json!(v);
+                    }
+                    if let Some(v) = inp.get("local_addr").and_then(|v| v.as_str()) {
+                        summary["local_addr"] = serde_json::json!(v);
+                    }
+                    if let Some(v) = inp.get("bind_addr").and_then(|v| v.as_str()) {
+                        summary["bind_addr"] = serde_json::json!(v);
+                    }
+                    if let Some(v) = inp.get("remote_addr").and_then(|v| v.as_str()) {
+                        summary["remote_addr"] = serde_json::json!(v);
+                    }
+                    if let Some(v) = inp.get("listen_addr").and_then(|v| v.as_str()) {
+                        summary["listen_addr"] = serde_json::json!(v);
+                    }
+                    summary
+                });
+
+                // Extract output summaries
+                let output_summaries: Vec<serde_json::Value> = flow
+                    .get("outputs")
+                    .and_then(|o| o.as_array())
+                    .map(|outputs| {
+                        outputs.iter().map(|out| {
+                            let otype = out.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                            let mut summary = serde_json::json!({"type": otype});
+                            if let Some(v) = out.get("id").and_then(|v| v.as_str()) {
+                                summary["id"] = serde_json::json!(v);
+                            }
+                            if let Some(v) = out.get("name").and_then(|v| v.as_str()) {
+                                summary["name"] = serde_json::json!(v);
+                            }
+                            if let Some(v) = out.get("mode").and_then(|v| v.as_str()) {
+                                summary["mode"] = serde_json::json!(v);
+                            }
+                            if let Some(v) = out.get("local_addr").and_then(|v| v.as_str()) {
+                                summary["local_addr"] = serde_json::json!(v);
+                            }
+                            if let Some(v) = out.get("remote_addr").and_then(|v| v.as_str()) {
+                                summary["remote_addr"] = serde_json::json!(v);
+                            }
+                            if let Some(v) = out.get("dest_addr").and_then(|v| v.as_str()) {
+                                summary["dest_addr"] = serde_json::json!(v);
+                            }
+                            summary
+                        }).collect()
+                    })
+                    .unwrap_or_default();
+
+                let mut flow_json = serde_json::json!({
+                    "flow_id": flow_id,
+                    "flow_name": flow_name,
+                    "enabled": enabled,
+                    "outputs": output_summaries,
+                });
+                if let Some(inp) = input_summary {
+                    flow_json["input"] = inp;
+                }
+                flow_summaries.push(flow_json);
+            }
+
+            result.push(serde_json::json!({
+                "node_id": node.node_id,
+                "node_name": node.node_name,
+                "flows": flow_summaries,
+            }));
+        }
+        serde_json::json!(result)
+    }
+
     /// Disconnect a node.
     pub async fn disconnect_node(&self, node_id: &str) {
         if let Some((_, conn)) = self.connections.remove(node_id) {
@@ -229,7 +332,7 @@ impl NodeHub {
 
     /// Broadcast aggregated stats to browser clients.
     /// Uses device drivers to extract metrics when available.
-    fn broadcast_to_browsers(
+    pub fn broadcast_to_browsers(
         &self,
         driver_registry: Option<&manager_core::drivers::DriverRegistry>,
     ) {
@@ -408,6 +511,11 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
     tracing::info!("Node {node_id} disconnected");
     state.node_hub.connections.remove(&node_id);
 
+    // Broadcast updated node list so dashboards/topology remove the disconnected node
+    state
+        .node_hub
+        .broadcast_to_browsers(Some(&state.driver_registry));
+
     let _ =
         manager_core::db::nodes::update_node_status(&state.db, &node_id, NodeStatus::Offline)
             .await;
@@ -415,7 +523,7 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
     let _ = manager_core::db::events::insert_event(
         &state.db,
         &node_id,
-        EventSeverity::Warning,
+        EventSeverity::Critical,
         "connection",
         "Node disconnected from manager",
         None,
@@ -661,10 +769,12 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
             if !command_id.is_empty()
                 && let Some((_, tx)) = state.node_hub.pending_commands.remove(command_id)
             {
+                let data = envelope.payload.get("data").cloned();
                 let ack = CommandAckPayload {
                     command_id: command_id.to_string(),
                     success,
                     error,
+                    data,
                 };
                 let _ = tx.send(ack);
             }

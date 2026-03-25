@@ -75,6 +75,9 @@ pub struct CommandAckPayload {
     pub command_id: String,
     pub success: bool,
     pub error: Option<String>,
+    /// Optional data returned by the command (e.g., authorize_edge returns a token).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }
 
 // ── Manager → Node messages ──
