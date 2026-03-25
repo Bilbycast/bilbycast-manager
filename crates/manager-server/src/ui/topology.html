@@ -122,6 +122,83 @@
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
   .legend-line { width: 24px; height: 0; border-top: 2px dashed; }
 
+  /* ── Flow table view ── */
+  .flow-table-container {
+    flex: 1; overflow-y: auto;
+  }
+  .flow-table-section { margin-bottom: 24px; }
+  .flow-table-section-title {
+    font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.8px; padding: 12px 0 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .flow-table-section-title .count-badge {
+    background: rgba(96,165,250,0.12); color: #60a5fa; border-radius: 10px;
+    padding: 1px 8px; font-size: 11px; font-weight: 600;
+  }
+  .flow-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    background: #1e293b; border: 1px solid #334155; border-radius: 12px; overflow: hidden;
+  }
+  .flow-table thead th {
+    text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600;
+    color: #64748b; text-transform: uppercase; letter-spacing: 0.4px;
+    border-bottom: 1px solid #334155; background: rgba(0,0,0,0.2); white-space: nowrap;
+  }
+  .flow-table thead th:first-child { width: 32px; padding: 10px 8px; }
+  .flow-table tbody td {
+    padding: 10px 14px; font-size: 13px; border-bottom: 1px solid rgba(51,65,85,0.5);
+    color: #e2e8f0; vertical-align: middle;
+  }
+  .flow-table tbody td:first-child { width: 32px; padding: 10px 8px; }
+  .flow-table tbody tr:last-child td { border-bottom: none; }
+  .flow-table tbody tr:hover { background: rgba(96,165,250,0.04); }
+  .flow-table tbody tr.dragging { opacity: 0.5; background: rgba(96,165,250,0.08); }
+  .flow-table tbody tr.drag-over { border-top: 2px solid #60a5fa; }
+
+  .ft-drag {
+    cursor: grab; color: #475569; font-size: 14px; user-select: none;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ft-drag:active { cursor: grabbing; }
+  .ft-drag:hover { color: #94a3b8; }
+
+  .ft-node {
+    display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  }
+  .ft-node-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .ft-node-name { font-weight: 600; font-size: 13px; }
+  .ft-node-type {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 5px;
+    border-radius: 3px; letter-spacing: 0.3px;
+  }
+
+  .ft-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase; white-space: nowrap;
+  }
+  .ft-proto {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; margin-right: 4px;
+  }
+  .ft-endpoint { white-space: nowrap; }
+  .ft-endpoint-addr { color: #94a3b8; font-size: 12px; margin-left: 2px; }
+  .ft-endpoint-mode { color: #64748b; font-size: 11px; }
+  .ft-outputs-list { display: flex; flex-direction: column; gap: 3px; }
+
+  .ft-health-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px;
+  }
+  .ft-bitrate { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .ft-muted { color: #475569; font-size: 12px; }
+
+  .ft-empty {
+    text-align: center; padding: 32px 16px; color: #475569; font-size: 14px;
+  }
+
+  .ft-arrow { color: #475569; font-size: 12px; padding: 0 4px; }
+
   /* ── Full-width disconnection warning banner ── */
   .disconnect-banner {
     display: none; background: linear-gradient(90deg, #991b1b 0%, #b91c1c 50%, #991b1b 100%);
@@ -283,6 +360,10 @@
         <button id="btnZoomOut" title="Zoom out">&minus;</button>
         <button id="btnFit" title="Fit to view">&#8982;</button>
       </div>
+    </div>
+
+    <div class="flow-table-container" id="flowTableContainer" style="display:none">
+      <div id="flowTableContent"></div>
     </div>
   </main>
 </div>
@@ -763,17 +844,42 @@
           var foundIngress = false, foundEgress = false;
 
           // Primary: match by ingress/egress edge_id (works when edges identify with manager UUID)
+          // Use findPortIndex for relay ports since getEndpoints conditionally adds entries
+          var ingressEdgeId = rtun.ingress_edge_id || '';
+          var egressEdgeId = rtun.egress_edge_id || '';
+          var relayInPortIdx = findPortIndex(i, 'input', function(p) { return p.isTunnel && p.edgeId === ingressEdgeId; });
+          var relayOutPortIdx = findPortIndex(i, 'output', function(p) { return p.isTunnel && p.edgeId === egressEdgeId; });
           if (rtun.ingress_edge_id) {
             var ingressIdx = findManagedNodeByEdgeId(rtun.ingress_edge_id);
             if (ingressIdx >= 0 && ingressIdx !== i) {
-              addLink(ingressIdx, i, proto + ' via Relay', 'tunnel');
+              var _tid = rtun.tunnel_id || '';
+              // Find the tunnel port on this edge — could be output (edge sends OUT) or input (relay labels may not match edge direction)
+              var edgeOutPort = findPortIndex(ingressIdx, 'output', function(p) { return p.isTunnel && (p.outputName === _tid || p.outputName.indexOf(_tid) >= 0); });
+              if (edgeOutPort == null) edgeOutPort = findPortIndex(ingressIdx, 'output', function(p) { return p.isTunnel; });
+              if (edgeOutPort != null) {
+                addLink(ingressIdx, i, proto + ' via Relay', 'tunnel', false, edgeOutPort, relayInPortIdx);
+              } else {
+                // Edge has this tunnel as input — still link edge↔relay, anchor to the edge's input port
+                var edgeAltPort = findPortIndex(ingressIdx, 'input', function(p) { return p.isTunnel; });
+                addLinkWithPortSides(ingressIdx, i, proto + ' via Relay', 'tunnel', false, 'input', edgeAltPort, 'input', relayInPortIdx);
+              }
               foundIngress = true;
             }
           }
           if (rtun.egress_edge_id) {
             var egressIdx = findManagedNodeByEdgeId(rtun.egress_edge_id);
             if (egressIdx >= 0 && egressIdx !== i) {
-              addLink(i, egressIdx, proto + ' via Relay', 'tunnel');
+              var _tid2 = rtun.tunnel_id || '';
+              // Find the tunnel port on this edge — could be input (edge receives IN) or output
+              var edgeInPort = findPortIndex(egressIdx, 'input', function(p) { return p.isTunnel && (p.flowName === _tid2 || p.flowName.indexOf(_tid2) >= 0); });
+              if (edgeInPort == null) edgeInPort = findPortIndex(egressIdx, 'input', function(p) { return p.isTunnel; });
+              if (edgeInPort != null) {
+                addLink(i, egressIdx, proto + ' via Relay', 'tunnel', false, relayOutPortIdx, edgeInPort);
+              } else {
+                // Edge has this tunnel as output — still link relay↔edge, anchor to the edge's output port
+                var edgeAltPort2 = findPortIndex(egressIdx, 'output', function(p) { return p.isTunnel; });
+                addLinkWithPortSides(i, egressIdx, proto + ' via Relay', 'tunnel', false, 'output', relayOutPortIdx, 'output', edgeAltPort2);
+              }
               foundEgress = true;
             }
           }
@@ -792,11 +898,13 @@
                 if ((etun.mode || '').toLowerCase() !== 'relay') continue;
                 var dir = (etun.direction || '').toLowerCase();
                 if (dir === 'ingress' && !foundIngress) {
-                  addLink(j, i, proto + ' via Relay', 'tunnel');
+                  var edgeOutPort2 = findPortIndex(j, 'output', function(p) { return p.isTunnel && (p.outputName === tid || p.outputName === etun.name); });
+                  addLink(j, i, proto + ' via Relay', 'tunnel', false, edgeOutPort2, relayInPortIdx);
                   foundIngress = true;
                 }
                 if (dir === 'egress' && !foundEgress) {
-                  addLink(i, j, proto + ' via Relay', 'tunnel');
+                  var edgeInPort2 = findPortIndex(j, 'input', function(p) { return p.isTunnel && (p.flowName === tid || p.flowName === etun.name); });
+                  addLink(i, j, proto + ' via Relay', 'tunnel', false, relayOutPortIdx, edgeInPort2);
                   foundEgress = true;
                 }
               }
@@ -834,7 +942,9 @@
             var tunJ = tunnelsJ[tj];
             if (tunJ.id === tunI.id && (tunJ.direction || '').toLowerCase() === 'ingress') {
               var proto = (tunI.protocol || 'tcp').toUpperCase();
-              addLink(i, j, proto + ' Tunnel', 'tunnel');
+              var srcOutPort = findPortIndex(i, 'output', function(p) { return p.isTunnel && (p.outputName === tunI.id || p.outputName === tunI.name); });
+              var tgtInPort = findPortIndex(j, 'input', function(p) { return p.isTunnel && (p.flowName === tunJ.id || p.flowName === tunJ.name); });
+              addLink(i, j, proto + ' Tunnel', 'tunnel', false, srcOutPort, tgtInPort);
             }
           }
         }
@@ -863,29 +973,35 @@
     }
 
     // Now build links based on actual flow endpoints
+    // Track port indices matching getEndpoints() ordering: inputs/outputs built per-flow in order
     for (var i = 0; i < topoNodes.length; i++) {
       var node = topoNodes[i];
       if (node.isExternal) continue;
       var flows = node.flows || [];
+      var inputPortCounter = 0;  // running index into getEndpoints().inputs
+      var outputPortCounter = 0; // running index into getEndpoints().outputs
 
       for (var f = 0; f < flows.length; f++) {
         var flow = flows[f];
         var input = flow.input || {};
         var inputType = (input.input_type || '').toLowerCase();
 
+        // Determine if this flow's input will appear in getEndpoints (has valid type)
+        var thisInputPortIdx = inputType ? inputPortCounter : null;
+        if (inputType) inputPortCounter++;
+
         // Input links: external → managed node, or managed → managed
         if (inputType === 'srt' && input.remote_addr) {
           var inpRedundant = !!(input.redundancy || input.srt_leg2_stats || input.redundancy_switches);
-          // First check if the remote_addr matches another managed node's SRT listener output
           var managedSourceIdx = findManagedNodeByOutputAddr(input.remote_addr);
           if (managedSourceIdx >= 0 && managedSourceIdx !== i) {
-            addLink(managedSourceIdx, i, inpRedundant ? 'SRT 2022-7' : 'SRT', 'srt', inpRedundant);
+            var srcOutPort = findPortIndex(managedSourceIdx, 'output', function(p) { return p.protocol === 'srt' && (p.addr === input.remote_addr || p.addr.split(':').pop() === input.remote_addr.split(':').pop()); });
+            addLink(managedSourceIdx, i, inpRedundant ? 'SRT 2022-7' : 'SRT', 'srt', inpRedundant, srcOutPort, thisInputPortIdx);
           } else {
-            // Check external
             var extKey = 'srt:' + input.remote_addr;
             var extIdx = findNodeIndex(externalMap[extKey]);
             if (extIdx >= 0) {
-              addLink(extIdx, i, inpRedundant ? 'SRT 2022-7' : 'SRT', 'srt', inpRedundant);
+              addLink(extIdx, i, inpRedundant ? 'SRT 2022-7' : 'SRT', 'srt', inpRedundant, null, thisInputPortIdx);
             }
           }
         }
@@ -894,28 +1010,28 @@
           var extKey = 'rtmp:RTMP Publisher → ' + rtmpAddr;
           var extIdx = findNodeIndex(externalMap[extKey]);
           if (extIdx >= 0) {
-            addLink(extIdx, i, 'RTMP', 'rtmp');
+            addLink(extIdx, i, 'RTMP', 'rtmp', false, null, thisInputPortIdx);
           }
         }
         if (inputType === 'srt' && input.mode === 'listener' && input.local_addr) {
           var extKey = 'srt:SRT Caller → ' + input.local_addr;
           var extIdx = findNodeIndex(externalMap[extKey]);
           if (extIdx >= 0) {
-            addLink(extIdx, i, 'SRT', 'srt');
+            addLink(extIdx, i, 'SRT', 'srt', false, null, thisInputPortIdx);
           }
         }
         if (inputType === 'rtp' && input.bind_addr && !isLocalOrManaged(input.bind_addr, managedIPs)) {
           var extKey = 'rtp:RTP Source → ' + input.bind_addr;
           var extIdx = findNodeIndex(externalMap[extKey]);
           if (extIdx >= 0) {
-            addLink(extIdx, i, 'RTP', 'rtp');
+            addLink(extIdx, i, 'RTP', 'rtp', false, null, thisInputPortIdx);
           }
         }
         if (inputType === 'udp' && input.bind_addr) {
           var extKey = 'udp:UDP Source → ' + input.bind_addr;
           var extIdx = findNodeIndex(externalMap[extKey]);
           if (extIdx >= 0) {
-            addLink(extIdx, i, 'UDP', 'udp');
+            addLink(extIdx, i, 'UDP', 'udp', false, null, thisInputPortIdx);
           }
         }
         if (inputType === 'rtsp') {
@@ -924,7 +1040,7 @@
             var extKey = 'rtsp:' + rtspAddr;
             var extIdx = findNodeIndex(externalMap[extKey]);
             if (extIdx >= 0) {
-              addLink(extIdx, i, 'RTSP', 'rtsp');
+              addLink(extIdx, i, 'RTSP', 'rtsp', false, null, thisInputPortIdx);
             }
           }
         }
@@ -934,7 +1050,7 @@
             var extKey = 'webrtc:' + whepUrl;
             var extIdx = findNodeIndex(externalMap[extKey]);
             if (extIdx >= 0) {
-              addLink(extIdx, i, 'WebRTC', 'webrtc');
+              addLink(extIdx, i, 'WebRTC', 'webrtc', false, null, thisInputPortIdx);
             }
           }
         }
@@ -946,15 +1062,22 @@
           var outType = (out.output_type || '').toLowerCase();
           var targetIdx = -1;
 
+          // Determine this output's port index (getEndpoints adds outputs in flow/output order)
+          var thisOutputPortIdx = outType ? outputPortCounter : null;
+          if (outType) outputPortCounter++;
+
           if (outType === 'srt' && out.mode === 'caller' && out.remote_addr) {
-            // Check if target is a managed node
             targetIdx = findManagedNodeByAddr(out.remote_addr);
             if (targetIdx < 0) {
               var extKey = 'srt:' + out.remote_addr;
               targetIdx = findNodeIndex(externalMap[extKey]);
             }
             var hasRedundancy = !!(out.redundancy || out.srt_leg2_stats);
-            if (targetIdx >= 0 && targetIdx !== i) addLink(i, targetIdx, hasRedundancy ? 'SRT 2022-7' : 'SRT', 'srt', hasRedundancy);
+            if (targetIdx >= 0 && targetIdx !== i) {
+              var tgtInPort = (targetIdx >= 0 && !topoNodes[targetIdx].isExternal) ?
+                findPortIndex(targetIdx, 'input', function(p) { return p.protocol === 'srt'; }) : null;
+              addLink(i, targetIdx, hasRedundancy ? 'SRT 2022-7' : 'SRT', 'srt', hasRedundancy, thisOutputPortIdx, tgtInPort);
+            }
           }
 
           if (outType === 'rtp' && out.dest_addr) {
@@ -963,40 +1086,44 @@
               var extKey = 'rtp:' + out.dest_addr;
               targetIdx = findNodeIndex(externalMap[extKey]);
             }
-            if (targetIdx >= 0 && targetIdx !== i) addLink(i, targetIdx, 'RTP', 'rtp');
+            if (targetIdx >= 0 && targetIdx !== i) {
+              var tgtInPort = (targetIdx >= 0 && !topoNodes[targetIdx].isExternal) ?
+                findPortIndex(targetIdx, 'input', function(p) { return p.protocol === 'rtp'; }) : null;
+              addLink(i, targetIdx, 'RTP', 'rtp', false, thisOutputPortIdx, tgtInPort);
+            }
           }
 
           if (outType === 'rtmp' && out.dest_url) {
             var host = out.dest_url.replace('rtmp://', '').replace('rtmps://', '').split('/')[0];
             var extKey = 'rtmp:' + host;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'RTMP', 'rtmp');
+            if (targetIdx >= 0) addLink(i, targetIdx, 'RTMP', 'rtmp', false, thisOutputPortIdx, null);
           }
 
           if (outType === 'hls' && out.ingest_url) {
             var extKey = 'hls:' + out.ingest_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'HLS', 'hls');
+            if (targetIdx >= 0) addLink(i, targetIdx, 'HLS', 'hls', false, thisOutputPortIdx, null);
           }
 
           if (outType === 'webrtc' && out.whip_url) {
             var extKey = 'webrtc:' + out.whip_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'WebRTC', 'webrtc');
+            if (targetIdx >= 0) addLink(i, targetIdx, 'WebRTC', 'webrtc', false, thisOutputPortIdx, null);
           }
 
           if (outType === 'udp' && out.dest_addr) {
             if (!isLocalOrManaged(out.dest_addr, managedIPs)) {
               var extKey = 'udp:' + out.dest_addr;
               targetIdx = findNodeIndex(externalMap[extKey]);
-              if (targetIdx >= 0) addLink(i, targetIdx, 'UDP', 'udp');
+              if (targetIdx >= 0) addLink(i, targetIdx, 'UDP', 'udp', false, thisOutputPortIdx, null);
             }
           }
 
           if (outType === 'rtsp' && out.dest_url) {
             var extKey = 'rtsp:' + out.dest_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'RTSP', 'rtsp');
+            if (targetIdx >= 0) addLink(i, targetIdx, 'RTSP', 'rtsp', false, thisOutputPortIdx, null);
           }
         }
       }
@@ -1067,15 +1194,33 @@
     return -1;
   }
 
-  function addLink(sourceIdx, targetIdx, label, protocol, redundant) {
-    // Avoid duplicate links with same source, target, AND protocol
+  function addLink(sourceIdx, targetIdx, label, protocol, redundant, sourceOutputIdx, targetInputIdx) {
+    addLinkWithPortSides(sourceIdx, targetIdx, label, protocol, redundant, 'output', sourceOutputIdx, 'input', targetInputIdx);
+  }
+
+  // Extended addLink that allows specifying the port side (input/output) for each endpoint.
+  // Relay tunnel connections may not follow the default source=output, target=input assumption.
+  function addLinkWithPortSides(sourceIdx, targetIdx, label, protocol, redundant, sourcePortSide, sourcePortIdx, targetPortSide, targetPortIdx) {
+    var spi = sourcePortIdx != null ? sourcePortIdx : null;
+    var tpi = targetPortIdx != null ? targetPortIdx : null;
+    var sps = sourcePortSide || 'output';
+    var tps = targetPortSide || 'input';
+    // Avoid duplicate links
     for (var k = 0; k < topoLinks.length; k++) {
-      if (topoLinks[k].source === sourceIdx && topoLinks[k].target === targetIdx && topoLinks[k].protocol === protocol) {
-        if (redundant) topoLinks[k].redundant = true;
+      var lk = topoLinks[k];
+      if (lk.source === sourceIdx && lk.target === targetIdx && lk.protocol === protocol
+          && lk.sourcePortIdx === spi && lk.targetPortIdx === tpi
+          && lk.sourcePortSide === sps && lk.targetPortSide === tps) {
+        if (redundant) lk.redundant = true;
         return;
       }
     }
-    topoLinks.push({ source: sourceIdx, target: targetIdx, label: label, protocol: protocol, redundant: !!redundant });
+    topoLinks.push({
+      source: sourceIdx, target: targetIdx, label: label, protocol: protocol,
+      redundant: !!redundant,
+      sourcePortIdx: spi, targetPortIdx: tpi,
+      sourcePortSide: sps, targetPortSide: tps
+    });
   }
 
   // ── Draw ──
@@ -1107,21 +1252,23 @@
       var b = topoNodes[link.target];
       if (!a || !b) continue;
       if (hideOff && (a.status === 'offline' || b.status === 'offline')) continue;
-      // Count how many links share this source/target pair (in either direction)
+      // Count how many links share the same source/target pair AND same port pair
+      // Only apply offset to links that connect to the same ports (rare after port-anchoring)
       var pairCount = 0;
       var pairIdx = 0;
       for (var m = 0; m < topoLinks.length; m++) {
-        var s = Math.min(topoLinks[m].source, topoLinks[m].target);
-        var t = Math.max(topoLinks[m].source, topoLinks[m].target);
+        var lm = topoLinks[m];
+        var s = Math.min(lm.source, lm.target);
+        var t = Math.max(lm.source, lm.target);
         var ls = Math.min(link.source, link.target);
         var lt = Math.max(link.source, link.target);
-        if (s === ls && t === lt) {
+        if (s === ls && t === lt && lm.sourcePortIdx === link.sourcePortIdx && lm.targetPortIdx === link.targetPortIdx) {
           if (m === l) pairIdx = pairCount;
           pairCount++;
         }
       }
       var linkOffset = pairCount > 1 ? (pairIdx - (pairCount - 1) / 2) * 20 : 0;
-      drawLink(a, b, link.label, link.protocol, link.redundant, linkOffset);
+      drawLink(a, b, link.label, link.protocol, link.redundant, linkOffset, link.sourcePortSide, link.sourcePortIdx, link.targetPortSide, link.targetPortIdx);
     }
 
     // Draw nodes (managed first, external on top)
@@ -1164,20 +1311,17 @@
     return { x: sx / camera.zoom + camera.x, y: sy / camera.zoom + camera.y };
   }
 
-  function drawLink(a, b, label, protocol, redundant, linkOffset) {
+  function drawLink(a, b, label, protocol, redundant, linkOffset, sourcePortSide, sourcePortIdx, targetPortSide, targetPortIdx) {
     // Connect from right edge of source to left edge of target
     var aHalfW = (a.isExternal ? EXT_W : NODE_W) / 2;
     var bHalfW = (b.isExternal ? EXT_W : NODE_W) / 2;
-    var ax = a.x + aHalfW;   // right edge of source
-    var ay = a.y;
-    var bx = b.x - bHalfW;   // left edge of target
-    var by = b.y;
-
-    // If target is to the left, swap edge sides
-    if (a.x > b.x) {
-      ax = a.x - aHalfW;
-      bx = b.x + bHalfW;
-    }
+    var srcSide = sourcePortSide || 'output';
+    var tgtSide = targetPortSide || 'input';
+    // Port stubs exist on both sides — connect to the side facing the other node
+    var ax = (b.x >= a.x) ? (a.x + aHalfW) : (a.x - aHalfW);
+    var ay = (sourcePortIdx != null && !a.isExternal) ? getPortY(a, srcSide, sourcePortIdx) : a.y;
+    var bx = (a.x <= b.x) ? (b.x - bHalfW) : (b.x + bHalfW);
+    var by = (targetPortIdx != null && !b.isExternal) ? getPortY(b, tgtSide, targetPortIdx) : b.y;
 
     var linkColor = protocolColor(protocol || 'srt');
     var isExternal = (a.isExternal || b.isExternal);
@@ -1465,9 +1609,11 @@
       var inp = ep.inputs[i];
       var ry = rowY + i * 22;
 
-      // Port stub on left edge (input indicator)
+      // Port stubs on both edges (input indicator)
       ctx.fillStyle = inp.color;
       roundRect(ctx, x - portStubW + 1, ry - portStubH / 2 + 8, portStubW + 4, portStubH, 3);
+      ctx.fill();
+      roundRect(ctx, x + NODE_W - 5, ry - portStubH / 2 + 8, portStubW + 4, portStubH, 3);
       ctx.fill();
 
       // Direction arrow
@@ -1516,9 +1662,11 @@
       var out = ep.outputs[o];
       var ry = outStartY + o * 22;
 
-      // Port stub on right edge (output indicator)
+      // Port stubs on both edges (output indicator)
       ctx.fillStyle = out.color;
       roundRect(ctx, x + NODE_W - 5, ry - portStubH / 2 + 8, portStubW + 4, portStubH, 3);
+      ctx.fill();
+      roundRect(ctx, x - portStubW + 1, ry - portStubH / 2 + 8, portStubW + 4, portStubH, 3);
       ctx.fill();
 
       // Direction arrow (pointing right = outgoing)
@@ -1683,6 +1831,17 @@
     }
   }
 
+  // Resolve an edge_id UUID to a human-readable node name
+  function resolveEdgeName(edgeId) {
+    if (!edgeId) return '?';
+    for (var k = 0; k < topoNodes.length; k++) {
+      if (topoNodes[k].isExternal) continue;
+      if (topoNodes[k].id === edgeId && topoNodes[k].name) return topoNodes[k].name;
+    }
+    // Shorten UUID if no name found
+    return edgeId.length > 12 ? edgeId.substring(0, 8) + '\u2026' : edgeId;
+  }
+
   // ── Endpoint extraction for IP/port display ──
   function getEndpoints(node) {
     var inputs = [];
@@ -1697,25 +1856,29 @@
         var tunnelColor = protocolColor('tunnel');
         var status = rtun.status || '';
         if (rtun.ingress_edge_id) {
+          var ingressName = resolveEdgeName(rtun.ingress_edge_id);
           inputs.push({
             protocol: proto.toLowerCase() + '-tunnel',
-            addr: rtun.ingress_edge_id,
+            addr: ingressName,
             mode: 'relay',
             color: tunnelColor,
-            flowName: proto + ' from ' + rtun.ingress_edge_id,
+            flowName: proto + ' from ' + ingressName,
             isTunnel: true,
-            tunnelState: status
+            tunnelState: status,
+            edgeId: rtun.ingress_edge_id
           });
         }
         if (rtun.egress_edge_id) {
+          var egressName = resolveEdgeName(rtun.egress_edge_id);
           outputs.push({
             protocol: proto.toLowerCase() + '-tunnel',
-            addr: rtun.egress_edge_id,
+            addr: egressName,
             mode: 'relay',
             color: tunnelColor,
-            outputName: proto + ' to ' + rtun.egress_edge_id,
+            outputName: proto + ' to ' + egressName,
             isTunnel: true,
-            tunnelState: status
+            tunnelState: status,
+            edgeId: rtun.egress_edge_id
           });
         }
       }
@@ -1807,6 +1970,33 @@
     if (count === 0) return NODE_H;
     // Header (34) + separator + flow count line (20) + separator (8) + endpoints section + bottom padding
     return 62 + count * 22 + 12;
+  }
+
+  // Get the world-Y coordinate of a port stub center
+  function getPortY(node, side, portIdx) {
+    if (portIdx == null || node.isExternal) return node.y;
+    var ep = getEndpoints(node);
+    var ports = (side === 'output') ? ep.outputs : ep.inputs;
+    if (portIdx < 0 || portIdx >= ports.length) return node.y;
+    var nh = getNodeHeight(node);
+    var topY = node.y - nh / 2;
+    if (side === 'input') {
+      return topY + 50 + portIdx * 22;
+    } else {
+      return topY + 50 + (ep.inputs.length + portIdx) * 22;
+    }
+  }
+
+  // Find port index on a node matching a predicate
+  function findPortIndex(nodeIdx, side, matchFn) {
+    var node = topoNodes[nodeIdx];
+    if (!node || node.isExternal) return null;
+    var ep = getEndpoints(node);
+    var ports = (side === 'output') ? ep.outputs : ep.inputs;
+    for (var p = 0; p < ports.length; p++) {
+      if (matchFn(ports[p])) return p;
+    }
+    return null;
   }
 
   function truncate(str, max) {
@@ -1994,6 +2184,7 @@
     currentView = 'graph';
     this.classList.add('active');
     document.getElementById('btnFlowView').classList.remove('active');
+    hideFlowTable();
     // Clear flow-view pins and restore graph-view pins
     for (var i = 0; i < topoNodes.length; i++) topoNodes[i].userPinned = false;
     layoutStable = false;
@@ -2012,34 +2203,416 @@
     currentView = 'flow';
     this.classList.add('active');
     document.getElementById('btnGraphView').classList.remove('active');
-    // Clear graph-view pins before computing flow layout
-    for (var i = 0; i < topoNodes.length; i++) topoNodes[i].userPinned = false;
-    computeFlowLayout();
-    if (!_positionsFetched.flow) {
-      _positionsFetched.flow = true;
-    }
-    fetchSavedPositions('flow', function(positions) {
-      applySavedPositions(positions);
-    });
-    setTimeout(fitToView, 100);
+    showFlowTable();
   });
 
   document.getElementById('btnResetLayout').addEventListener('click', function () {
-    // Unpin all nodes
+    if (currentView === 'flow') {
+      // Reset flow table order
+      flowTableRowOrder = [];
+      clearSavedPositions('flow');
+      buildFlowTable();
+      return;
+    }
+    // Graph view reset
     for (var i = 0; i < topoNodes.length; i++) {
       topoNodes[i].userPinned = false;
     }
-    // Clear saved positions from DB
-    clearSavedPositions(currentView);
-    // Re-run layout
-    if (currentView === 'graph') {
-      layoutStable = false;
-      layoutIterations = 0;
-    } else {
-      computeFlowLayout();
-    }
+    clearSavedPositions('graph');
+    layoutStable = false;
+    layoutIterations = 0;
     setTimeout(fitToView, 200);
   });
+
+  // ── Flow table view ──
+
+  var flowTableRowOrder = []; // persisted row ordering: array of row IDs
+  var flowTableDragRow = null;
+
+  function ftEsc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function ftFmtBitrate(bps) {
+    if (!bps || bps <= 0) return '<span class="ft-muted">-</span>';
+    if (bps >= 1e9) return (bps / 1e9).toFixed(2) + ' Gbps';
+    if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' Mbps';
+    if (bps >= 1e3) return (bps / 1e3).toFixed(0) + ' kbps';
+    return bps + ' bps';
+  }
+
+  function ftFmtBytes(b) {
+    if (!b || b <= 0) return '-';
+    if (b >= 1e12) return (b / 1e12).toFixed(2) + ' TB';
+    if (b >= 1e9) return (b / 1e9).toFixed(2) + ' GB';
+    if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB';
+    if (b >= 1e3) return (b / 1e3).toFixed(0) + ' KB';
+    return b + ' B';
+  }
+
+  function ftFmtUptime(secs) {
+    if (!secs || secs <= 0) return '-';
+    var h = Math.floor(secs / 3600);
+    var m = Math.floor((secs % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+
+  function ftProtoBadge(proto, color) {
+    var bg = color + '1a'; // ~10% opacity
+    return '<span class="ft-proto" style="background:' + bg + ';color:' + color + '">' + ftEsc((proto || '').toUpperCase()) + '</span>';
+  }
+
+  function ftStateBadge(state) {
+    var s = (state || 'unknown').toLowerCase();
+    var color = '#94a3b8'; var bg = 'rgba(100,116,139,0.15)';
+    if (s === 'running') { color = '#4ade80'; bg = 'rgba(74,222,128,0.15)'; }
+    else if (s === 'stopped' || s === 'idle') { color = '#94a3b8'; bg = 'rgba(100,116,139,0.15)'; }
+    else if (s === 'error') { color = '#f87171'; bg = 'rgba(248,113,113,0.15)'; }
+    else if (s === 'starting') { color = '#fbbf24'; bg = 'rgba(251,191,36,0.15)'; }
+    else if (s === 'active') { color = '#4ade80'; bg = 'rgba(74,222,128,0.15)'; }
+    return '<span class="ft-badge" style="background:' + bg + ';color:' + color + '">' + ftEsc(s) + '</span>';
+  }
+
+  function ftHealthDot(health) {
+    var h = (health || '').toLowerCase();
+    var color = '#64748b';
+    if (h === 'healthy' || h === 'good') color = '#4ade80';
+    else if (h === 'degraded' || h === 'warning') color = '#fbbf24';
+    else if (h === 'critical' || h === 'error' || h === 'unhealthy') color = '#f87171';
+    return '<span class="ft-health-dot" style="background:' + color + '"></span>' + ftEsc(health || '-');
+  }
+
+  function ftNodeCell(node) {
+    var dotColor = node.status === 'online' ? (node.isRelay ? '#c084fc' : '#4ade80') : '#64748b';
+    var h = '<div class="ft-node">';
+    h += '<span class="ft-node-dot" style="background:' + dotColor + '"></span>';
+    h += '<span class="ft-node-name">' + ftEsc(node.name) + '</span>';
+    if (node.isRelay) {
+      h += '<span class="ft-node-type" style="background:rgba(192,132,252,0.15);color:#c084fc">relay</span>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  function ftEndpoint(type, addr, mode) {
+    var color = protocolColor(type || '');
+    var h = '<div class="ft-endpoint">';
+    h += ftProtoBadge(type, color);
+    if (addr) h += '<span class="ft-endpoint-addr">' + ftEsc(addr) + '</span>';
+    if (mode) h += ' <span class="ft-endpoint-mode">(' + ftEsc(mode) + ')</span>';
+    h += '</div>';
+    return h;
+  }
+
+  function buildFlowTable() {
+    var container = document.getElementById('flowTableContent');
+    if (!container) return;
+
+    // Collect flow rows
+    var flowRows = [];
+    var tunnelRows = [];
+
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal) continue;
+
+      // Flows (edge nodes)
+      var flows = node.flows || [];
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        flowRows.push({
+          rowId: 'flow-' + node.id + '-' + (flow.flow_id || f),
+          node: node,
+          flow: flow
+        });
+      }
+
+      // Tunnels
+      var tunnels = node.tunnels || [];
+      for (var t = 0; t < tunnels.length; t++) {
+        var tun = tunnels[t];
+        tunnelRows.push({
+          rowId: 'tun-' + node.id + '-' + (tun.tunnel_id || tun.id || t),
+          node: node,
+          tunnel: tun
+        });
+      }
+    }
+
+    // Sort by saved order, then by node name + flow name
+    var orderMap = {};
+    for (var oi = 0; oi < flowTableRowOrder.length; oi++) {
+      orderMap[flowTableRowOrder[oi]] = oi;
+    }
+    function sortFn(a, b) {
+      var oa = orderMap[a.rowId] != null ? orderMap[a.rowId] : 9999;
+      var ob = orderMap[b.rowId] != null ? orderMap[b.rowId] : 9999;
+      if (oa !== ob) return oa - ob;
+      var na = (a.node.name || '').toLowerCase();
+      var nb = (b.node.name || '').toLowerCase();
+      if (na !== nb) return na < nb ? -1 : 1;
+      var fa = ((a.flow || {}).flow_name || (a.tunnel || {}).name || '').toLowerCase();
+      var fb = ((b.flow || {}).flow_name || (b.tunnel || {}).name || '').toLowerCase();
+      return fa < fb ? -1 : (fa > fb ? 1 : 0);
+    }
+    flowRows.sort(sortFn);
+    tunnelRows.sort(sortFn);
+
+    var html = '';
+
+    // ── Signal Flows section ──
+    html += '<div class="flow-table-section">';
+    html += '<div class="flow-table-section-title">Signal Flows <span class="count-badge">' + flowRows.length + '</span></div>';
+    if (flowRows.length > 0) {
+      html += '<table class="flow-table"><thead><tr>';
+      html += '<th></th><th>Node</th><th>Flow</th><th>State</th><th>Input</th>';
+      html += '<th><span class="ft-arrow">\u2192</span> Outputs</th><th>Bitrate</th><th>Health</th>';
+      html += '</tr></thead><tbody>';
+      for (var fi = 0; fi < flowRows.length; fi++) {
+        html += buildFlowRow(flowRows[fi]);
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<div class="ft-empty">No active flows</div>';
+    }
+    html += '</div>';
+
+    // ── IP Tunnels section ──
+    if (tunnelRows.length > 0) {
+      html += '<div class="flow-table-section">';
+      html += '<div class="flow-table-section-title">IP Tunnels <span class="count-badge">' + tunnelRows.length + '</span></div>';
+      html += '<table class="flow-table"><thead><tr>';
+      html += '<th></th><th>Node</th><th>Tunnel</th><th>Protocol</th>';
+      html += '<th>Direction / Endpoints</th><th>State</th><th>Throughput</th>';
+      html += '</tr></thead><tbody>';
+      for (var ti = 0; ti < tunnelRows.length; ti++) {
+        html += buildTunnelRow(tunnelRows[ti]);
+      }
+      html += '</tbody></table>';
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    attachDragHandlers();
+  }
+
+  function buildFlowRow(row) {
+    var node = row.node;
+    var flow = row.flow;
+    var inp = flow.input || {};
+    var outs = flow.outputs || [];
+    var inputBitrate = inp.bitrate_bps || 0;
+
+    var h = '<tr data-row-id="' + ftEsc(row.rowId) + '" draggable="false">';
+    // Drag handle
+    h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
+    // Node
+    h += '<td>' + ftNodeCell(node) + '</td>';
+    // Flow name
+    h += '<td style="font-weight:600;">' + ftEsc(flow.flow_name || flow.flow_id || '-') + '</td>';
+    // State
+    h += '<td>' + ftStateBadge(flow.state) + '</td>';
+    // Input
+    var inputAddr = '';
+    if (inp.input_type) {
+      if (inp.mode === 'caller' || inp.mode === 'rendezvous') {
+        inputAddr = inp.remote_addr || '';
+      } else {
+        inputAddr = inp.local_addr || inp.bind_addr || inp.listen_addr || '';
+      }
+    }
+    h += '<td>' + (inp.input_type ? ftEndpoint(inp.input_type, inputAddr, inp.mode) : '<span class="ft-muted">-</span>') + '</td>';
+    // Outputs
+    h += '<td>';
+    if (outs.length > 0) {
+      h += '<div class="ft-outputs-list">';
+      for (var o = 0; o < outs.length; o++) {
+        var out = outs[o];
+        var outAddr = out.dest_addr || out.dest_url || out.ingest_url || out.whip_url || out.local_addr || '';
+        h += ftEndpoint(out.output_type, outAddr, out.mode);
+      }
+      h += '</div>';
+    } else {
+      h += '<span class="ft-muted">No outputs</span>';
+    }
+    h += '</td>';
+    // Bitrate
+    h += '<td><span class="ft-bitrate" id="ftbr-' + ftEsc(row.rowId) + '">' + ftFmtBitrate(inputBitrate) + '</span></td>';
+    // Health
+    h += '<td id="fth-' + ftEsc(row.rowId) + '">' + ftHealthDot(flow.health) + '</td>';
+    h += '</tr>';
+    return h;
+  }
+
+  function buildTunnelRow(row) {
+    var node = row.node;
+    var tun = row.tunnel;
+    var isRelayTunnel = node.isRelay;
+    var proto = (tun.protocol || 'tcp').toUpperCase();
+    var color = protocolColor('tunnel');
+    var stats = tun.stats || {};
+
+    var h = '<tr data-row-id="' + ftEsc(row.rowId) + '" draggable="false">';
+    // Drag handle
+    h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
+    // Node
+    h += '<td>' + ftNodeCell(node) + '</td>';
+    // Tunnel name
+    var tName = tun.name || tun.id || tun.tunnel_id || '-';
+    if (isRelayTunnel) {
+      var inName = resolveEdgeName(tun.ingress_edge_id);
+      var outName = resolveEdgeName(tun.egress_edge_id);
+      tName = inName + ' \u2194 ' + outName;
+    }
+    h += '<td style="font-weight:600;">' + ftEsc(tName) + '</td>';
+    // Protocol
+    h += '<td>' + ftProtoBadge(proto, color) + '</td>';
+    // Direction / Endpoints
+    h += '<td>';
+    if (isRelayTunnel) {
+      var inName2 = resolveEdgeName(tun.ingress_edge_id);
+      var outName2 = resolveEdgeName(tun.egress_edge_id);
+      h += '<span class="ft-endpoint-addr">' + ftEsc(inName2) + '</span>';
+      h += ' <span class="ft-arrow">\u2192</span> ';
+      h += '<span class="ft-endpoint-addr">' + ftEsc(outName2) + '</span>';
+    } else {
+      var dir = (tun.direction || '').toLowerCase();
+      var dirLabel = dir === 'ingress' ? 'INGRESS' : 'EGRESS';
+      var dirColor = dir === 'ingress' ? '#22d3ee' : '#f472b6';
+      h += '<span class="ft-badge" style="background:' + dirColor + '1a;color:' + dirColor + '">' + dirLabel + '</span> ';
+      h += '<span class="ft-endpoint-addr">' + ftEsc(tun.local_addr || '-') + '</span>';
+      if (tun.mode) h += ' <span class="ft-endpoint-mode">(' + ftEsc(tun.mode) + ')</span>';
+    }
+    h += '</td>';
+    // State
+    h += '<td>' + ftStateBadge(tun.state || tun.status) + '</td>';
+    // Throughput
+    var throughput = stats.bitrate_bps || 0;
+    if (!throughput && (stats.bytes_sent || stats.bytes_received || stats.bytes_ingress || stats.bytes_egress)) {
+      // No live bitrate available; show total bytes instead
+      var totalBytes = (stats.bytes_sent || 0) + (stats.bytes_received || 0) + (stats.bytes_ingress || 0) + (stats.bytes_egress || 0);
+      h += '<td><span class="ft-bitrate ft-muted" id="ftbr-' + ftEsc(row.rowId) + '">' + ftFmtBytes(totalBytes) + '</span></td>';
+    } else {
+      h += '<td><span class="ft-bitrate" id="ftbr-' + ftEsc(row.rowId) + '">' + ftFmtBitrate(throughput) + '</span></td>';
+    }
+    h += '</tr>';
+    return h;
+  }
+
+  function updateFlowTableStats() {
+    if (currentView !== 'flow') return;
+    // In-place update of bitrate and health cells
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal) continue;
+      var flows = node.flows || [];
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        var rid = 'flow-' + node.id + '-' + (flow.flow_id || f);
+        var brEl = document.getElementById('ftbr-' + rid);
+        if (brEl) brEl.innerHTML = ftFmtBitrate((flow.input || {}).bitrate_bps || 0);
+        var hEl = document.getElementById('fth-' + rid);
+        if (hEl) hEl.innerHTML = ftHealthDot(flow.health);
+      }
+    }
+  }
+
+  // ── Drag-to-reorder ──
+
+  function attachDragHandlers() {
+    var tables = document.querySelectorAll('.flow-table tbody');
+    for (var ti = 0; ti < tables.length; ti++) {
+      var tbody = tables[ti];
+      var rows = tbody.querySelectorAll('tr');
+      for (var ri = 0; ri < rows.length; ri++) {
+        (function(row) {
+          var handle = row.querySelector('[data-drag]');
+          if (!handle) return;
+          handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            flowTableDragRow = row;
+            row.classList.add('dragging');
+            var moveHandler = function(ev) {
+              var target = getDragTargetRow(ev, tbody);
+              // Remove all drag-over classes
+              var allRows = tbody.querySelectorAll('tr');
+              for (var k = 0; k < allRows.length; k++) allRows[k].classList.remove('drag-over');
+              if (target && target !== row) target.classList.add('drag-over');
+            };
+            var upHandler = function(ev) {
+              document.removeEventListener('mousemove', moveHandler);
+              document.removeEventListener('mouseup', upHandler);
+              row.classList.remove('dragging');
+              var allRows = tbody.querySelectorAll('tr');
+              for (var k = 0; k < allRows.length; k++) allRows[k].classList.remove('drag-over');
+              var target = getDragTargetRow(ev, tbody);
+              if (target && target !== row) {
+                tbody.insertBefore(row, target);
+                saveFlowTableOrder();
+              }
+              flowTableDragRow = null;
+            };
+            document.addEventListener('mousemove', moveHandler);
+            document.addEventListener('mouseup', upHandler);
+          });
+        })(rows[ri]);
+      }
+    }
+  }
+
+  function getDragTargetRow(ev, tbody) {
+    var rows = tbody.querySelectorAll('tr');
+    for (var i = 0; i < rows.length; i++) {
+      var rect = rows[i].getBoundingClientRect();
+      if (ev.clientY >= rect.top && ev.clientY < rect.bottom) return rows[i];
+    }
+    return null;
+  }
+
+  function saveFlowTableOrder() {
+    var newOrder = [];
+    var allRows = document.querySelectorAll('.flow-table tbody tr[data-row-id]');
+    for (var i = 0; i < allRows.length; i++) {
+      newOrder.push(allRows[i].getAttribute('data-row-id'));
+    }
+    flowTableRowOrder = newOrder;
+    // Persist via positions API (reuse existing endpoint, store order as y-coordinate)
+    var positions = {};
+    for (var i = 0; i < newOrder.length; i++) {
+      positions[newOrder[i]] = { x: 0, y: i };
+    }
+    fetch('/api/v1/topology/positions', {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ view: 'flow', positions: positions })
+    }).catch(function() {});
+  }
+
+  function loadFlowTableOrder(callback) {
+    fetchSavedPositions('flow', function(positions) {
+      if (!positions) { callback(); return; }
+      var entries = [];
+      var keys = Object.keys(positions);
+      for (var i = 0; i < keys.length; i++) {
+        entries.push({ id: keys[i], order: positions[keys[i]].y || 0 });
+      }
+      entries.sort(function(a, b) { return a.order - b.order; });
+      flowTableRowOrder = entries.map(function(e) { return e.id; });
+      callback();
+    });
+  }
+
+  function showFlowTable() {
+    document.getElementById('canvasContainer').style.display = 'none';
+    document.getElementById('flowTableContainer').style.display = 'block';
+    loadFlowTableOrder(function() {
+      buildFlowTable();
+    });
+  }
+
+  function hideFlowTable() {
+    document.getElementById('canvasContainer').style.display = '';
+    document.getElementById('flowTableContainer').style.display = 'none';
+  }
 
   // ── Signal flow layout ──
   var flowColumnPositions = []; // populated by computeFlowLayout for drawFlowColumnHeaders
@@ -2357,9 +2930,13 @@
     topoNodes = newNodes;
     computeLinksAndExternals();
 
-    // Recompute flow layout if in flow view
+    // Update flow view
     if (currentView === 'flow') {
-      computeFlowLayout();
+      // Rebuild table if structure changed, otherwise just update stats
+      if (!flowTableDragRow) {
+        buildFlowTable();
+      }
+      updateFlowTableStats();
     }
 
     // Update stats

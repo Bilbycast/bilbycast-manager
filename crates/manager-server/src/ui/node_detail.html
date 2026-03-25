@@ -1218,6 +1218,14 @@
   var tunnelBytesRate = new Map();
   var tunnelPrevTime = 0;
   var currentTunnelIds = [];
+  var nodeNameMap = {}; // node_id → node_name for resolving edge UUIDs
+
+  function resolveEdgeName(edgeId) {
+    if (!edgeId) return '?';
+    if (nodeNameMap[edgeId]) return nodeNameMap[edgeId];
+    // Shorten UUID for display if name not found
+    return edgeId.length > 12 ? edgeId.substring(0, 8) + '\u2026' : edgeId;
+  }
 
   function tunnelStateColor(state) {
     if (!state) return C_GRAY;
@@ -1437,14 +1445,16 @@
     if (isRelay) {
       tunnels = tunnels.map(function(t) {
         var s = t.stats || {};
+        var ingressName = resolveEdgeName(t.ingress_edge_id);
+        var egressName = resolveEdgeName(t.egress_edge_id);
         return {
           id: t.tunnel_id || t.id,
-          name: (t.protocol || 'TCP').toUpperCase() + ': ' + (t.ingress_edge_id || '?') + ' \u2194 ' + (t.egress_edge_id || '?'),
+          name: (t.protocol || 'TCP').toUpperCase() + ': ' + ingressName + ' \u2194 ' + egressName,
           protocol: t.protocol,
           direction: 'relay',
           mode: 'relay',
           state: t.status || t.state || 'unknown',
-          local_addr: (t.ingress_edge_id || '') + ' \u2192 ' + (t.egress_edge_id || ''),
+          local_addr: ingressName + ' \u2192 ' + egressName,
           stats: {
             bytes_sent: s.bytes_ingress || 0,
             bytes_received: s.bytes_egress || 0,
@@ -1845,6 +1855,11 @@
       try {
         var msg = JSON.parse(evt.data);
         if (msg.type === 'dashboard_update' && Array.isArray(msg.nodes)) {
+          // Build node ID → name map for resolving edge UUIDs in tunnel display
+          for (var ni = 0; ni < msg.nodes.length; ni++) {
+            var n = msg.nodes[ni];
+            if (n.node_id && n.name) nodeNameMap[n.node_id] = n.name;
+          }
           var myNode = null;
           for (var i = 0; i < msg.nodes.length; i++) {
             if (msg.nodes[i].node_id === nodeId) { myNode = msg.nodes[i]; break; }
