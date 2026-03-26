@@ -169,6 +169,8 @@
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   }
   .ft-node-name { font-weight: 600; font-size: 13px; }
+  .ft-node-name[data-node-id] { cursor: pointer; }
+  .ft-node-name[data-node-id]:hover { color: #60a5fa; text-decoration: underline; }
   .ft-node-type {
     font-size: 10px; font-weight: 700; text-transform: uppercase; padding: 1px 5px;
     border-radius: 3px; letter-spacing: 0.3px;
@@ -198,6 +200,32 @@
   }
 
   .ft-arrow { color: #475569; font-size: 12px; padding: 0 4px; }
+  .ft-path { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+  .ft-path-arrow { color: #475569; font-size: 13px; margin: 0 2px; }
+  .ft-path-addr { color: #64748b; font-size: 11px; margin-left: 2px; }
+  .ft-path-dest-group { display: flex; flex-direction: column; gap: 2px; }
+
+  .ft-path-chain {
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0;
+  }
+  .ft-path-chain .ft-path-io {
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    background: rgba(15,23,42,0.5); border: 1px solid #334155; border-radius: 6px;
+    padding: 3px 8px; font-size: 12px;
+  }
+  .ft-path-chain .ft-path-io.input { border-color: rgba(96,165,250,0.3); }
+  .ft-path-chain .ft-path-io.output { border-color: rgba(74,222,128,0.3); }
+  .ft-path-fanout {
+    display: flex; flex-direction: column; gap: 6px; padding-left: 4px;
+  }
+  .ft-path-fanout-branch {
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  }
+  .ft-tunnel-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    background: rgba(168,85,247,0.12); color: #a855f7;
+  }
 
   /* ── Full-width disconnection warning banner ── */
   .disconnect-banner {
@@ -430,7 +458,7 @@
   var animFrameId = null;
   var layoutStable = false;
   var layoutIterations = 0;
-  var currentView = 'graph'; // 'graph' or 'flow'
+  var currentView = localStorage.getItem('bilbycast_topology_view') || 'graph'; // 'graph' or 'flow'
   var _positionsFetched = { graph: false, flow: false }; // track first load
 
   // ── Position persistence (database-backed) ──
@@ -687,6 +715,11 @@
     }
 
     // Scan all managed nodes' flows for external connections
+    // Track which outputs are part of cross-node signal paths
+    for (var i = 0; i < topoNodes.length; i++) {
+      if (!topoNodes[i].isExternal) topoNodes[i]._connectedOutputIds = {};
+    }
+
     for (var i = 0; i < topoNodes.length; i++) {
       var node = topoNodes[i];
       if (node.isExternal) continue;
@@ -788,15 +821,21 @@
           }
 
           if (outType === 'rtmp' && out.dest_url) {
-            getOrCreateExternal(out.dest_url, 'rtmp', 'destination');
+            if (!isLocalAddress(out.dest_url)) {
+              getOrCreateExternal(out.dest_url, 'rtmp', 'destination');
+            }
           }
 
           if (outType === 'hls' && out.ingest_url) {
-            getOrCreateExternal(out.ingest_url, 'hls', 'destination');
+            if (!isLocalAddress(out.ingest_url)) {
+              getOrCreateExternal(out.ingest_url, 'hls', 'destination');
+            }
           }
 
           if (outType === 'webrtc' && out.whip_url) {
-            getOrCreateExternal(out.whip_url, 'webrtc', 'destination');
+            if (!isLocalAddress(out.whip_url)) {
+              getOrCreateExternal(out.whip_url, 'webrtc', 'destination');
+            }
           }
 
           if (outType === 'udp' && out.dest_addr) {
@@ -806,7 +845,9 @@
           }
 
           if (outType === 'rtsp' && out.dest_url) {
-            getOrCreateExternal(out.dest_url, 'rtsp', 'destination');
+            if (!isLocalAddress(out.dest_url)) {
+              getOrCreateExternal(out.dest_url, 'rtsp', 'destination');
+            }
           }
         }
       }
@@ -1066,6 +1107,9 @@
           var thisOutputPortIdx = outType ? outputPortCounter : null;
           if (outType) outputPortCounter++;
 
+          var outId = out.output_id || out.output_name || ('out_' + o);
+          var linked = false;
+
           if (outType === 'srt' && out.mode === 'caller' && out.remote_addr) {
             targetIdx = findManagedNodeByAddr(out.remote_addr);
             if (targetIdx < 0) {
@@ -1077,6 +1121,23 @@
               var tgtInPort = (targetIdx >= 0 && !topoNodes[targetIdx].isExternal) ?
                 findPortIndex(targetIdx, 'input', function(p) { return p.protocol === 'srt'; }) : null;
               addLink(i, targetIdx, hasRedundancy ? 'SRT 2022-7' : 'SRT', 'srt', hasRedundancy, thisOutputPortIdx, tgtInPort);
+              linked = true;
+            }
+          }
+          // SRT listener outputs: connected when another managed node's SRT caller input matches
+          if (outType === 'srt' && out.mode === 'listener' && out.local_addr) {
+            var listenerPort = out.local_addr.split(':').pop();
+            for (var mi = 0; mi < topoNodes.length; mi++) {
+              if (mi === i || topoNodes[mi].isExternal) continue;
+              var mflows = topoNodes[mi].flows || [];
+              for (var mf = 0; mf < mflows.length; mf++) {
+                var minp = mflows[mf].input || {};
+                if (minp.input_type === 'srt' && minp.remote_addr && minp.remote_addr.split(':').pop() === listenerPort) {
+                  linked = true;
+                  break;
+                }
+              }
+              if (linked) break;
             }
           }
 
@@ -1090,6 +1151,7 @@
               var tgtInPort = (targetIdx >= 0 && !topoNodes[targetIdx].isExternal) ?
                 findPortIndex(targetIdx, 'input', function(p) { return p.protocol === 'rtp'; }) : null;
               addLink(i, targetIdx, 'RTP', 'rtp', false, thisOutputPortIdx, tgtInPort);
+              linked = true;
             }
           }
 
@@ -1097,34 +1159,37 @@
             var host = out.dest_url.replace('rtmp://', '').replace('rtmps://', '').split('/')[0];
             var extKey = 'rtmp:' + host;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'RTMP', 'rtmp', false, thisOutputPortIdx, null);
+            if (targetIdx >= 0) { addLink(i, targetIdx, 'RTMP', 'rtmp', false, thisOutputPortIdx, null); linked = true; }
           }
 
           if (outType === 'hls' && out.ingest_url) {
             var extKey = 'hls:' + out.ingest_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'HLS', 'hls', false, thisOutputPortIdx, null);
+            if (targetIdx >= 0) { addLink(i, targetIdx, 'HLS', 'hls', false, thisOutputPortIdx, null); linked = true; }
           }
 
           if (outType === 'webrtc' && out.whip_url) {
             var extKey = 'webrtc:' + out.whip_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'WebRTC', 'webrtc', false, thisOutputPortIdx, null);
+            if (targetIdx >= 0) { addLink(i, targetIdx, 'WebRTC', 'webrtc', false, thisOutputPortIdx, null); linked = true; }
           }
 
           if (outType === 'udp' && out.dest_addr) {
             if (!isLocalOrManaged(out.dest_addr, managedIPs)) {
               var extKey = 'udp:' + out.dest_addr;
               targetIdx = findNodeIndex(externalMap[extKey]);
-              if (targetIdx >= 0) addLink(i, targetIdx, 'UDP', 'udp', false, thisOutputPortIdx, null);
+              if (targetIdx >= 0) { addLink(i, targetIdx, 'UDP', 'udp', false, thisOutputPortIdx, null); linked = true; }
             }
           }
 
           if (outType === 'rtsp' && out.dest_url) {
             var extKey = 'rtsp:' + out.dest_url;
             targetIdx = findNodeIndex(externalMap[extKey]);
-            if (targetIdx >= 0) addLink(i, targetIdx, 'RTSP', 'rtsp', false, thisOutputPortIdx, null);
+            if (targetIdx >= 0) { addLink(i, targetIdx, 'RTSP', 'rtsp', false, thisOutputPortIdx, null); linked = true; }
           }
+
+          // Mark this output as connected for filtering in getEndpoints()
+          if (linked) node._connectedOutputIds[outId] = true;
         }
       }
     }
@@ -1136,6 +1201,22 @@
     // Check if it's a loopback or local address pointing to another managed node
     var ip = addr.split(':')[0];
     return ip === '127.0.0.1' || ip === 'localhost';
+  }
+
+  // Check if a URL or address points to localhost/loopback
+  function isLocalAddress(addrOrUrl) {
+    if (!addrOrUrl) return false;
+    var host = addrOrUrl;
+    // Strip protocol scheme if present (rtmp://, http://, rtsp://, etc.)
+    var schemeEnd = host.indexOf('://');
+    if (schemeEnd > -1) host = host.substring(schemeEnd + 3);
+    // Strip path
+    host = host.split('/')[0];
+    // Strip port
+    host = host.split(':')[0];
+    // Strip credentials (user:pass@host)
+    if (host.indexOf('@') > -1) host = host.split('@').pop();
+    return host === '127.0.0.1' || host === 'localhost' || host === '0.0.0.0';
   }
 
   function findNodeIndex(node) {
@@ -1906,8 +1987,12 @@
       }
 
       var outs = flow.outputs || [];
+      var connectedIds = node._connectedOutputIds || {};
       for (var o = 0; o < outs.length; o++) {
         var out = outs[o];
+        var outId = out.output_id || out.output_name || ('out_' + o);
+        // Only show outputs that are part of a cross-node signal path
+        if (!connectedIds[outId]) continue;
         var type = (out.output_type || '').toLowerCase();
         var addr = out.dest_addr || out.dest_url || out.ingest_url || out.whip_url ||
           ((out.mode === 'caller' || out.mode === 'rendezvous') ? (out.remote_addr || '') : (out.local_addr || ''));
@@ -2182,6 +2267,7 @@
   document.getElementById('btnGraphView').addEventListener('click', function () {
     if (currentView === 'graph') return;
     currentView = 'graph';
+    localStorage.setItem('bilbycast_topology_view', 'graph');
     this.classList.add('active');
     document.getElementById('btnFlowView').classList.remove('active');
     hideFlowTable();
@@ -2201,16 +2287,29 @@
   document.getElementById('btnFlowView').addEventListener('click', function () {
     if (currentView === 'flow') return;
     currentView = 'flow';
+    localStorage.setItem('bilbycast_topology_view', 'flow');
     this.classList.add('active');
     document.getElementById('btnGraphView').classList.remove('active');
     showFlowTable();
+  });
+
+  // ── Double-click node name to open detail page ──
+  document.getElementById('flowTableContent').addEventListener('dblclick', function(e) {
+    var el = e.target.closest('[data-node-id]');
+    if (el) {
+      var nodeId = el.getAttribute('data-node-id');
+      if (nodeId) window.location.href = '/nodes/' + encodeURIComponent(nodeId);
+    }
   });
 
   document.getElementById('btnResetLayout').addEventListener('click', function () {
     if (currentView === 'flow') {
       // Reset flow table order
       flowTableRowOrder = [];
-      clearSavedPositions('flow');
+      fetch('/api/v1/preferences/flow_table_order', {
+        method: 'DELETE',
+        headers: authHeaders()
+      }).catch(function() {});
       buildFlowTable();
       return;
     }
@@ -2285,12 +2384,94 @@
     var dotColor = node.status === 'online' ? (node.isRelay ? '#c084fc' : '#4ade80') : '#64748b';
     var h = '<div class="ft-node">';
     h += '<span class="ft-node-dot" style="background:' + dotColor + '"></span>';
-    h += '<span class="ft-node-name">' + ftEsc(node.name) + '</span>';
+    h += '<span class="ft-node-name" data-node-id="' + ftEsc(node.id) + '">' + ftEsc(node.name) + '</span>';
     if (node.isRelay) {
       h += '<span class="ft-node-type" style="background:rgba(192,132,252,0.15);color:#c084fc">relay</span>';
     }
     h += '</div>';
     return h;
+  }
+
+  function ftPathArrow() {
+    return '<span class="ft-path-arrow">\u2192</span>';
+  }
+
+  // Build a lookup map: tunnelUUID → { ingressNode, egressNode, relayNode, protocol }
+  // by scanning all topoNodes tunnel data.
+  var tunnelPathMap = {};
+  function buildTunnelPathMap() {
+    tunnelPathMap = {};
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal) continue;
+      var tunnels = node.tunnels || [];
+      for (var t = 0; t < tunnels.length; t++) {
+        var tun = tunnels[t];
+        var tid = tun.tunnel_id || tun.id;
+        if (!tid) continue;
+        if (!tunnelPathMap[tid]) {
+          tunnelPathMap[tid] = { ingressNode: null, egressNode: null, relayNode: null, protocol: (tun.protocol || 'tcp').toUpperCase() };
+        }
+        var entry = tunnelPathMap[tid];
+        if (node.isRelay) {
+          entry.relayNode = node;
+          // Relay tunnels know ingress/egress edge IDs
+          if (tun.ingress_edge_id) {
+            var inIdx = findNodeById(tun.ingress_edge_id);
+            if (inIdx >= 0) entry.ingressNode = topoNodes[inIdx];
+          }
+          if (tun.egress_edge_id) {
+            var outIdx = findNodeById(tun.egress_edge_id);
+            if (outIdx >= 0) entry.egressNode = topoNodes[outIdx];
+          }
+        } else {
+          // Edge node tunnel
+          var dir = (tun.direction || '').toLowerCase();
+          if (dir === 'egress') {
+            entry.ingressNode = entry.ingressNode || node; // this edge sends data out
+          } else if (dir === 'ingress') {
+            entry.egressNode = entry.egressNode || node; // this edge receives data in
+          }
+          if ((tun.mode || '').toLowerCase() === 'relay' && !entry.relayNode) {
+            // Mark that a relay is involved, even if we haven't seen the relay node yet
+            entry.hasRelay = true;
+          }
+        }
+      }
+    }
+    // Second pass: for relay-mode edge tunnels where relay node is known but ingress/egress are from edges
+    // Try to find the relay node if not yet assigned
+    for (var tid in tunnelPathMap) {
+      var entry = tunnelPathMap[tid];
+      if (entry.hasRelay && !entry.relayNode) {
+        // Look for a relay node that has this tunnel
+        for (var i = 0; i < topoNodes.length; i++) {
+          if (!topoNodes[i].isRelay) continue;
+          var rt = topoNodes[i].tunnels || [];
+          for (var j = 0; j < rt.length; j++) {
+            if ((rt[j].tunnel_id || rt[j].id) === tid) {
+              entry.relayNode = topoNodes[i];
+              break;
+            }
+          }
+          if (entry.relayNode) break;
+        }
+      }
+    }
+  }
+
+  // Helper: find node index by id (non-external, non-relay for edge, any for relay)
+  function findNodeById(nodeId) {
+    for (var k = 0; k < topoNodes.length; k++) {
+      if (topoNodes[k].isExternal) continue;
+      if (topoNodes[k].id === nodeId) return k;
+    }
+    // Fallback: match by name
+    for (var k = 0; k < topoNodes.length; k++) {
+      if (topoNodes[k].isExternal) continue;
+      if (topoNodes[k].name && topoNodes[k].name.toLowerCase() === nodeId.toLowerCase()) return k;
+    }
+    return -1;
   }
 
   function ftEndpoint(type, addr, mode) {
@@ -2303,42 +2484,243 @@
     return h;
   }
 
-  function buildFlowTable() {
-    var container = document.getElementById('flowTableContent');
-    if (!container) return;
+  // ── Signal path aggregation ──
+  // Correlates flows and tunnels into complete end-to-end signal paths.
+  function buildSignalPaths() {
+    buildTunnelPathMap();
 
-    // Collect flow rows
-    var flowRows = [];
-    var tunnelRows = [];
+    var claimedFlows = {};   // "nodeId:flowId" → true
+    var claimedTunnels = {}; // tunnelId → true
+    var crossNode = [];
+    var local = [];
+    var orphanTunnels = [];
 
+    // Pass 1: Cross-node paths (source-side flows with egress tunnels)
     for (var i = 0; i < topoNodes.length; i++) {
       var node = topoNodes[i];
-      if (node.isExternal) continue;
+      if (node.isExternal || node.isRelay) continue;
+      var flows = node.flows || [];
+      var tunnels = node.tunnels || [];
 
-      // Flows (edge nodes)
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        var flowKey = node.id + ':' + (flow.flow_id || f);
+        if (claimedFlows[flowKey]) continue;
+
+        var inp = flow.input || {};
+        var outs = flow.outputs || [];
+        var outAddrs = [];
+        for (var o = 0; o < outs.length; o++) {
+          var a = outs[o].dest_addr || '';
+          if (a) outAddrs.push(normalizeAddr(a));
+        }
+
+        // Find egress tunnels matched to this flow
+        var matchedTunnels = [];
+        for (var t = 0; t < tunnels.length; t++) {
+          var tun = tunnels[t];
+          var dir = (tun.direction || '').toLowerCase();
+          if (dir !== 'egress') continue;
+          var tid = tun.tunnel_id || tun.id;
+          if (!tid) continue;
+          if (isTunnelMatchedToFlow(tun, flow.flow_id, outAddrs)) {
+            matchedTunnels.push(tun);
+          }
+        }
+
+        if (matchedTunnels.length === 0) continue;
+
+        // This is a cross-node source flow
+        claimedFlows[flowKey] = true;
+
+        var path = {
+          rowId: 'path-' + node.id + '-' + (flow.flow_id || f),
+          category: 'cross-node',
+          sourceNode: node,
+          sourceFlow: flow,
+          relayNode: null,
+          tunnelProtocol: null,
+          destinations: []
+        };
+
+        for (var mt = 0; mt < matchedTunnels.length; mt++) {
+          var mTun = matchedTunnels[mt];
+          var mTid = mTun.tunnel_id || mTun.id;
+          claimedTunnels[mTid] = true;
+          var mapEntry = tunnelPathMap[mTid];
+          if (!mapEntry) continue;
+
+          if (mapEntry.relayNode) path.relayNode = mapEntry.relayNode;
+          path.tunnelProtocol = mapEntry.protocol || (mTun.protocol || 'tcp').toUpperCase();
+
+          // Find destination edge node
+          var destNode = mapEntry.egressNode;
+          if (!destNode || destNode.id === node.id) {
+            // Fallback: if egressNode is this node, try ingressNode
+            destNode = mapEntry.ingressNode;
+            if (!destNode || destNode.id === node.id) continue;
+          }
+
+          // Also claim the ingress tunnel on the dest side
+          var destTunnels = destNode.tunnels || [];
+          for (var dt = 0; dt < destTunnels.length; dt++) {
+            var dtid = destTunnels[dt].tunnel_id || destTunnels[dt].id;
+            if (dtid === mTid) claimedTunnels[mTid + ':' + destNode.id] = true;
+          }
+
+          // Find the dest flow that receives from this tunnel
+          var destFlow = null;
+          var destFlows = destNode.flows || [];
+          for (var df = 0; df < destFlows.length; df++) {
+            var dFlow = destFlows[df];
+            var dInp = dFlow.input || {};
+            var dInAddr = normalizeAddr(dInp.local_addr || dInp.bind_addr || dInp.listen_addr || '');
+            if (!dInAddr) continue;
+            for (var dt2 = 0; dt2 < destTunnels.length; dt2++) {
+              var dTun = destTunnels[dt2];
+              var dDir = (dTun.direction || '').toLowerCase();
+              if (dDir !== 'ingress') continue;
+              var dTid = dTun.tunnel_id || dTun.id;
+              if (dTid !== mTid) continue;
+              if (isTunnelMatchedToFlow(dTun, dFlow.flow_id, [dInAddr])) {
+                destFlow = dFlow;
+                claimedFlows[destNode.id + ':' + (dFlow.flow_id || df)] = true;
+                break;
+              }
+            }
+            if (destFlow) break;
+          }
+
+          // Check if this dest node is already in destinations
+          var existingDest = null;
+          for (var ed = 0; ed < path.destinations.length; ed++) {
+            if (path.destinations[ed].destNode.id === destNode.id) {
+              existingDest = path.destinations[ed];
+              break;
+            }
+          }
+          if (!existingDest) {
+            path.destinations.push({
+              destNode: destNode,
+              destFlow: destFlow,
+              outputs: destFlow ? (destFlow.outputs || []) : []
+            });
+          }
+        }
+
+        crossNode.push(path);
+      }
+    }
+
+    // Pass 2: Destination-only flows (source edge offline, but dest receives via ingress tunnel)
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal || node.isRelay) continue;
+      var flows = node.flows || [];
+      var tunnels = node.tunnels || [];
+
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        var flowKey = node.id + ':' + (flow.flow_id || f);
+        if (claimedFlows[flowKey]) continue;
+
+        var inp = flow.input || {};
+        var inAddr = normalizeAddr(inp.local_addr || inp.bind_addr || inp.listen_addr || '');
+        if (!inAddr) continue;
+
+        var matchedIngressTunnel = null;
+        for (var t = 0; t < tunnels.length; t++) {
+          var tun = tunnels[t];
+          var dir = (tun.direction || '').toLowerCase();
+          if (dir !== 'ingress') continue;
+          var tid = tun.tunnel_id || tun.id;
+          if (!tid) continue;
+          if (isTunnelMatchedToFlow(tun, flow.flow_id, [inAddr])) {
+            matchedIngressTunnel = tun;
+            break;
+          }
+        }
+
+        if (!matchedIngressTunnel) continue;
+
+        var mTid = matchedIngressTunnel.tunnel_id || matchedIngressTunnel.id;
+        claimedFlows[flowKey] = true;
+        claimedTunnels[mTid] = true;
+
+        var mapEntry = tunnelPathMap[mTid];
+        var sourceNode = mapEntry ? mapEntry.ingressNode : null;
+
+        var path = {
+          rowId: 'path-' + (sourceNode ? sourceNode.id : 'unknown') + '-' + (flow.flow_id || f),
+          category: 'cross-node',
+          sourceNode: sourceNode || { id: 'unknown', name: resolveEdgeName(mapEntry && mapEntry.ingressNode ? mapEntry.ingressNode.id : (matchedIngressTunnel.ingress_edge_id || '?')), status: 'offline', isExternal: false, isRelay: false },
+          sourceFlow: null,
+          relayNode: mapEntry ? mapEntry.relayNode : null,
+          tunnelProtocol: mapEntry ? mapEntry.protocol : (matchedIngressTunnel.protocol || 'tcp').toUpperCase(),
+          destinations: [{
+            destNode: node,
+            destFlow: flow,
+            outputs: flow.outputs || []
+          }]
+        };
+
+        crossNode.push(path);
+      }
+    }
+
+    // Pass 3: Local flows (no tunnel match)
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal || node.isRelay) continue;
       var flows = node.flows || [];
       for (var f = 0; f < flows.length; f++) {
         var flow = flows[f];
-        flowRows.push({
-          rowId: 'flow-' + node.id + '-' + (flow.flow_id || f),
+        var flowKey = node.id + ':' + (flow.flow_id || f);
+        if (claimedFlows[flowKey]) continue;
+        local.push({
+          rowId: 'local-' + node.id + '-' + (flow.flow_id || f),
+          category: 'local',
           node: node,
           flow: flow
         });
       }
+    }
 
-      // Tunnels
+    // Pass 4: Orphan tunnels (not claimed by any flow path, deduplicated by tunnel_id)
+    var seenTunnelIds = {};
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal) continue;
       var tunnels = node.tunnels || [];
       for (var t = 0; t < tunnels.length; t++) {
         var tun = tunnels[t];
-        tunnelRows.push({
-          rowId: 'tun-' + node.id + '-' + (tun.tunnel_id || tun.id || t),
+        var tid = tun.tunnel_id || tun.id;
+        if (!tid) continue;
+        if (claimedTunnels[tid]) continue;
+        if (seenTunnelIds[tid]) continue;
+        seenTunnelIds[tid] = true;
+        // Prefer relay perspective for dedup
+        orphanTunnels.push({
+          rowId: 'tun-' + tid,
           node: node,
           tunnel: tun
         });
       }
     }
 
-    // Sort by saved order, then by node name + flow name
+    return { crossNode: crossNode, local: local, orphanTunnels: orphanTunnels };
+  }
+
+  function buildFlowTable() {
+    var container = document.getElementById('flowTableContent');
+    if (!container) return;
+
+    var paths = buildSignalPaths();
+    var crossNode = paths.crossNode;
+    var localFlows = paths.local;
+    var orphanTunnels = paths.orphanTunnels;
+
+    // Sort by saved order, then by name
     var orderMap = {};
     for (var oi = 0; oi < flowTableRowOrder.length; oi++) {
       orderMap[flowTableRowOrder[oi]] = oi;
@@ -2347,45 +2729,70 @@
       var oa = orderMap[a.rowId] != null ? orderMap[a.rowId] : 9999;
       var ob = orderMap[b.rowId] != null ? orderMap[b.rowId] : 9999;
       if (oa !== ob) return oa - ob;
-      var na = (a.node.name || '').toLowerCase();
-      var nb = (b.node.name || '').toLowerCase();
+      var na = ((a.sourceNode || a.node || {}).name || '').toLowerCase();
+      var nb = ((b.sourceNode || b.node || {}).name || '').toLowerCase();
       if (na !== nb) return na < nb ? -1 : 1;
-      var fa = ((a.flow || {}).flow_name || (a.tunnel || {}).name || '').toLowerCase();
-      var fb = ((b.flow || {}).flow_name || (b.tunnel || {}).name || '').toLowerCase();
+      var fa = ((a.sourceFlow || a.flow || {}).flow_name || '').toLowerCase();
+      var fb = ((b.sourceFlow || b.flow || {}).flow_name || '').toLowerCase();
       return fa < fb ? -1 : (fa > fb ? 1 : 0);
     }
-    flowRows.sort(sortFn);
-    tunnelRows.sort(sortFn);
+    crossNode.sort(sortFn);
+    localFlows.sort(sortFn);
+    orphanTunnels.sort(function(a, b) {
+      var oa = orderMap[a.rowId] != null ? orderMap[a.rowId] : 9999;
+      var ob = orderMap[b.rowId] != null ? orderMap[b.rowId] : 9999;
+      if (oa !== ob) return oa - ob;
+      var na = (a.node.name || '').toLowerCase();
+      var nb = (b.node.name || '').toLowerCase();
+      return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
 
     var html = '';
 
-    // ── Signal Flows section ──
-    html += '<div class="flow-table-section">';
-    html += '<div class="flow-table-section-title">Signal Flows <span class="count-badge">' + flowRows.length + '</span></div>';
-    if (flowRows.length > 0) {
+    // ── Signal Paths (cross-node) ──
+    if (crossNode.length > 0) {
+      html += '<div class="flow-table-section">';
+      html += '<div class="flow-table-section-title">Signal Paths <span class="count-badge">' + crossNode.length + '</span></div>';
       html += '<table class="flow-table"><thead><tr>';
-      html += '<th></th><th>Node</th><th>Flow</th><th>State</th><th>Input</th>';
-      html += '<th><span class="ft-arrow">\u2192</span> Outputs</th><th>Bitrate</th><th>Health</th>';
+      html += '<th></th><th>Flow</th><th>State</th>';
+      html += '<th>Complete Signal Path</th>';
+      html += '<th>Bitrate</th><th>Health</th>';
       html += '</tr></thead><tbody>';
-      for (var fi = 0; fi < flowRows.length; fi++) {
-        html += buildFlowRow(flowRows[fi]);
+      for (var ci = 0; ci < crossNode.length; ci++) {
+        html += buildSignalPathRow(crossNode[ci]);
       }
       html += '</tbody></table>';
-    } else {
+      html += '</div>';
+    }
+
+    // ── Local Flows ──
+    html += '<div class="flow-table-section">';
+    html += '<div class="flow-table-section-title">Local Flows <span class="count-badge">' + localFlows.length + '</span></div>';
+    if (localFlows.length > 0) {
+      html += '<table class="flow-table"><thead><tr>';
+      html += '<th></th><th>Flow</th><th>State</th>';
+      html += '<th>Signal Path</th>';
+      html += '<th>Bitrate</th><th>Health</th>';
+      html += '</tr></thead><tbody>';
+      for (var li = 0; li < localFlows.length; li++) {
+        html += buildLocalFlowRow(localFlows[li]);
+      }
+      html += '</tbody></table>';
+    } else if (crossNode.length === 0) {
       html += '<div class="ft-empty">No active flows</div>';
     }
     html += '</div>';
 
-    // ── IP Tunnels section ──
-    if (tunnelRows.length > 0) {
+    // ── Unmatched Tunnels ──
+    if (orphanTunnels.length > 0) {
       html += '<div class="flow-table-section">';
-      html += '<div class="flow-table-section-title">IP Tunnels <span class="count-badge">' + tunnelRows.length + '</span></div>';
+      html += '<div class="flow-table-section-title">Unmatched Tunnels <span class="count-badge">' + orphanTunnels.length + '</span></div>';
       html += '<table class="flow-table"><thead><tr>';
-      html += '<th></th><th>Node</th><th>Tunnel</th><th>Protocol</th>';
-      html += '<th>Direction / Endpoints</th><th>State</th><th>Throughput</th>';
+      html += '<th></th><th>Tunnel</th><th>Protocol</th><th>State</th>';
+      html += '<th>Path</th><th>Throughput</th>';
       html += '</tr></thead><tbody>';
-      for (var ti = 0; ti < tunnelRows.length; ti++) {
-        html += buildTunnelRow(tunnelRows[ti]);
+      for (var ti = 0; ti < orphanTunnels.length; ti++) {
+        html += buildTunnelRow(orphanTunnels[ti]);
       }
       html += '</tbody></table>';
       html += '</div>';
@@ -2395,48 +2802,165 @@
     attachDragHandlers();
   }
 
-  function buildFlowRow(row) {
+  // Normalize address for comparison: strip wildcard/loopback host to compare by port
+  function normalizeAddr(addr) {
+    if (!addr) return '';
+    return addr.replace(/^(0\.0\.0\.0|127\.0\.0\.1):/, ':');
+  }
+
+  // Check if a tunnel is associated with a specific flow via address matching or associated_flow_ids
+  function isTunnelMatchedToFlow(tun, flowId, addrs) {
+    var tunAddr = normalizeAddr(tun.local_addr || '');
+    // Match by address
+    if (tunAddr) {
+      for (var a = 0; a < addrs.length; a++) {
+        if (addrs[a] === tunAddr) return true;
+      }
+    }
+    // Match by associated_flow_ids (if available from manager tunnel data)
+    if (tun.associated_flow_ids && flowId) {
+      for (var f = 0; f < tun.associated_flow_ids.length; f++) {
+        if (tun.associated_flow_ids[f] === flowId) return true;
+      }
+    }
+    return false;
+  }
+
+  // Helper: get input info from a flow
+  function ftFlowInput(flow) {
+    var inp = flow ? (flow.input || {}) : {};
+    var addr = '';
+    if (inp.input_type) {
+      if (inp.mode === 'caller' || inp.mode === 'rendezvous') {
+        addr = inp.remote_addr || '';
+      } else {
+        addr = inp.local_addr || inp.bind_addr || inp.listen_addr || '';
+      }
+    }
+    return { type: inp.input_type || '', addr: addr, mode: inp.mode || '', bitrate: inp.bitrate_bps || 0 };
+  }
+
+  // Helper: render a protocol+address IO badge for the signal chain
+  function ftPathIO(type, addr, mode, cssClass) {
+    var color = protocolColor(type || '');
+    var h = '<span class="ft-path-io ' + (cssClass || '') + '">';
+    h += ftProtoBadge(type, color);
+    if (addr) h += '<span class="ft-endpoint-addr">' + ftEsc(addr) + '</span>';
+    if (mode) h += ' <span class="ft-endpoint-mode">(' + ftEsc(mode) + ')</span>';
+    h += '</span>';
+    return h;
+  }
+
+  // Helper: render output list as IO badges
+  function ftOutputBadges(outputs) {
+    if (!outputs || outputs.length === 0) return '<span class="ft-muted">No outputs</span>';
+    var h = '';
+    for (var o = 0; o < outputs.length; o++) {
+      var out = outputs[o];
+      var outAddr = out.dest_addr || out.dest_url || out.ingest_url || out.whip_url || out.local_addr || '';
+      h += ftPathIO(out.output_type, outAddr, out.mode, 'output');
+    }
+    return h;
+  }
+
+  // Build a cross-node signal path row
+  function buildSignalPathRow(path) {
+    var srcFlow = path.sourceFlow;
+    var inp = ftFlowInput(srcFlow);
+    var flowName = srcFlow ? (srcFlow.flow_name || srcFlow.flow_id || '-') : '-';
+    var flowState = srcFlow ? srcFlow.state : 'unknown';
+    var flowHealth = srcFlow ? srcFlow.health : '';
+
+    var h = '<tr data-row-id="' + ftEsc(path.rowId) + '" draggable="false">';
+    // Drag handle
+    h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
+    // Flow name
+    h += '<td style="font-weight:600;">' + ftEsc(flowName) + '</td>';
+    // State
+    h += '<td>' + ftStateBadge(flowState) + '</td>';
+
+    // Complete Signal Path
+    h += '<td><div class="ft-path-chain">';
+
+    // Input badge
+    if (inp.type) {
+      h += ftPathIO(inp.type, inp.addr, inp.mode, 'input');
+      h += ftPathArrow();
+    }
+
+    // Source node
+    h += ftNodeCell(path.sourceNode);
+
+    // Tunnel badge
+    if (path.tunnelProtocol) {
+      h += '<span class="ft-tunnel-badge">' + ftEsc(path.tunnelProtocol) + ' tunnel</span>';
+    }
+
+    // Relay node (if any)
+    if (path.relayNode) {
+      h += ftPathArrow();
+      h += ftNodeCell(path.relayNode);
+    }
+
+    // Destinations
+    if (path.destinations.length === 1) {
+      var dest = path.destinations[0];
+      h += ftPathArrow();
+      h += ftNodeCell(dest.destNode);
+      h += ftPathArrow();
+      h += ftOutputBadges(dest.outputs);
+    } else if (path.destinations.length > 1) {
+      h += ftPathArrow();
+      h += '<div class="ft-path-fanout">';
+      for (var d = 0; d < path.destinations.length; d++) {
+        var dest = path.destinations[d];
+        h += '<div class="ft-path-fanout-branch">';
+        h += ftNodeCell(dest.destNode);
+        h += ftPathArrow();
+        h += ftOutputBadges(dest.outputs);
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    h += '</div></td>';
+
+    // Bitrate
+    h += '<td><span class="ft-bitrate" id="ftbr-' + ftEsc(path.rowId) + '">' + ftFmtBitrate(inp.bitrate) + '</span></td>';
+    // Health
+    h += '<td id="fth-' + ftEsc(path.rowId) + '">' + ftHealthDot(flowHealth) + '</td>';
+    h += '</tr>';
+    return h;
+  }
+
+  // Build a local flow row (flow stays on single edge node)
+  function buildLocalFlowRow(row) {
     var node = row.node;
     var flow = row.flow;
-    var inp = flow.input || {};
+    var inp = ftFlowInput(flow);
     var outs = flow.outputs || [];
-    var inputBitrate = inp.bitrate_bps || 0;
 
     var h = '<tr data-row-id="' + ftEsc(row.rowId) + '" draggable="false">';
     // Drag handle
     h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
-    // Node
-    h += '<td>' + ftNodeCell(node) + '</td>';
     // Flow name
     h += '<td style="font-weight:600;">' + ftEsc(flow.flow_name || flow.flow_id || '-') + '</td>';
     // State
     h += '<td>' + ftStateBadge(flow.state) + '</td>';
-    // Input
-    var inputAddr = '';
-    if (inp.input_type) {
-      if (inp.mode === 'caller' || inp.mode === 'rendezvous') {
-        inputAddr = inp.remote_addr || '';
-      } else {
-        inputAddr = inp.local_addr || inp.bind_addr || inp.listen_addr || '';
-      }
+
+    // Signal Path: [Input] → [Node] → [Output(s)]
+    h += '<td><div class="ft-path-chain">';
+    if (inp.type) {
+      h += ftPathIO(inp.type, inp.addr, inp.mode, 'input');
+      h += ftPathArrow();
     }
-    h += '<td>' + (inp.input_type ? ftEndpoint(inp.input_type, inputAddr, inp.mode) : '<span class="ft-muted">-</span>') + '</td>';
-    // Outputs
-    h += '<td>';
-    if (outs.length > 0) {
-      h += '<div class="ft-outputs-list">';
-      for (var o = 0; o < outs.length; o++) {
-        var out = outs[o];
-        var outAddr = out.dest_addr || out.dest_url || out.ingest_url || out.whip_url || out.local_addr || '';
-        h += ftEndpoint(out.output_type, outAddr, out.mode);
-      }
-      h += '</div>';
-    } else {
-      h += '<span class="ft-muted">No outputs</span>';
-    }
-    h += '</td>';
+    h += ftNodeCell(node);
+    h += ftPathArrow();
+    h += ftOutputBadges(outs);
+    h += '</div></td>';
+
     // Bitrate
-    h += '<td><span class="ft-bitrate" id="ftbr-' + ftEsc(row.rowId) + '">' + ftFmtBitrate(inputBitrate) + '</span></td>';
+    h += '<td><span class="ft-bitrate" id="ftbr-' + ftEsc(row.rowId) + '">' + ftFmtBitrate(inp.bitrate) + '</span></td>';
     // Health
     h += '<td id="fth-' + ftEsc(row.rowId) + '">' + ftHealthDot(flow.health) + '</td>';
     h += '</tr>';
@@ -2450,45 +2974,68 @@
     var proto = (tun.protocol || 'tcp').toUpperCase();
     var color = protocolColor('tunnel');
     var stats = tun.stats || {};
+    var tid = tun.tunnel_id || tun.id;
 
     var h = '<tr data-row-id="' + ftEsc(row.rowId) + '" draggable="false">';
     // Drag handle
     h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
-    // Node
-    h += '<td>' + ftNodeCell(node) + '</td>';
     // Tunnel name
-    var tName = tun.name || tun.id || tun.tunnel_id || '-';
-    if (isRelayTunnel) {
-      var inName = resolveEdgeName(tun.ingress_edge_id);
-      var outName = resolveEdgeName(tun.egress_edge_id);
-      tName = inName + ' \u2194 ' + outName;
-    }
+    var tName = tun.name || tid || '-';
     h += '<td style="font-weight:600;">' + ftEsc(tName) + '</td>';
     // Protocol
     h += '<td>' + ftProtoBadge(proto, color) + '</td>';
-    // Direction / Endpoints
-    h += '<td>';
+    // State
+    h += '<td>' + ftStateBadge(tun.state || tun.status) + '</td>';
+    // Path
+    h += '<td><div class="ft-path">';
     if (isRelayTunnel) {
-      var inName2 = resolveEdgeName(tun.ingress_edge_id);
-      var outName2 = resolveEdgeName(tun.egress_edge_id);
-      h += '<span class="ft-endpoint-addr">' + ftEsc(inName2) + '</span>';
-      h += ' <span class="ft-arrow">\u2192</span> ';
-      h += '<span class="ft-endpoint-addr">' + ftEsc(outName2) + '</span>';
+      var mapEntry = tid ? tunnelPathMap[tid] : null;
+      var inNode = mapEntry && mapEntry.ingressNode ? mapEntry.ingressNode : null;
+      var outNode = mapEntry && mapEntry.egressNode ? mapEntry.egressNode : null;
+      if (inNode) {
+        h += ftNodeCell(inNode);
+      } else {
+        h += '<span class="ft-endpoint-addr">' + ftEsc(resolveEdgeName(tun.ingress_edge_id)) + '</span>';
+      }
+      h += ftPathArrow();
+      h += ftNodeCell(node);
+      h += ftPathArrow();
+      if (outNode) {
+        h += ftNodeCell(outNode);
+      } else {
+        h += '<span class="ft-endpoint-addr">' + ftEsc(resolveEdgeName(tun.egress_edge_id)) + '</span>';
+      }
     } else {
       var dir = (tun.direction || '').toLowerCase();
       var dirLabel = dir === 'ingress' ? 'INGRESS' : 'EGRESS';
       var dirColor = dir === 'ingress' ? '#22d3ee' : '#f472b6';
-      h += '<span class="ft-badge" style="background:' + dirColor + '1a;color:' + dirColor + '">' + dirLabel + '</span> ';
-      h += '<span class="ft-endpoint-addr">' + ftEsc(tun.local_addr || '-') + '</span>';
-      if (tun.mode) h += ' <span class="ft-endpoint-mode">(' + ftEsc(tun.mode) + ')</span>';
+      var dirBadge = '<span class="ft-badge" style="background:' + dirColor + '1a;color:' + dirColor + '">' + dirLabel + '</span>';
+      var mapEntry = tid ? tunnelPathMap[tid] : null;
+      var relayNode = mapEntry ? mapEntry.relayNode : null;
+      var peerNode = null;
+      if (mapEntry) {
+        if (dir === 'egress' && mapEntry.egressNode && mapEntry.egressNode.id !== node.id) {
+          peerNode = mapEntry.egressNode;
+        } else if (dir === 'ingress' && mapEntry.ingressNode && mapEntry.ingressNode.id !== node.id) {
+          peerNode = mapEntry.ingressNode;
+        }
+      }
+      if (dir === 'egress') {
+        h += ftNodeCell(node);
+        h += dirBadge;
+        if (relayNode) { h += ftPathArrow(); h += ftNodeCell(relayNode); }
+        if (peerNode) { h += ftPathArrow(); h += ftNodeCell(peerNode); }
+      } else {
+        if (peerNode) { h += ftNodeCell(peerNode); h += ftPathArrow(); }
+        if (relayNode) { h += ftNodeCell(relayNode); h += ftPathArrow(); }
+        h += dirBadge;
+        h += ftNodeCell(node);
+      }
     }
-    h += '</td>';
-    // State
-    h += '<td>' + ftStateBadge(tun.state || tun.status) + '</td>';
+    h += '</div></td>';
     // Throughput
     var throughput = stats.bitrate_bps || 0;
     if (!throughput && (stats.bytes_sent || stats.bytes_received || stats.bytes_ingress || stats.bytes_egress)) {
-      // No live bitrate available; show total bytes instead
       var totalBytes = (stats.bytes_sent || 0) + (stats.bytes_received || 0) + (stats.bytes_ingress || 0) + (stats.bytes_egress || 0);
       h += '<td><span class="ft-bitrate ft-muted" id="ftbr-' + ftEsc(row.rowId) + '">' + ftFmtBytes(totalBytes) + '</span></td>';
     } else {
@@ -2500,18 +3047,26 @@
 
   function updateFlowTableStats() {
     if (currentView !== 'flow') return;
-    // In-place update of bitrate and health cells
+    // In-place update of bitrate and health cells for all row ID patterns
     for (var i = 0; i < topoNodes.length; i++) {
       var node = topoNodes[i];
       if (node.isExternal) continue;
       var flows = node.flows || [];
       for (var f = 0; f < flows.length; f++) {
         var flow = flows[f];
-        var rid = 'flow-' + node.id + '-' + (flow.flow_id || f);
-        var brEl = document.getElementById('ftbr-' + rid);
-        if (brEl) brEl.innerHTML = ftFmtBitrate((flow.input || {}).bitrate_bps || 0);
-        var hEl = document.getElementById('fth-' + rid);
-        if (hEl) hEl.innerHTML = ftHealthDot(flow.health);
+        var fid = flow.flow_id || f;
+        var bitrate = (flow.input || {}).bitrate_bps || 0;
+        // Try all row ID patterns this flow might use
+        var ids = [
+          'path-' + node.id + '-' + fid,
+          'local-' + node.id + '-' + fid
+        ];
+        for (var r = 0; r < ids.length; r++) {
+          var brEl = document.getElementById('ftbr-' + ids[r]);
+          if (brEl) brEl.innerHTML = ftFmtBitrate(bitrate);
+          var hEl = document.getElementById('fth-' + ids[r]);
+          if (hEl) hEl.innerHTML = ftHealthDot(flow.health);
+        }
       }
     }
   }
@@ -2575,30 +3130,28 @@
       newOrder.push(allRows[i].getAttribute('data-row-id'));
     }
     flowTableRowOrder = newOrder;
-    // Persist via positions API (reuse existing endpoint, store order as y-coordinate)
-    var positions = {};
-    for (var i = 0; i < newOrder.length; i++) {
-      positions[newOrder[i]] = { x: 0, y: i };
-    }
-    fetch('/api/v1/topology/positions', {
+    // Persist via preferences API
+    fetch('/api/v1/preferences/flow_table_order', {
       method: 'PUT',
       headers: authHeaders(),
-      body: JSON.stringify({ view: 'flow', positions: positions })
+      body: JSON.stringify({ value: JSON.stringify(newOrder) })
     }).catch(function() {});
   }
 
   function loadFlowTableOrder(callback) {
-    fetchSavedPositions('flow', function(positions) {
-      if (!positions) { callback(); return; }
-      var entries = [];
-      var keys = Object.keys(positions);
-      for (var i = 0; i < keys.length; i++) {
-        entries.push({ id: keys[i], order: positions[keys[i]].y || 0 });
-      }
-      entries.sort(function(a, b) { return a.order - b.order; });
-      flowTableRowOrder = entries.map(function(e) { return e.id; });
-      callback();
-    });
+    fetch('/api/v1/preferences/flow_table_order', { headers: authHeaders() })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) {
+        if (data && data.value) {
+          try {
+            flowTableRowOrder = JSON.parse(data.value);
+          } catch(e) {
+            flowTableRowOrder = [];
+          }
+        }
+        callback();
+      })
+      .catch(function() { callback(); });
   }
 
   function showFlowTable() {
@@ -3053,6 +3606,13 @@
   }
 
   connectWebSocket();
+
+  // ── Restore saved view preference ──
+  if (currentView === 'flow') {
+    document.getElementById('btnFlowView').classList.add('active');
+    document.getElementById('btnGraphView').classList.remove('active');
+    showFlowTable();
+  }
 
   // ── Also fetch initial node list from REST API ──
   function fetchInitialNodes() {
