@@ -672,6 +672,18 @@
         <div class="form-group"><label>Forward Address</label><input type="text" id="tunEgressAddr" placeholder="e.g. 127.0.0.1:5004"/><div class="hint">Where egress node forwards tunnel traffic</div></div>
       </div>
 
+      <div id="tunDirectPeerRow" style="display:none;">
+        <hr class="form-divider"/>
+        <div class="form-section-title">Direct Connection</div>
+        <div class="form-row full">
+          <div class="form-group">
+            <label>Egress Peer Address</label>
+            <input type="text" id="tunEgressPeerAddr" placeholder="e.g. 203.0.113.50:10100"/>
+            <div class="hint">Reachable IP:port of the egress node where its QUIC listener will accept connections</div>
+          </div>
+        </div>
+      </div>
+
       <div id="tunRelayRow">
         <hr class="form-divider"/>
         <div class="form-section-title">Relay Server</div>
@@ -2564,6 +2576,7 @@ function openTunnelModal() {
   document.getElementById('tunEgressNode').disabled = false;
   document.getElementById('tunIngressPort').value = '';
   document.getElementById('tunEgressAddr').value = '';
+  document.getElementById('tunEgressPeerAddr').value = '';
   document.getElementById('tunRelayAddr').value = '';
   document.getElementById('tunRelayNodeId').value = '';
   document.getElementById('tunRelaySelect').value = '';
@@ -2583,6 +2596,7 @@ function closeTunnelModal() {
 function toggleTunnelMode() {
   var mode = val('tunMode');
   document.getElementById('tunRelayRow').style.display = (mode === 'relay') ? '' : 'none';
+  document.getElementById('tunDirectPeerRow').style.display = (mode === 'direct') ? '' : 'none';
 }
 
 function loadRelayServers() {
@@ -2682,6 +2696,7 @@ function editTunnel(tunnelId) {
   document.getElementById('tunMode').disabled = true;
   document.getElementById('tunIngressPort').value = t.ingress_listen_port || '';
   document.getElementById('tunEgressAddr').value = t.egress_forward_addr || '';
+  document.getElementById('tunEgressPeerAddr').value = t.egress_peer_addr || '';
   document.getElementById('tunRelayAddr').value = t.relay_addr || '';
   document.getElementById('tunFlowIds').value = (t.associated_flow_ids || []).join(', ');
 
@@ -2734,6 +2749,7 @@ function submitTunnel() {
       status: val('tunStatus') || undefined,
       ingress_listen_port: parseInt(val('tunIngressPort')) || undefined,
       egress_forward_addr: val('tunEgressAddr') || undefined,
+      egress_peer_addr: val('tunEgressPeerAddr') || undefined,
       relay_addr: val('tunRelayAddr') || undefined
     };
     var flowIds = val('tunFlowIds');
@@ -2772,6 +2788,8 @@ function submitTunnel() {
     var relayNodeId = val('tunRelayNodeId');
     if (mode === 'relay' && !relayAddr) { showToast('Relay server address is required for relay mode', true); return; }
     if (mode === 'relay' && !relayNodeId) { showToast('Select a managed relay server (manual address not supported for auto-key management)', true); return; }
+    var egressPeerAddr = val('tunEgressPeerAddr');
+    if (mode === 'direct' && !egressPeerAddr) { showToast('Egress peer address is required for direct mode (reachable IP:port of egress node)', true); return; }
 
     var body = {
       name: name,
@@ -2784,6 +2802,7 @@ function submitTunnel() {
     };
     if (relayAddr) body.relay_addr = relayAddr;
     if (relayNodeId) body.relay_node_id = relayNodeId;
+    if (egressPeerAddr) body.egress_peer_addr = egressPeerAddr;
     var flowIds = val('tunFlowIds');
     if (flowIds) {
       body.associated_flow_ids = flowIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);

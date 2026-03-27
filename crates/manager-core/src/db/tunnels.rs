@@ -20,7 +20,7 @@ pub async fn create_tunnel(pool: &SqlitePool, req: &CreateTunnelRequest, tunnel_
     let flow_ids_json = req.associated_flow_ids.as_ref().map(|ids| serde_json::to_string(ids).unwrap_or_default());
 
     sqlx::query(
-        "INSERT INTO tunnels (id, name, protocol, mode, ingress_node_id, ingress_listen_port, egress_node_id, egress_forward_addr, relay_addr, relay_node_id, tunnel_key_enc, associated_flow_ids, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)"
+        "INSERT INTO tunnels (id, name, protocol, mode, ingress_node_id, ingress_listen_port, egress_node_id, egress_forward_addr, egress_peer_addr, relay_addr, relay_node_id, tunnel_key_enc, associated_flow_ids, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)"
     )
     .bind(&id)
     .bind(&req.name)
@@ -30,6 +30,7 @@ pub async fn create_tunnel(pool: &SqlitePool, req: &CreateTunnelRequest, tunnel_
     .bind(port)
     .bind(&req.egress_node_id)
     .bind(&req.egress_forward_addr)
+    .bind(&req.egress_peer_addr)
     .bind(&req.relay_addr)
     .bind(&req.relay_node_id)
     .bind(tunnel_key_enc)
@@ -80,18 +81,20 @@ pub async fn update_tunnel(pool: &SqlitePool, id: &str, req: &UpdateTunnelReques
     let relay_addr = req.relay_addr.as_deref().or(existing.relay_addr.as_deref());
     let port = req.ingress_listen_port.unwrap_or(existing.ingress_listen_port) as i64;
     let forward_addr = req.egress_forward_addr.as_deref().unwrap_or(&existing.egress_forward_addr);
+    let egress_peer_addr = req.egress_peer_addr.as_deref().or(existing.egress_peer_addr.as_deref());
     let flow_ids_json = req.associated_flow_ids.as_ref()
         .map(|ids| serde_json::to_string(ids).unwrap_or_default())
         .or_else(|| existing.associated_flow_ids.as_ref().map(|ids| serde_json::to_string(ids).unwrap_or_default()));
 
     sqlx::query(
-        "UPDATE tunnels SET name = ?, status = ?, relay_addr = ?, ingress_listen_port = ?, egress_forward_addr = ?, associated_flow_ids = ?, updated_at = ? WHERE id = ?"
+        "UPDATE tunnels SET name = ?, status = ?, relay_addr = ?, ingress_listen_port = ?, egress_forward_addr = ?, egress_peer_addr = ?, associated_flow_ids = ?, updated_at = ? WHERE id = ?"
     )
     .bind(name)
     .bind(&status)
     .bind(relay_addr)
     .bind(port)
     .bind(forward_addr)
+    .bind(egress_peer_addr)
     .bind(&flow_ids_json)
     .bind(&now)
     .bind(id)
@@ -121,6 +124,7 @@ struct TunnelRow {
     ingress_listen_port: i64,
     egress_node_id: String,
     egress_forward_addr: String,
+    egress_peer_addr: Option<String>,
     relay_addr: Option<String>,
     relay_node_id: Option<String>,
     #[allow(dead_code)]
@@ -152,6 +156,7 @@ impl TunnelRow {
             ingress_listen_port: self.ingress_listen_port as u16,
             egress_node_id: self.egress_node_id,
             egress_forward_addr: self.egress_forward_addr,
+            egress_peer_addr: self.egress_peer_addr,
             relay_addr: self.relay_addr,
             relay_node_id: self.relay_node_id,
             tunnel_key_enc: self.tunnel_key_enc,
@@ -177,6 +182,7 @@ struct TunnelWithNodesRow {
     ingress_listen_port: i64,
     egress_node_id: String,
     egress_forward_addr: String,
+    egress_peer_addr: Option<String>,
     relay_addr: Option<String>,
     relay_node_id: Option<String>,
     #[allow(dead_code)]
@@ -209,6 +215,7 @@ impl TunnelWithNodesRow {
             egress_node_id: self.egress_node_id,
             egress_node_name: self.egress_node_name,
             egress_forward_addr: self.egress_forward_addr,
+            egress_peer_addr: self.egress_peer_addr,
             relay_addr: self.relay_addr,
             relay_node_id: self.relay_node_id,
             status: self.status,

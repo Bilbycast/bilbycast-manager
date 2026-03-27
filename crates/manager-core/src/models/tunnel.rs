@@ -103,6 +103,8 @@ pub struct Tunnel {
     pub ingress_listen_port: u16,
     pub egress_node_id: String,
     pub egress_forward_addr: String,
+    /// Reachable socket address of the egress node's QUIC listener (direct mode only).
+    pub egress_peer_addr: Option<String>,
     pub relay_addr: Option<String>,
     /// Node ID of the relay server (for relay mode tunnels).
     pub relay_node_id: Option<String>,
@@ -124,6 +126,9 @@ pub struct CreateTunnelRequest {
     pub ingress_listen_port: u16,
     pub egress_node_id: String,
     pub egress_forward_addr: String,
+    /// Reachable socket address of the egress node's QUIC listener (required for direct mode).
+    /// Example: "203.0.113.50:10100"
+    pub egress_peer_addr: Option<String>,
     pub relay_addr: Option<String>,
     /// Node ID of the relay server (required for relay mode).
     /// The manager will automatically authorize both edges on this relay.
@@ -139,6 +144,7 @@ pub struct UpdateTunnelRequest {
     pub relay_addr: Option<String>,
     pub ingress_listen_port: Option<u16>,
     pub egress_forward_addr: Option<String>,
+    pub egress_peer_addr: Option<String>,
     pub associated_flow_ids: Option<Vec<String>>,
 }
 
@@ -155,6 +161,7 @@ pub struct TunnelSummary {
     pub egress_node_id: String,
     pub egress_node_name: Option<String>,
     pub egress_forward_addr: String,
+    pub egress_peer_addr: Option<String>,
     pub relay_addr: Option<String>,
     pub relay_node_id: Option<String>,
     pub status: String,

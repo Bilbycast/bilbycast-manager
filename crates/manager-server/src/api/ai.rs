@@ -136,8 +136,8 @@ pub async fn generate_config(
          RESTART a flow:\n\
          {\"action\": \"restart_flow\", \"flow_id\": \"the-flow-id\", \"message\": \"description\"}\n\n\
          CREATE a tunnel between two edge nodes:\n\
-         {\"action\": \"create_tunnel\", \"tunnel\": {\"name\": \"tunnel-name\", \"protocol\": \"tcp\", \"mode\": \"direct\", \"ingress_node_id\": \"node-id\", \"ingress_listen_port\": 9100, \"egress_node_id\": \"node-id\", \"egress_forward_addr\": \"127.0.0.1:9100\"}, \"message\": \"description\"}\n\
-         For relay mode, add \"relay_addr\": \"relay-host:4433\" to the tunnel object.\n\n\
+         {\"action\": \"create_tunnel\", \"tunnel\": {\"name\": \"tunnel-name\", \"protocol\": \"tcp\", \"mode\": \"direct\", \"ingress_node_id\": \"node-id\", \"ingress_listen_port\": 9100, \"egress_node_id\": \"node-id\", \"egress_forward_addr\": \"127.0.0.1:9100\", \"egress_peer_addr\": \"203.0.113.50:10100\"}, \"message\": \"description\"}\n\
+         For relay mode, add \"relay_addr\": \"relay-host:4433\" to the tunnel object (omit egress_peer_addr).\n\n\
          DELETE a tunnel:\n\
          {\"action\": \"delete_tunnel\", \"tunnel_id\": \"the-tunnel-id\", \"message\": \"description\"}\n\n\
          ANSWER a question or provide information (no config change):\n\
@@ -152,6 +152,7 @@ pub async fn generate_config(
          - \"ingress_listen_port\": port on ingress node to listen on (1024-65535)\n\
          - \"egress_node_id\": node ID that SENDS traffic into the tunnel (exit point) — use exact IDs from available nodes list\n\
          - \"egress_forward_addr\": where egress node delivers tunnel traffic, e.g. \"127.0.0.1:9100\"\n\
+         - \"egress_peer_addr\": reachable IP:port of egress node's QUIC listener (REQUIRED for direct mode, omit for relay mode). This is the public/routable address the ingress node connects to\n\
          - \"relay_addr\": relay server QUIC address (REQUIRED for relay mode, omit for direct mode)\n\n\
          RULES FOR FlowConfig FIELDS:\n\
          - \"id\": string (unique, lowercase with hyphens, e.g. \"srt-listener-1\")\n\

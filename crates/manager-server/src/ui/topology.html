@@ -226,6 +226,15 @@
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     background: rgba(168,85,247,0.12); color: #a855f7;
   }
+  .ft-connected-node {
+    display: inline-flex; align-items: center; gap: 2px;
+  }
+  .ft-node-name-sm {
+    font-size: 12px; font-weight: 500; color: #94a3b8; cursor: pointer;
+  }
+  .ft-node-name-sm[data-node-id]:hover {
+    color: #60a5fa; text-decoration: underline;
+  }
 
   /* ── Full-width disconnection warning banner ── */
   .disconnect-banner {
@@ -460,6 +469,7 @@
   var layoutIterations = 0;
   var currentView = localStorage.getItem('bilbycast_topology_view') || 'graph'; // 'graph' or 'flow'
   var _positionsFetched = { graph: false, flow: false }; // track first load
+  var _needsFitOnGraphSwitch = false; // deferred fitToView when canvas was hidden
 
   // ── Position persistence (database-backed) ──
   var _saveDebounceTimer = null;
@@ -1273,6 +1283,187 @@
       }
     }
     return -1;
+  }
+
+  // Build cross-reference map: which outputs are consumed by which nodes, and which inputs come from which nodes
+  var flowCrossRef = null;
+  function buildFlowCrossRefMap() {
+    var map = { outputConsumers: {}, inputSources: {} };
+
+    // Helper: extract port from address string
+    function addrPort(addr) {
+      if (!addr) return '';
+      var p = addr.split(':').pop();
+      return (p && p !== '0') ? p : '';
+    }
+
+    // Helper: check if addr is a wildcard bind (0.0.0.0 or 127.0.0.1)
+    function isWildcard(addr) {
+      if (!addr) return false;
+      return addr.indexOf('0.0.0.0:') === 0 || addr.indexOf('127.0.0.1:') === 0;
+    }
+
+    // Helper: ports match considering wildcard binds
+    function portsMatch(addr1, addr2) {
+      var p1 = addrPort(addr1);
+      var p2 = addrPort(addr2);
+      if (!p1 || !p2) return false;
+      if (p1 !== p2) return false;
+      // At least one side should be wildcard or they should share the same host
+      if (addr1 === addr2) return true;
+      if (isWildcard(addr1) || isWildcard(addr2)) return true;
+      // Cross-machine: different IPs but same port — match if one listens on 0.0.0.0
+      return true;
+    }
+
+    for (var i = 0; i < topoNodes.length; i++) {
+      var node = topoNodes[i];
+      if (node.isExternal || node.isRelay) continue;
+      var flows = node.flows || [];
+
+      for (var f = 0; f < flows.length; f++) {
+        var flow = flows[f];
+        var fid = flow.flow_id || '';
+        var inp = flow.input || {};
+        var inpType = (inp.input_type || '').toLowerCase();
+
+        // ── Check input: find which managed node's output feeds this input ──
+        if (inpType === 'srt' && (inp.mode === 'caller' || inp.mode === 'rendezvous') && inp.remote_addr) {
+          // SRT caller input connects to remote_addr → find node with SRT listener output on that port
+          var inPort = addrPort(inp.remote_addr);
+          if (inPort) {
+            for (var j = 0; j < topoNodes.length; j++) {
+              if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+              var jFlows = topoNodes[j].flows || [];
+              for (var jf = 0; jf < jFlows.length; jf++) {
+                var jOuts = jFlows[jf].outputs || [];
+                for (var jo = 0; jo < jOuts.length; jo++) {
+                  var jOut = jOuts[jo];
+                  if ((jOut.output_type || '').toLowerCase() === 'srt' && jOut.mode === 'listener') {
+                    if (portsMatch(inp.remote_addr, jOut.local_addr || '')) {
+                      map.inputSources[node.id + ':' + fid + ':input'] = { name: topoNodes[j].name, id: topoNodes[j].id };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (inpType === 'srt' && inp.mode === 'listener') {
+          // SRT listener input: find node with SRT caller output targeting this port
+          var listenAddr = inp.local_addr || inp.bind_addr || inp.listen_addr || '';
+          var listenPort = addrPort(listenAddr);
+          if (listenPort) {
+            for (var j = 0; j < topoNodes.length; j++) {
+              if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+              var jFlows = topoNodes[j].flows || [];
+              for (var jf = 0; jf < jFlows.length; jf++) {
+                var jOuts = jFlows[jf].outputs || [];
+                for (var jo = 0; jo < jOuts.length; jo++) {
+                  var jOut = jOuts[jo];
+                  if ((jOut.output_type || '').toLowerCase() === 'srt' && jOut.mode === 'caller') {
+                    if (portsMatch(listenAddr, jOut.remote_addr || jOut.dest_addr || '')) {
+                      map.inputSources[node.id + ':' + fid + ':input'] = { name: topoNodes[j].name, id: topoNodes[j].id };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        if ((inpType === 'rtp' || inpType === 'udp') && (inp.bind_addr || inp.local_addr)) {
+          // RTP/UDP input: find node with matching output dest_addr port
+          var bindAddr = inp.bind_addr || inp.local_addr || '';
+          var bindPort = addrPort(bindAddr);
+          if (bindPort) {
+            for (var j = 0; j < topoNodes.length; j++) {
+              if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+              var jFlows = topoNodes[j].flows || [];
+              for (var jf = 0; jf < jFlows.length; jf++) {
+                var jOuts = jFlows[jf].outputs || [];
+                for (var jo = 0; jo < jOuts.length; jo++) {
+                  var jOut = jOuts[jo];
+                  var jOutType = (jOut.output_type || '').toLowerCase();
+                  if (jOutType === inpType && jOut.dest_addr) {
+                    if (portsMatch(bindAddr, jOut.dest_addr)) {
+                      map.inputSources[node.id + ':' + fid + ':input'] = { name: topoNodes[j].name, id: topoNodes[j].id };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // ── Check outputs: find which managed node's input consumes each output ──
+        var outs = flow.outputs || [];
+        for (var o = 0; o < outs.length; o++) {
+          var out = outs[o];
+          var outType = (out.output_type || '').toLowerCase();
+
+          if (outType === 'srt' && out.mode === 'listener') {
+            // SRT listener output: find node with SRT caller input connecting to this port
+            var outAddr = out.local_addr || '';
+            var outPort = addrPort(outAddr);
+            if (outPort) {
+              for (var j = 0; j < topoNodes.length; j++) {
+                if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+                var jFlows = topoNodes[j].flows || [];
+                for (var jf = 0; jf < jFlows.length; jf++) {
+                  var jInp = jFlows[jf].input || {};
+                  if ((jInp.input_type || '').toLowerCase() === 'srt' && (jInp.mode === 'caller' || jInp.mode === 'rendezvous')) {
+                    if (portsMatch(outAddr, jInp.remote_addr || '')) {
+                      map.outputConsumers[node.id + ':' + fid + ':' + o] = { name: topoNodes[j].name, id: topoNodes[j].id };
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if (outType === 'srt' && out.mode === 'caller') {
+            // SRT caller output: find node with SRT listener input on matching port
+            var remAddr = out.remote_addr || out.dest_addr || '';
+            var remPort = addrPort(remAddr);
+            if (remPort) {
+              for (var j = 0; j < topoNodes.length; j++) {
+                if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+                var jFlows = topoNodes[j].flows || [];
+                for (var jf = 0; jf < jFlows.length; jf++) {
+                  var jInp = jFlows[jf].input || {};
+                  if ((jInp.input_type || '').toLowerCase() === 'srt' && jInp.mode === 'listener') {
+                    var jInpAddr = jInp.local_addr || jInp.bind_addr || jInp.listen_addr || '';
+                    if (portsMatch(remAddr, jInpAddr)) {
+                      map.outputConsumers[node.id + ':' + fid + ':' + o] = { name: topoNodes[j].name, id: topoNodes[j].id };
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if ((outType === 'rtp' || outType === 'udp') && out.dest_addr) {
+            // RTP/UDP output: find node with matching input bind_addr port
+            var destPort = addrPort(out.dest_addr);
+            if (destPort) {
+              for (var j = 0; j < topoNodes.length; j++) {
+                if (j === i || topoNodes[j].isExternal || topoNodes[j].isRelay) continue;
+                var jFlows = topoNodes[j].flows || [];
+                for (var jf = 0; jf < jFlows.length; jf++) {
+                  var jInp = jFlows[jf].input || {};
+                  var jInpType = (jInp.input_type || '').toLowerCase();
+                  if (jInpType === outType) {
+                    var jBind = jInp.bind_addr || jInp.local_addr || '';
+                    if (portsMatch(out.dest_addr, jBind)) {
+                      map.outputConsumers[node.id + ':' + fid + ':' + o] = { name: topoNodes[j].name, id: topoNodes[j].id };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return map;
   }
 
   function addLink(sourceIdx, targetIdx, label, protocol, redundant, sourceOutputIdx, targetInputIdx) {
@@ -2281,6 +2472,10 @@
     fetchSavedPositions('graph', function(positions) {
       applySavedPositions(positions);
       layoutStable = false;
+      if (_needsFitOnGraphSwitch) {
+        _needsFitOnGraphSwitch = false;
+        setTimeout(fitToView, 300);
+      }
     });
   });
 
@@ -2293,8 +2488,8 @@
     showFlowTable();
   });
 
-  // ── Double-click node name to open detail page ──
-  document.getElementById('flowTableContent').addEventListener('dblclick', function(e) {
+  // ── Click node name to open detail page (single-click in Flow view) ──
+  document.getElementById('flowTableContent').addEventListener('click', function(e) {
     var el = e.target.closest('[data-node-id]');
     if (el) {
       var nodeId = el.getAttribute('data-node-id');
@@ -2426,11 +2621,12 @@
           }
         } else {
           // Edge node tunnel
+          // Ingress: local device → this edge → relay (sender). Egress: relay → this edge → local (receiver).
           var dir = (tun.direction || '').toLowerCase();
-          if (dir === 'egress') {
-            entry.ingressNode = entry.ingressNode || node; // this edge sends data out
-          } else if (dir === 'ingress') {
-            entry.egressNode = entry.egressNode || node; // this edge receives data in
+          if (dir === 'ingress') {
+            entry.ingressNode = entry.ingressNode || node; // sender: local → edge → relay
+          } else if (dir === 'egress') {
+            entry.egressNode = entry.egressNode || node; // receiver: relay → edge → local
           }
           if ((tun.mode || '').toLowerCase() === 'relay' && !entry.relayNode) {
             // Mark that a relay is involved, even if we haven't seen the relay node yet
@@ -2540,6 +2736,8 @@
           sourceFlow: flow,
           relayNode: null,
           tunnelProtocol: null,
+          sourceTunnelAddr: '',
+          destTunnelAddr: '',
           destinations: []
         };
 
@@ -2552,6 +2750,8 @@
 
           if (mapEntry.relayNode) path.relayNode = mapEntry.relayNode;
           path.tunnelProtocol = mapEntry.protocol || (mTun.protocol || 'tcp').toUpperCase();
+          // Capture source-side tunnel address
+          if (mTun.local_addr) path.sourceTunnelAddr = mTun.local_addr;
 
           // Find destination edge node
           var destNode = mapEntry.egressNode;
@@ -2561,11 +2761,14 @@
             if (!destNode || destNode.id === node.id) continue;
           }
 
-          // Also claim the ingress tunnel on the dest side
+          // Also claim the ingress tunnel on the dest side and capture its local_addr
           var destTunnels = destNode.tunnels || [];
           for (var dt = 0; dt < destTunnels.length; dt++) {
             var dtid = destTunnels[dt].tunnel_id || destTunnels[dt].id;
-            if (dtid === mTid) claimedTunnels[mTid + ':' + destNode.id] = true;
+            if (dtid === mTid) {
+              claimedTunnels[mTid + ':' + destNode.id] = true;
+              if (destTunnels[dt].local_addr) path.destTunnelAddr = destTunnels[dt].local_addr;
+            }
           }
 
           // Find the dest flow that receives from this tunnel
@@ -2657,6 +2860,8 @@
           sourceFlow: null,
           relayNode: mapEntry ? mapEntry.relayNode : null,
           tunnelProtocol: mapEntry ? mapEntry.protocol : (matchedIngressTunnel.protocol || 'tcp').toUpperCase(),
+          sourceTunnelAddr: sourceNode ? findTunnelLocalAddr(sourceNode, mTid) : '',
+          destTunnelAddr: matchedIngressTunnel.local_addr || '',
           destinations: [{
             destNode: node,
             destFlow: flow,
@@ -2719,6 +2924,10 @@
     var crossNode = paths.crossNode;
     var localFlows = paths.local;
     var orphanTunnels = paths.orphanTunnels;
+
+    // Build cross-reference map for input/output node linking
+    flowCrossRef = buildFlowCrossRefMap();
+
 
     // Sort by saved order, then by name
     var orderMap = {};
@@ -2826,6 +3035,23 @@
     return false;
   }
 
+  // Helper: find tunnel local_addr for a given tunnel_id on a given node
+  function findTunnelLocalAddr(node, tunnelId) {
+    if (!node || !tunnelId) return '';
+    var tunnels = node.tunnels || [];
+    for (var t = 0; t < tunnels.length; t++) {
+      var tid = tunnels[t].tunnel_id || tunnels[t].id;
+      if (tid === tunnelId) return tunnels[t].local_addr || '';
+    }
+    return '';
+  }
+
+  // Helper: render a small tunnel address label
+  function ftTunnelAddr(addr) {
+    if (!addr) return '';
+    return '<span class="ft-endpoint-addr" style="font-size:11px;color:#64748b;margin-left:4px;">' + ftEsc(addr) + '</span>';
+  }
+
   // Helper: get input info from a flow
   function ftFlowInput(flow) {
     var inp = flow ? (flow.input || {}) : {};
@@ -2863,6 +3089,37 @@
     return h;
   }
 
+  // Render a single output badge with optional connected node name
+  function ftOutputBadgeWithNode(out, nodeId, flowId, outputIdx) {
+    if (!out) return '<span class="ft-muted">No outputs</span>';
+    var outAddr = out.dest_addr || out.dest_url || out.ingest_url || out.whip_url || out.local_addr || '';
+    var h = ftPathIO(out.output_type, outAddr, out.mode, 'output');
+    var key = nodeId + ':' + flowId + ':' + outputIdx;
+    var consumer = flowCrossRef ? (flowCrossRef.outputConsumers[key] || null) : null;
+    if (consumer) {
+      h += '<span class="ft-connected-node">' + ftPathArrow();
+      h += '<span class="ft-node-name-sm" data-node-id="' + ftEsc(consumer.id) + '">' + ftEsc(consumer.name) + '</span>';
+      h += '</span>';
+    }
+    return h;
+  }
+
+  // Render outputs with vertical stacking when multiple, and connected node names
+  function ftOutputBadgesStacked(outputs, nodeId, flowId) {
+    if (!outputs || outputs.length === 0) return '<span class="ft-muted">No outputs</span>';
+    if (outputs.length === 1) {
+      return ftOutputBadgeWithNode(outputs[0], nodeId, flowId, 0);
+    }
+    var h = '<div class="ft-path-fanout">';
+    for (var o = 0; o < outputs.length; o++) {
+      h += '<div class="ft-path-fanout-branch">';
+      h += ftOutputBadgeWithNode(outputs[o], nodeId, flowId, o);
+      h += '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
   // Build a cross-node signal path row
   function buildSignalPathRow(path) {
     var srcFlow = path.sourceFlow;
@@ -2882,14 +3139,24 @@
     // Complete Signal Path
     h += '<td><div class="ft-path-chain">';
 
-    // Input badge
+    // Input badge (with source node annotation if applicable)
     if (inp.type) {
+      if (srcFlow && path.sourceNode) {
+        var srcFid = srcFlow.flow_id || '';
+        var srcInputKey = path.sourceNode.id + ':' + srcFid + ':input';
+        var srcInputSource = flowCrossRef ? (flowCrossRef.inputSources[srcInputKey] || null) : null;
+        if (srcInputSource) {
+          h += '<span class="ft-node-name-sm" data-node-id="' + ftEsc(srcInputSource.id) + '">' + ftEsc(srcInputSource.name) + '</span>';
+          h += ftPathArrow();
+        }
+      }
       h += ftPathIO(inp.type, inp.addr, inp.mode, 'input');
       h += ftPathArrow();
     }
 
-    // Source node
+    // Source node + tunnel address
     h += ftNodeCell(path.sourceNode);
+    if (path.sourceTunnelAddr) h += ftTunnelAddr(path.sourceTunnelAddr);
 
     // Tunnel badge
     if (path.tunnelProtocol) {
@@ -2905,19 +3172,23 @@
     // Destinations
     if (path.destinations.length === 1) {
       var dest = path.destinations[0];
+      var destFid = dest.destFlow ? (dest.destFlow.flow_id || '') : '';
       h += ftPathArrow();
       h += ftNodeCell(dest.destNode);
+      if (path.destTunnelAddr) h += ftTunnelAddr(path.destTunnelAddr);
       h += ftPathArrow();
-      h += ftOutputBadges(dest.outputs);
+      h += ftOutputBadgesStacked(dest.outputs, dest.destNode.id, destFid);
     } else if (path.destinations.length > 1) {
       h += ftPathArrow();
       h += '<div class="ft-path-fanout">';
       for (var d = 0; d < path.destinations.length; d++) {
         var dest = path.destinations[d];
+        var destFid = dest.destFlow ? (dest.destFlow.flow_id || '') : '';
         h += '<div class="ft-path-fanout-branch">';
         h += ftNodeCell(dest.destNode);
+        if (path.destTunnelAddr) h += ftTunnelAddr(path.destTunnelAddr);
         h += ftPathArrow();
-        h += ftOutputBadges(dest.outputs);
+        h += ftOutputBadgesStacked(dest.outputs, dest.destNode.id, destFid);
         h += '</div>';
       }
       h += '</div>';
@@ -2948,15 +3219,23 @@
     // State
     h += '<td>' + ftStateBadge(flow.state) + '</td>';
 
-    // Signal Path: [Input] → [Node] → [Output(s)]
+    // Signal Path: [SourceNode →] [Input] → [Node] → [Output(s) [→ ConsumerNode]]
+    var fid = flow.flow_id || '';
     h += '<td><div class="ft-path-chain">';
     if (inp.type) {
+      // Show source node name if input comes from another managed edge
+      var inputKey = node.id + ':' + fid + ':input';
+      var inputSource = flowCrossRef ? (flowCrossRef.inputSources[inputKey] || null) : null;
+      if (inputSource) {
+        h += '<span class="ft-node-name-sm" data-node-id="' + ftEsc(inputSource.id) + '">' + ftEsc(inputSource.name) + '</span>';
+        h += ftPathArrow();
+      }
       h += ftPathIO(inp.type, inp.addr, inp.mode, 'input');
       h += ftPathArrow();
     }
     h += ftNodeCell(node);
     h += ftPathArrow();
-    h += ftOutputBadges(outs);
+    h += ftOutputBadgesStacked(outs, node.id, fid);
     h += '</div></td>';
 
     // Bitrate
@@ -2992,8 +3271,12 @@
       var mapEntry = tid ? tunnelPathMap[tid] : null;
       var inNode = mapEntry && mapEntry.ingressNode ? mapEntry.ingressNode : null;
       var outNode = mapEntry && mapEntry.egressNode ? mapEntry.egressNode : null;
+      // Look up edge tunnel addresses from edge node data
+      var inAddr = inNode ? findTunnelLocalAddr(inNode, tid) : '';
+      var outAddr = outNode ? findTunnelLocalAddr(outNode, tid) : '';
       if (inNode) {
         h += ftNodeCell(inNode);
+        if (inAddr) h += ftTunnelAddr(inAddr);
       } else {
         h += '<span class="ft-endpoint-addr">' + ftEsc(resolveEdgeName(tun.ingress_edge_id)) + '</span>';
       }
@@ -3002,6 +3285,7 @@
       h += ftPathArrow();
       if (outNode) {
         h += ftNodeCell(outNode);
+        if (outAddr) h += ftTunnelAddr(outAddr);
       } else {
         h += '<span class="ft-endpoint-addr">' + ftEsc(resolveEdgeName(tun.egress_edge_id)) + '</span>';
       }
@@ -3012,24 +3296,44 @@
       var dirBadge = '<span class="ft-badge" style="background:' + dirColor + '1a;color:' + dirColor + '">' + dirLabel + '</span>';
       var mapEntry = tid ? tunnelPathMap[tid] : null;
       var relayNode = mapEntry ? mapEntry.relayNode : null;
+      // Peer is the OPPOSITE direction: if I'm egress (receiver), peer is ingress (sender)
       var peerNode = null;
       if (mapEntry) {
-        if (dir === 'egress' && mapEntry.egressNode && mapEntry.egressNode.id !== node.id) {
-          peerNode = mapEntry.egressNode;
-        } else if (dir === 'ingress' && mapEntry.ingressNode && mapEntry.ingressNode.id !== node.id) {
+        if (dir === 'egress' && mapEntry.ingressNode && mapEntry.ingressNode.id !== node.id) {
           peerNode = mapEntry.ingressNode;
+        } else if (dir === 'ingress' && mapEntry.egressNode && mapEntry.egressNode.id !== node.id) {
+          peerNode = mapEntry.egressNode;
         }
       }
+      // Fallback: if peerNode not found, resolve from relay tunnel data
+      var peerName = '';
+      if (!peerNode && relayNode && tid) {
+        var relayTunnels = relayNode.tunnels || [];
+        for (var rt = 0; rt < relayTunnels.length; rt++) {
+          var rtid = relayTunnels[rt].tunnel_id || relayTunnels[rt].id;
+          if (rtid === tid) {
+            var peerId = dir === 'egress' ? relayTunnels[rt].ingress_edge_id : relayTunnels[rt].egress_edge_id;
+            if (peerId) peerName = resolveEdgeName(peerId);
+            break;
+          }
+        }
+      }
+      var thisAddr = tun.local_addr || '';
+      var peerAddr = peerNode ? findTunnelLocalAddr(peerNode, tid) : '';
       if (dir === 'egress') {
         h += ftNodeCell(node);
+        if (thisAddr) h += ftTunnelAddr(thisAddr);
         h += dirBadge;
         if (relayNode) { h += ftPathArrow(); h += ftNodeCell(relayNode); }
-        if (peerNode) { h += ftPathArrow(); h += ftNodeCell(peerNode); }
+        if (peerNode) { h += ftPathArrow(); h += ftNodeCell(peerNode); if (peerAddr) h += ftTunnelAddr(peerAddr); }
+        else if (peerName) { h += ftPathArrow(); h += '<span class="ft-endpoint-addr">' + ftEsc(peerName) + '</span>'; }
       } else {
-        if (peerNode) { h += ftNodeCell(peerNode); h += ftPathArrow(); }
+        if (peerNode) { h += ftNodeCell(peerNode); if (peerAddr) h += ftTunnelAddr(peerAddr); h += ftPathArrow(); }
+        else if (peerName) { h += '<span class="ft-endpoint-addr">' + ftEsc(peerName) + '</span>'; h += ftPathArrow(); }
         if (relayNode) { h += ftNodeCell(relayNode); h += ftPathArrow(); }
         h += dirBadge;
         h += ftNodeCell(node);
+        if (thisAddr) h += ftTunnelAddr(thisAddr);
       }
     }
     h += '</div></td>';
@@ -3054,7 +3358,7 @@
       var flows = node.flows || [];
       for (var f = 0; f < flows.length; f++) {
         var flow = flows[f];
-        var fid = flow.flow_id || f;
+        var fid = flow.flow_id || '';
         var bitrate = (flow.input || {}).bitrate_bps || 0;
         // Try all row ID patterns this flow might use
         var ids = [
@@ -3165,6 +3469,7 @@
   function hideFlowTable() {
     document.getElementById('canvasContainer').style.display = '';
     document.getElementById('flowTableContainer').style.display = 'none';
+    resizeCanvas();
   }
 
   // ── Signal flow layout ──
@@ -3517,7 +3822,7 @@
         layoutStable = false;
         layoutIterations = 0;
       } else {
-        setTimeout(fitToView, 100);
+        _needsFitOnGraphSwitch = true;
       }
     }
 
@@ -3528,7 +3833,7 @@
         layoutIterations = 0;
         setTimeout(function () { fitToView(); }, 500);
       } else {
-        setTimeout(fitToView, 100);
+        _needsFitOnGraphSwitch = true;
       }
       // Fetch saved positions on first load
       if (!_positionsFetched[currentView]) {
@@ -3583,7 +3888,11 @@
           processNodes(msg.nodes);
           if (firstUpdate) {
             firstUpdate = false;
-            setTimeout(fitToView, 500);
+            if (currentView === 'graph') {
+              setTimeout(fitToView, 500);
+            } else {
+              _needsFitOnGraphSwitch = true;
+            }
           }
         }
       } catch (e) { /* ignore */ }

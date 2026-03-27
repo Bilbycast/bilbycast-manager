@@ -93,6 +93,10 @@ pub async fn create_tunnel(
         validation::validate_addr(addr, "relay_addr")
             .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
     }
+    if let Some(ref addr) = req.egress_peer_addr {
+        validation::validate_addr(addr, "egress_peer_addr")
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
+    }
 
     if matches!(req.mode, TunnelMode::Relay) {
         if req.relay_addr.is_none() {
@@ -100,6 +104,12 @@ pub async fn create_tunnel(
         }
         if req.relay_node_id.is_none() {
             return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "relay_node_id is required for relay mode"}))));
+        }
+    }
+
+    if matches!(req.mode, TunnelMode::Direct) {
+        if req.egress_peer_addr.is_none() {
+            return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "egress_peer_addr is required for direct mode (reachable address of egress node's QUIC listener)"}))));
         }
     }
 
@@ -189,9 +199,12 @@ pub async fn create_tunnel(
     } else {
         // Direct mode: exit node listens for QUIC, entry node connects
         let psk = tunnel_psk.as_ref().unwrap();
-        exit_config["direct_listen_addr"] = json!(format!("0.0.0.0:{}", req.ingress_listen_port + 1000));
+        let egress_peer_addr = req.egress_peer_addr.as_ref().unwrap(); // validated above
+        // Extract port from egress_peer_addr for the QUIC listen bind
+        let listen_port = egress_peer_addr.rsplit(':').next().unwrap_or("0");
+        exit_config["direct_listen_addr"] = json!(format!("0.0.0.0:{}", listen_port));
         exit_config["tunnel_psk"] = json!(psk);
-        entry_config["peer_addr"] = json!(format!("{}:{}", req.egress_forward_addr.split(':').next().unwrap_or("127.0.0.1"), req.ingress_listen_port + 1000));
+        entry_config["peer_addr"] = json!(egress_peer_addr);
         entry_config["tunnel_psk"] = json!(psk);
     }
 
@@ -229,6 +242,10 @@ pub async fn update_tunnel(
     }
     if let Some(ref addr) = req.relay_addr {
         validation::validate_addr(addr, "relay_addr")
+            .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
+    }
+    if let Some(ref addr) = req.egress_peer_addr {
+        validation::validate_addr(addr, "egress_peer_addr")
             .map_err(|e| (StatusCode::BAD_REQUEST, Json(json!({"error": e}))))?;
     }
 
