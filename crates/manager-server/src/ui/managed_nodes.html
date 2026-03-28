@@ -329,11 +329,21 @@
   <div class="modal">
     <h3 id="tokenModalTitle">Registration Token</h3>
     <p style="font-size:13px;color:#94a3b8;margin-bottom:12px;" id="tokenModalDesc">
-      Copy this token into the node's config file under <code style="color:#60a5fa;">manager.registration_token</code>. This token is single-use and will be consumed on first connection.
+      Copy these values into the node's config file. Set <code style="color:#60a5fa;">manager.node_id</code> and <code style="color:#60a5fa;">manager.registration_token</code>. The token is single-use and will be consumed on first connection.
     </p>
-    <div class="token-box">
-      <span id="tokenValue"></span>
-      <button class="copy-btn" id="copyTokenBtn">Copy</button>
+    <div style="margin-bottom:8px;">
+      <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px;">Node ID</label>
+      <div class="token-box">
+        <span id="nodeIdValue"></span>
+        <button class="copy-btn" id="copyNodeIdBtn">Copy</button>
+      </div>
+    </div>
+    <div>
+      <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px;">Registration Token</label>
+      <div class="token-box">
+        <span id="tokenValue"></span>
+        <button class="copy-btn" id="copyTokenBtn">Copy</button>
+      </div>
     </div>
     <div class="form-actions">
       <button class="btn-primary" id="tokenCloseBtn">Done</button>
@@ -547,7 +557,7 @@
           return r.json().then(function(data) {
             closeModal();
             fetchNodes();
-            showToken(data.registration_token, data.name);
+            showToken(data.registration_token, data.name, data.id);
           });
         } else {
           r.json().then(function(d) { showError(d.error || 'Failed to create'); }).catch(function() { showError('Failed to create node'); });
@@ -563,8 +573,10 @@
   }
 
   // ── Token Modal ──
-  function showToken(token, nodeName) {
-    $('tokenModalTitle').textContent = 'Registration Token for ' + (nodeName || 'Node');
+  function showToken(token, nodeName, nodeId) {
+    $('tokenModalTitle').textContent = 'Registration Details for ' + (nodeName || 'Node');
+    $('nodeIdValue').textContent = nodeId || '';
+    $('nodeIdValue').parentElement.parentElement.style.display = nodeId ? '' : 'none';
     $('tokenValue').textContent = token;
     $('tokenModal').classList.add('open');
   }
@@ -584,6 +596,23 @@
       document.body.removeChild(ta);
       $('copyTokenBtn').textContent = 'Copied!';
       setTimeout(function() { $('copyTokenBtn').textContent = 'Copy'; }, 2000);
+    });
+  });
+
+  $('copyNodeIdBtn').addEventListener('click', function() {
+    var val = $('nodeIdValue').textContent;
+    navigator.clipboard.writeText(val).then(function() {
+      $('copyNodeIdBtn').textContent = 'Copied!';
+      setTimeout(function() { $('copyNodeIdBtn').textContent = 'Copy'; }, 2000);
+    }).catch(function() {
+      var ta = document.createElement('textarea');
+      ta.value = val;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      $('copyNodeIdBtn').textContent = 'Copied!';
+      setTimeout(function() { $('copyNodeIdBtn').textContent = 'Copy'; }, 2000);
     });
   });
 
@@ -625,7 +654,7 @@
       }).then(function(r) { return r.ok ? r.json() : null; })
         .then(function(data) {
           if (data && data.registration_token) {
-            showToken(data.registration_token);
+            showToken(data.registration_token, null, nodeId);
             fetchNodes(); // Status will change to pending
           }
         });

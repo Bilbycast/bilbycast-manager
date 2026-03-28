@@ -131,6 +131,12 @@ pub struct SrtInputConfig {
     pub km_pre_announce: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mss: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tlpkt_drop: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_ttl: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redundancy: Option<SrtRedundancyConfig>,
 }
@@ -364,6 +370,12 @@ pub struct SrtOutputConfig {
     pub km_pre_announce: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mss: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tlpkt_drop: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_ttl: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redundancy: Option<SrtRedundancyConfig>,
 }
@@ -501,6 +513,12 @@ pub struct SrtRedundancyConfig {
     pub km_pre_announce: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mss: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tlpkt_drop: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_ttl: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -615,6 +633,20 @@ pub struct SrtLegStats {
     pub byte_retrans_total: u64,
     #[serde(default)]
     pub byte_recv_drop_total: u64,
+    #[serde(default)]
+    pub byte_recv_loss_total: u64,
+    #[serde(default)]
+    pub byte_send_drop_total: u64,
+    #[serde(default)]
+    pub byte_recv_undecrypt_total: u64,
+    #[serde(default)]
+    pub pkt_sent_unique_total: i64,
+    #[serde(default)]
+    pub pkt_recv_unique_total: i64,
+    #[serde(default)]
+    pub byte_sent_unique_total: u64,
+    #[serde(default)]
+    pub byte_recv_unique_total: u64,
 
     // ACK/NAK counters
     #[serde(default)]
@@ -645,6 +677,20 @@ pub struct SrtLegStats {
     pub ms_send_tsbpd_delay: i32,
     #[serde(default)]
     pub ms_recv_tsbpd_delay: i32,
+
+    // Buffer occupancy
+    #[serde(default)]
+    pub pkt_send_buf: i32,
+    #[serde(default)]
+    pub byte_send_buf: i32,
+    #[serde(default)]
+    pub pkt_recv_buf: i32,
+    #[serde(default)]
+    pub byte_recv_buf: i32,
+
+    // Pacing
+    #[serde(default)]
+    pub us_pkt_send_period: f64,
 
     // Reorder / belated
     #[serde(default)]

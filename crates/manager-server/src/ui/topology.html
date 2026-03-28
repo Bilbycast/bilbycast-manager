@@ -1540,7 +1540,8 @@
         }
       }
       var linkOffset = pairCount > 1 ? (pairIdx - (pairCount - 1) / 2) * 20 : 0;
-      drawLink(a, b, link.label, link.protocol, link.redundant, linkOffset, link.sourcePortSide, link.sourcePortIdx, link.targetPortSide, link.targetPortIdx);
+      var linkOnline = (a.status !== 'offline' && b.status !== 'offline');
+      drawLink(a, b, link.label, link.protocol, link.redundant, linkOffset, link.sourcePortSide, link.sourcePortIdx, link.targetPortSide, link.targetPortIdx, linkOnline);
     }
 
     // Draw nodes (managed first, external on top)
@@ -1583,7 +1584,7 @@
     return { x: sx / camera.zoom + camera.x, y: sy / camera.zoom + camera.y };
   }
 
-  function drawLink(a, b, label, protocol, redundant, linkOffset, sourcePortSide, sourcePortIdx, targetPortSide, targetPortIdx) {
+  function drawLink(a, b, label, protocol, redundant, linkOffset, sourcePortSide, sourcePortIdx, targetPortSide, targetPortIdx, linkOnline) {
     // Connect from right edge of source to left edge of target
     var aHalfW = (a.isExternal ? EXT_W : NODE_W) / 2;
     var bHalfW = (b.isExternal ? EXT_W : NODE_W) / 2;
@@ -1596,6 +1597,7 @@
     var by = (targetPortIdx != null && !b.isExternal) ? getPortY(b, tgtSide, targetPortIdx) : b.y;
 
     var linkColor = protocolColor(protocol || 'srt');
+    if (!linkOnline) linkColor = '#475569';
     var isExternal = (a.isExternal || b.isExternal);
     var useFlowCurve = (currentView === 'flow');
 
@@ -1648,6 +1650,9 @@
       }
     }
 
+    if (!linkOnline) ctx.globalAlpha = 0.4;
+    var animDashOffset = linkOnline ? -marchOffset / camera.zoom : 0;
+
     if (redundant) {
       // Draw double line for 2022-7 redundancy
       var sep = 3 / camera.zoom;
@@ -1661,8 +1666,10 @@
       ctx.strokeStyle = linkColor;
       ctx.lineWidth = lineW;
       ctx.setLineDash(dashPattern);
+      ctx.lineDashOffset = animDashOffset;
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
 
       if (useFlowCurve) {
         traceCurve(ax, ay + sep, bx, by + sep, cx1, cy1 + sep, cx2, cy2 + sep);
@@ -1672,15 +1679,19 @@
       ctx.strokeStyle = linkColor;
       ctx.lineWidth = lineW;
       ctx.setLineDash(dashPattern);
+      ctx.lineDashOffset = animDashOffset;
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
     } else {
       traceCurve(ax, ay, bx, by, cx1, cy1, cx2, cy2);
       ctx.strokeStyle = linkColor;
       ctx.lineWidth = lineW;
       ctx.setLineDash(dashPattern);
+      ctx.lineDashOffset = animDashOffset;
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
     }
 
     // Arrow head toward target
@@ -1730,6 +1741,7 @@
       ctx.fillStyle = linkColor;
       ctx.fillText(label, lx, ly);
     }
+    if (!linkOnline) ctx.globalAlpha = 1.0;
   }
 
   function drawNode(node, hovered) {
@@ -1738,6 +1750,7 @@
     var y = node.y - nh / 2;
     var isOnline = node.status === 'online';
     var isRelay = node.isRelay;
+    if (!isOnline) ctx.globalAlpha = 0.45;
     var accentColor = isRelay ? '#c084fc' : '#4ade80';
     var accentGlow = isRelay ? 'rgba(192, 132, 252, 0.15)' : 'rgba(74, 222, 128, 0.15)';
     var accentDotGlow = isRelay ? 'rgba(192, 132, 252, 0.2)' : 'rgba(74, 222, 128, 0.2)';
@@ -1868,6 +1881,7 @@
         ctx.fillText(ft.label, tagX + 6, tagY);
         tagX += tw + 6;
       }
+      if (!isOnline) ctx.globalAlpha = 1.0;
       return;
     }
 
@@ -1967,6 +1981,7 @@
       ctx.textAlign = 'left';
       ctx.fillText(truncate(addrText, 28), x + 26 + badgeW + 6, ry + 8);
     }
+    if (!isOnline) ctx.globalAlpha = 1.0;
   }
 
   function drawExternalNode(node, hovered) {
@@ -3671,6 +3686,7 @@
 
   // ── Animation loop ──
   var layoutCooldown = 0; // frames after stabilization before stopping layout
+  var marchOffset = 0; // animated dash offset for "marching ants" on online links
 
   function tick() {
     if (currentView === 'graph') {
@@ -3682,7 +3698,7 @@
         layoutCooldown--;
       }
     }
-    // Only redraw when something changed or user is interacting
+    marchOffset += 0.5;
     draw();
     animFrameId = requestAnimationFrame(tick);
   }

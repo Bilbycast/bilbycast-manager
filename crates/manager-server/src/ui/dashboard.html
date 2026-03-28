@@ -374,6 +374,10 @@
   .status-dot.offline .dot { background: #64748b; }
   .status-dot.offline { color: #64748b; }
 
+  .node-card.offline-card { opacity: 0.5; border-color: #334155; }
+  .node-card.offline-card:hover { opacity: 0.7; }
+  .node-card.offline-card .node-stat-value { color: #64748b; }
+
   .node-stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -704,6 +708,7 @@
         // Update in place
         var nameEl = existing.querySelector('.node-name');
         if (nameEl) nameEl.textContent = node.name;
+        existing.className = 'node-card' + (statusClass === 'offline' ? ' offline-card' : '');
         var dotEl = existing.querySelector('.status-dot');
         if (dotEl) { dotEl.className = 'status-dot ' + statusClass; dotEl.innerHTML = '<span class="dot"></span>' + statusLabel; }
         var vals = existing.querySelectorAll('.node-stat-value');
@@ -721,7 +726,7 @@
       } else {
         // Create new card
         var card = document.createElement('div');
-        card.className = 'node-card';
+        card.className = 'node-card' + (statusClass === 'offline' ? ' offline-card' : '');
         card.id = 'node-' + key;
         card.onclick = function (ev) { if (ev.target.closest('.node-delete-btn')) return; window.location.href = '/nodes/' + encodeURIComponent(key); };
         var isRelay = node.device_type === 'relay';

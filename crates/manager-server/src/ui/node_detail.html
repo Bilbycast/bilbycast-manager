@@ -87,6 +87,19 @@
   .info-card .card-value.online { color: #4ade80; }
   .info-card .card-value.offline { color: #64748b; }
 
+  /* ── Offline banner ── */
+  .node-offline-banner {
+    display: none; background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+    color: #94a3b8; padding: 14px 24px; font-size: 14px; font-weight: 600;
+    text-align: center; align-items: center; justify-content: center; gap: 10px;
+    border-bottom: 2px solid #475569; border-radius: 8px; margin-bottom: 20px;
+  }
+  .node-offline-banner.visible { display: flex; }
+  .node-offline-banner svg { width: 20px; height: 20px; flex-shrink: 0; color: #64748b; }
+  .node-offline-banner .banner-sub { font-weight: 400; font-size: 12px; color: #64748b; margin-left: 8px; }
+  body.node-is-offline .info-card { opacity: 0.5; }
+  body.node-is-offline .section { opacity: 0.6; }
+
   /* ── Flows section ── */
   .section { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
   .section h2 { font-size: 16px; font-weight: 600; color: #f1f5f9; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #334155; }
@@ -262,6 +275,12 @@
       </div>
     </div>
   </header>
+
+  <div class="node-offline-banner" id="nodeOfflineBanner">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+    <span>This node is currently offline</span>
+    <span class="banner-sub" id="offlineBannerDetail">Last seen data shown below</span>
+  </div>
 
   <main class="content">
     <a href="/dashboard" class="back-link">
@@ -1838,6 +1857,15 @@
         var statusEl = $('nodeStatus');
         statusEl.textContent = node.status.charAt(0).toUpperCase() + node.status.slice(1);
         statusEl.className = 'card-value ' + (node.status === 'online' ? 'online' : 'offline');
+        // Offline banner and body dimming
+        var offlineBanner = document.getElementById('nodeOfflineBanner');
+        if (node.status !== 'online') {
+          offlineBanner.classList.add('visible');
+          document.body.classList.add('node-is-offline');
+        } else {
+          offlineBanner.classList.remove('visible');
+          document.body.classList.remove('node-is-offline');
+        }
         $('nodeVersion').textContent = node.software_version || '--';
 
         // For relay nodes: hide flows section, always show tunnels
@@ -1925,6 +1953,20 @@
           var myNode = null;
           for (var i = 0; i < msg.nodes.length; i++) {
             if (msg.nodes[i].node_id === nodeId) { myNode = msg.nodes[i]; break; }
+          }
+          // Update online/offline state from live WS data
+          var offBanner = document.getElementById('nodeOfflineBanner');
+          var statusEl2 = $('nodeStatus');
+          if (myNode) {
+            offBanner.classList.remove('visible');
+            document.body.classList.remove('node-is-offline');
+            statusEl2.textContent = 'Online';
+            statusEl2.className = 'card-value online';
+          } else {
+            offBanner.classList.add('visible');
+            document.body.classList.add('node-is-offline');
+            statusEl2.textContent = 'Offline';
+            statusEl2.className = 'card-value offline';
           }
           if (myNode && myNode.stats) {
             var isRelay = window._deviceType === 'relay';
