@@ -161,7 +161,7 @@ pub async fn generate_config(
          - \"input\": object with \"type\" field and type-specific fields\n\
          - \"outputs\": array of output objects, each with \"type\", \"id\", \"name\" and type-specific fields\n\
          - For SRT: \"mode\" (\"listener\"/\"caller\"/\"rendezvous\"), \"local_addr\", \"latency_ms\" (integer)\n\
-         - Optional SRT: \"passphrase\" (10-79 chars), \"aes_key_len\" (16, 24, or 32), \"remote_addr\" (for caller)\n\
+         - Optional SRT: \"passphrase\" (10-79 chars), \"aes_key_len\" (16, 24, or 32), \"remote_addr\" (required for caller and rendezvous)\n\
          - For RTP outputs: \"dest_addr\", \"dscp\" (default 46)\n\
          - For RTMP outputs: \"dest_url\", \"stream_key\"\n\
          - IMPORTANT: Use exact field names. NOT \"key_length\" — use \"aes_key_len\". NOT \"address\" — use \"local_addr\".\n\

@@ -135,9 +135,14 @@
     margin-top: 8px; padding: 8px 12px; background: #0d1117; border: 1px solid #21262d;
     border-radius: 4px; font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, monospace;
   }
+  .srt-details .srt-header { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 6px; }
+  .srt-details .srt-section { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0; border-top: 1px solid #21262d; }
+  .srt-details .srt-section-label { color: #58a6ff; font-size: 10px; font-weight: 600; text-transform: uppercase; min-width: 100%; margin-bottom: 2px; }
   .srt-details .row { display: flex; gap: 16px; flex-wrap: wrap; }
   .srt-details .item { color: #8b949e; }
   .srt-details .item span { color: #c9d1d9; font-weight: 500; }
+  .srt-details .item span.warn { color: #d29922; }
+  .srt-details .item span.err { color: #f85149; }
 
   /* ── Outputs table ── */
   .outputs-table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, monospace; }
@@ -933,12 +938,69 @@
 
   function render_srt(srt, label) {
     if (!srt) return '';
-    return '<div class="srt-details"><div class="row">' +
-      '<div class="item">' + esc(label) + ': <span>' + esc(srt.state) + '</span></div>' +
-      '<div class="item">RTT: <span>' + (srt.rtt_ms || 0).toFixed(1) + ' ms</span></div>' +
-      '<div class="item">Loss: <span>' + fmt_num(srt.pkt_loss_total) + '</span></div>' +
-      '<div class="item">Retransmit: <span>' + fmt_num(srt.pkt_retransmit_total) + '</span></div>' +
-      '</div></div>';
+    var warnIf = function(v) { return v > 0 ? ' class="warn"' : ''; };
+    var errIf = function(v) { return v > 0 ? ' class="err"' : ''; };
+    var hasFec = srt.pkt_recv_filter_supply_total > 0 || srt.pkt_send_filter_extra_total > 0 ||
+                 srt.pkt_recv_filter_loss_total > 0 || srt.pkt_recv_filter_supply > 0;
+
+    var h = '<div class="srt-details">';
+
+    // Header row: state, RTT, bandwidth
+    h += '<div class="srt-header">';
+    h += '<div class="item">' + esc(label) + ': <span>' + esc(srt.state) + '</span></div>';
+    h += '<div class="item">RTT: <span>' + (srt.rtt_ms || 0).toFixed(1) + ' ms</span></div>';
+    h += '<div class="item">BW: <span>' + (srt.bandwidth_mbps || 0).toFixed(2) + ' Mbps</span></div>';
+    h += '<div class="item">Tx: <span>' + (srt.send_rate_mbps || 0).toFixed(2) + ' Mbps</span></div>';
+    h += '<div class="item">Rx: <span>' + (srt.recv_rate_mbps || 0).toFixed(2) + ' Mbps</span></div>';
+    h += '<div class="item">TSBPD: <span>' + fmt_num(srt.ms_recv_tsbpd_delay || 0) + '/' + fmt_num(srt.ms_send_tsbpd_delay || 0) + ' ms</span></div>';
+    h += '</div>';
+
+    // ARQ & Loss
+    h += '<div class="srt-section">';
+    h += '<div class="srt-section-label">ARQ &amp; Loss</div>';
+    h += '<div class="item">Loss: <span' + errIf(srt.pkt_loss_total) + '>' + fmt_num(srt.pkt_loss_total) + '</span></div>';
+    h += '<div class="item">Retransmit: <span' + warnIf(srt.pkt_retransmit_total) + '>' + fmt_num(srt.pkt_retransmit_total) + '</span></div>';
+    h += '<div class="item">NAK Sent: <span>' + fmt_num(srt.pkt_sent_nak_total) + '</span></div>';
+    h += '<div class="item">NAK Recv: <span>' + fmt_num(srt.pkt_recv_nak_total) + '</span></div>';
+    h += '<div class="item">Rx Drop: <span' + errIf(srt.pkt_recv_drop_total) + '>' + fmt_num(srt.pkt_recv_drop_total) + '</span></div>';
+    h += '<div class="item">Tx Drop: <span' + errIf(srt.pkt_send_drop_total) + '>' + fmt_num(srt.pkt_send_drop_total) + '</span></div>';
+    if (srt.pkt_recv_belated > 0 || srt.pkt_recv_avg_belated_time > 0) {
+      h += '<div class="item">Belated: <span class="err">' + fmt_num(srt.pkt_recv_belated) + '</span></div>';
+      h += '<div class="item">Avg Late: <span class="err">' + (srt.pkt_recv_avg_belated_time || 0).toFixed(1) + ' ms</span></div>';
+    }
+    if (srt.pkt_recv_undecrypt_total > 0) {
+      h += '<div class="item">Undecrypt: <span class="err">' + fmt_num(srt.pkt_recv_undecrypt_total) + '</span></div>';
+    }
+    h += '<div class="item">Reorder Dist: <span>' + fmt_num(srt.pkt_reorder_distance) + '</span></div>';
+    h += '</div>';
+
+    // FEC (only if active)
+    if (hasFec) {
+      h += '<div class="srt-section">';
+      h += '<div class="srt-section-label">FEC</div>';
+      h += '<div class="item">Recovered: <span style="color:#3fb950">' + fmt_num(srt.pkt_recv_filter_supply_total) + '</span></div>';
+      h += '<div class="item">Unrecoverable: <span' + errIf(srt.pkt_recv_filter_loss_total) + '>' + fmt_num(srt.pkt_recv_filter_loss_total) + '</span></div>';
+      h += '<div class="item">FEC Tx: <span>' + fmt_num(srt.pkt_send_filter_extra_total) + '</span></div>';
+      h += '<div class="item">FEC Rx: <span>' + fmt_num(srt.pkt_recv_filter_extra_total) + '</span></div>';
+      h += '<div class="item">Recovered (int): <span>' + fmt_num(srt.pkt_recv_filter_supply) + '</span></div>';
+      h += '<div class="item">Unrecov. (int): <span' + errIf(srt.pkt_recv_filter_loss) + '>' + fmt_num(srt.pkt_recv_filter_loss) + '</span></div>';
+      h += '</div>';
+    }
+
+    // Buffer & Flow Control
+    h += '<div class="srt-section">';
+    h += '<div class="srt-section-label">Buffer &amp; Flow Control</div>';
+    h += '<div class="item">Flight: <span>' + fmt_num(srt.pkt_flight_size) + ' pkts</span></div>';
+    h += '<div class="item">Flow Win: <span>' + fmt_num(srt.pkt_flow_window) + '</span></div>';
+    h += '<div class="item">Cong Win: <span>' + fmt_num(srt.pkt_congestion_window) + '</span></div>';
+    h += '<div class="item">Snd Buf: <span>' + fmt_num(srt.ms_send_buf) + ' ms</span></div>';
+    h += '<div class="item">Rcv Buf: <span>' + fmt_num(srt.ms_recv_buf) + ' ms</span></div>';
+    h += '<div class="item">ACK Sent: <span>' + fmt_num(srt.pkt_sent_ack_total) + '</span></div>';
+    h += '<div class="item">ACK Recv: <span>' + fmt_num(srt.pkt_recv_ack_total) + '</span></div>';
+    h += '</div>';
+
+    h += '</div>';
+    return h;
   }
 
   // ── Build flow card HTML ──

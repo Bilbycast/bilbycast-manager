@@ -460,9 +460,30 @@
           <div class="form-group"><label>Peer Idle Timeout (s)</label><input type="number" id="srtInputPeerIdleTimeout" value="30" min="5"/><div class="hint">Drop connection after this many seconds without data (default 30)</div></div>
         </div>
         <div class="form-row">
+          <div class="form-group"><label>Recv Latency (ms)</label><input type="number" id="srtInputRecvLatency" placeholder="Same as Latency" min="0"/><div class="hint">Override receiver-side buffer latency (optional)</div></div>
+          <div class="form-group"><label>Peer Latency (ms)</label><input type="number" id="srtInputPeerLatency" placeholder="Same as Latency" min="0"/><div class="hint">Override sender-side minimum latency (optional)</div></div>
+        </div>
+        <div class="form-row">
           <div class="form-group"><label>Passphrase (AES encryption)</label><input type="text" id="srtInputPassphrase" placeholder="Optional, 10-79 chars"/></div>
           <div class="form-group"><label>AES Key Length</label><select id="srtInputAesKeyLen"><option value="">Default (128-bit)</option><option value="16">AES-128</option><option value="24">AES-192</option><option value="32">AES-256</option></select></div>
+          <div class="form-group"><label>Cipher Mode</label><select id="srtInputCryptoMode"><option value="">Default (AES-CTR)</option><option value="aes-ctr">AES-CTR</option><option value="aes-gcm">AES-GCM</option></select><div class="hint">AES-GCM adds authentication (requires libsrt &ge; 1.5.2 peer)</div></div>
         </div>
+        <div class="form-row">
+          <div class="form-group"><label>Max Retransmit BW (bytes/s)</label><input type="number" id="srtInputMaxRexmitBw" placeholder="Unlimited (-1)" min="-1"/><div class="hint">-1 = unlimited, 0 = disable retransmissions, &gt;0 = cap in bytes/sec</div></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Stream ID</label><input type="text" id="srtInputStreamId" placeholder="Optional, max 512 chars" maxlength="512"/><div class="hint">Caller: sent to listener for identification. Listener: if set, only matching callers accepted. Supports <code>#!::r=name,m=publish</code> format.</div></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>FEC Packet Filter</label><input type="text" id="srtInputPacketFilter" placeholder="e.g. fec,cols:10,rows:5,layout:staircase,arq:onreq" maxlength="512"/><div class="hint">SRT Forward Error Correction. cols: row group size, rows: column group size (1=row-only). layout: even|staircase. arq: always|onreq|never. Both sides must agree.</div></div>
+        </div>
+        <details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Advanced SRT Settings</summary><div style="margin-top:8px;">
+          <div class="form-row"><div class="form-group"><label>Max Bandwidth (bytes/s)</label><input type="number" id="srtInputMaxBw" placeholder="0 = unlimited" min="0"/></div><div class="form-group"><label>Input Bandwidth (bytes/s)</label><input type="number" id="srtInputInputBw" placeholder="0 = auto" min="0"/></div><div class="form-group"><label>Overhead BW %</label><input type="number" id="srtInputOverheadBw" placeholder="25" min="5" max="100"/></div></div>
+          <div class="form-row"><div class="form-group"><label>Enforced Encryption</label><select id="srtInputEnforcedEncryption"><option value="">Default</option><option value="true">Yes</option><option value="false">No</option></select></div><div class="form-group"><label>Connect Timeout (s)</label><input type="number" id="srtInputConnectTimeout" placeholder="3" min="1"/></div><div class="form-group"><label>Flight Flag Size (pkts)</label><input type="number" id="srtInputFlightFlagSize" placeholder="25600" min="32"/></div></div>
+          <div class="form-row"><div class="form-group"><label>Send Buffer (pkts)</label><input type="number" id="srtInputSendBufSize" placeholder="8192" min="32"/></div><div class="form-group"><label>Recv Buffer (pkts)</label><input type="number" id="srtInputRecvBufSize" placeholder="8192" min="32"/></div><div class="form-group"><label>Payload Size (bytes)</label><input type="number" id="srtInputPayloadSize" placeholder="1316" min="188" max="1456"/></div></div>
+          <div class="form-row"><div class="form-group"><label>IP TOS / DSCP</label><input type="number" id="srtInputIpTos" placeholder="0" min="0" max="255"/></div><div class="form-group"><label>Retransmit Algo</label><select id="srtInputRetransmitAlgo"><option value="">Default</option><option value="reduced">Reduced</option></select></div><div class="form-group"><label>Send Drop Delay (ms)</label><input type="number" id="srtInputSendDropDelay" placeholder="-1 = off" min="-1"/></div></div>
+          <div class="form-row"><div class="form-group"><label>Loss Max TTL (pkts)</label><input type="number" id="srtInputLossMaxTtl" placeholder="0 = adaptive" min="0"/></div><div class="form-group"><label>KM Refresh (pkts)</label><input type="number" id="srtInputKmRefreshRate" placeholder="16777216" min="1"/></div><div class="form-group"><label>KM Pre-announce (pkts)</label><input type="number" id="srtInputKmPreAnnounce" placeholder="4096" min="1"/></div></div>
+        </div></details>
         <div class="form-row">
           <div class="form-group">
             <label>SMPTE 2022-7 Redundancy</label>
@@ -484,7 +505,18 @@
             <div class="form-row">
               <div class="form-group"><label>Leg 2 Passphrase</label><input type="text" id="srtInputR_Passphrase" placeholder="Optional, 10-79 chars"/></div>
               <div class="form-group"><label>Leg 2 AES Key Length</label><select id="srtInputR_AesKeyLen"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div>
+              <div class="form-group"><label>Leg 2 Cipher Mode</label><select id="srtInputR_CryptoMode"><option value="">Default (AES-CTR)</option><option value="aes-ctr">AES-CTR</option><option value="aes-gcm">AES-GCM</option></select></div>
             </div>
+            <div class="form-row">
+              <div class="form-group"><label>Leg 2 FEC Packet Filter</label><input type="text" id="srtInputR_PacketFilter" placeholder="e.g. fec,cols:10,rows:5,layout:staircase,arq:onreq" maxlength="512"/></div>
+            </div>
+            <details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11px;color:#94a3b8;">Leg 2 Advanced</summary><div style="margin-top:6px;">
+              <div class="form-row"><div class="form-group"><label>Max BW</label><input type="number" id="srtInputR_MaxBw" placeholder="0" min="0"/></div><div class="form-group"><label>Input BW</label><input type="number" id="srtInputR_InputBw" placeholder="0" min="0"/></div><div class="form-group"><label>Overhead %</label><input type="number" id="srtInputR_OverheadBw" placeholder="25" min="5" max="100"/></div></div>
+              <div class="form-row"><div class="form-group"><label>Enforced Enc</label><select id="srtInputR_EnforcedEncryption"><option value="">Default</option><option value="true">Yes</option><option value="false">No</option></select></div><div class="form-group"><label>Timeout (s)</label><input type="number" id="srtInputR_ConnectTimeout" placeholder="3" min="1"/></div><div class="form-group"><label>Flight Flag</label><input type="number" id="srtInputR_FlightFlagSize" placeholder="25600" min="32"/></div></div>
+              <div class="form-row"><div class="form-group"><label>Send Buf</label><input type="number" id="srtInputR_SendBufSize" placeholder="8192" min="32"/></div><div class="form-group"><label>Recv Buf</label><input type="number" id="srtInputR_RecvBufSize" placeholder="8192" min="32"/></div><div class="form-group"><label>Payload</label><input type="number" id="srtInputR_PayloadSize" placeholder="1316" min="188" max="1456"/></div></div>
+              <div class="form-row"><div class="form-group"><label>IP TOS</label><input type="number" id="srtInputR_IpTos" placeholder="0" min="0" max="255"/></div><div class="form-group"><label>Rexmit Algo</label><select id="srtInputR_RetransmitAlgo"><option value="">Default</option><option value="reduced">Reduced</option></select></div><div class="form-group"><label>Drop Delay</label><input type="number" id="srtInputR_SendDropDelay" placeholder="-1" min="-1"/></div></div>
+              <div class="form-row"><div class="form-group"><label>Loss TTL</label><input type="number" id="srtInputR_LossMaxTtl" placeholder="0" min="0"/></div><div class="form-group"><label>KM Refresh</label><input type="number" id="srtInputR_KmRefreshRate" placeholder="16777216" min="1"/></div><div class="form-group"><label>KM Pre-ann</label><input type="number" id="srtInputR_KmPreAnnounce" placeholder="4096" min="1"/></div></div>
+            </div></details>
           </div>
         </div>
       </div>
@@ -1327,9 +1359,13 @@ function openNewFlowModal() {
   document.getElementById('srtInputLocalAddr').value = '';
   document.getElementById('srtInputRemoteAddr').value = '';
   document.getElementById('srtInputLatency').value = '120';
+  document.getElementById('srtInputRecvLatency').value = '';
+  document.getElementById('srtInputPeerLatency').value = '';
   document.getElementById('srtInputPeerIdleTimeout').value = '30';
   document.getElementById('srtInputPassphrase').value = '';
   document.getElementById('srtInputAesKeyLen').value = '';
+  document.getElementById('srtInputCryptoMode').value = '';
+  document.getElementById('srtInputMaxRexmitBw').value = '';
   document.getElementById('srtInputRedundancy').value = 'off';
   document.getElementById('srtInputRedundancyFields').style.display = 'none';
   // Reset RTP input fields
@@ -1403,9 +1439,16 @@ function _openEditFlowModal(flow) {
     document.getElementById('srtInputLocalAddr').value = inp.local_addr || '';
     document.getElementById('srtInputRemoteAddr').value = inp.remote_addr || '';
     document.getElementById('srtInputLatency').value = inp.latency_ms || 120;
+    document.getElementById('srtInputRecvLatency').value = inp.recv_latency_ms != null ? inp.recv_latency_ms : '';
+    document.getElementById('srtInputPeerLatency').value = inp.peer_latency_ms != null ? inp.peer_latency_ms : '';
     document.getElementById('srtInputPeerIdleTimeout').value = inp.peer_idle_timeout_secs || 30;
     document.getElementById('srtInputPassphrase').value = inp.passphrase || '';
     document.getElementById('srtInputAesKeyLen').value = inp.aes_key_len ? String(inp.aes_key_len) : '';
+    document.getElementById('srtInputCryptoMode').value = inp.crypto_mode || '';
+    document.getElementById('srtInputMaxRexmitBw').value = inp.max_rexmit_bw != null ? inp.max_rexmit_bw : '';
+    document.getElementById('srtInputStreamId').value = inp.stream_id || '';
+    document.getElementById('srtInputPacketFilter').value = inp.packet_filter || '';
+    populateSrtAdvanced('srtInput', inp);
     if (inp.redundancy) {
       document.getElementById('srtInputRedundancy').value = 'on';
       document.getElementById('srtInputRedundancyFields').style.display = '';
@@ -1416,6 +1459,9 @@ function _openEditFlowModal(flow) {
       document.getElementById('srtInputR_Latency').value = r.latency_ms || 120;
       document.getElementById('srtInputR_Passphrase').value = r.passphrase || '';
       document.getElementById('srtInputR_AesKeyLen').value = r.aes_key_len ? String(r.aes_key_len) : '';
+      document.getElementById('srtInputR_CryptoMode').value = r.crypto_mode || '';
+      document.getElementById('srtInputR_PacketFilter').value = r.packet_filter || '';
+      populateSrtAdvanced('srtInputR_', r);
     } else {
       document.getElementById('srtInputRedundancy').value = 'off';
       document.getElementById('srtInputRedundancyFields').style.display = 'none';
@@ -1479,11 +1525,24 @@ function populateOutput(idx, out) {
     document.getElementById('outSrtLocal-' + idx).value = out.local_addr || '0.0.0.0:0';
     document.getElementById('outSrtRemote-' + idx).value = out.remote_addr || '';
     document.getElementById('outSrtLatency-' + idx).value = out.latency_ms || 120;
+    var rlEl = document.getElementById('outSrtRecvLatency-' + idx);
+    if (rlEl) rlEl.value = out.recv_latency_ms != null ? out.recv_latency_ms : '';
+    var plEl = document.getElementById('outSrtPeerLatency-' + idx);
+    if (plEl) plEl.value = out.peer_latency_ms != null ? out.peer_latency_ms : '';
     var peerIdleEl = document.getElementById('outSrtPeerIdle-' + idx);
     if (peerIdleEl) peerIdleEl.value = out.peer_idle_timeout_secs || 30;
     document.getElementById('outSrtPass-' + idx).value = out.passphrase || '';
+    var mrEl = document.getElementById('outSrtMaxRexmitBw-' + idx);
+    if (mrEl) mrEl.value = out.max_rexmit_bw != null ? out.max_rexmit_bw : '';
     var aesEl = document.getElementById('outSrtAes-' + idx);
     if (aesEl) aesEl.value = out.aes_key_len ? String(out.aes_key_len) : '';
+    var cmEl = document.getElementById('outSrtCryptoMode-' + idx);
+    if (cmEl) cmEl.value = out.crypto_mode || '';
+    var sidEl = document.getElementById('outSrtStreamId-' + idx);
+    if (sidEl) sidEl.value = out.stream_id || '';
+    var pfEl = document.getElementById('outSrtPacketFilter-' + idx);
+    if (pfEl) pfEl.value = out.packet_filter || '';
+    populateSrtAdvanced('outSrt' + idx, out);
     if (out.redundancy) {
       var redEl = document.getElementById('outSrtRedundancy-' + idx);
       if (redEl) { redEl.value = 'on'; toggleOutputRedundancy(String(idx)); }
@@ -1500,6 +1559,11 @@ function populateOutput(idx, out) {
       if (passEl) passEl.value = r.passphrase || '';
       var aesEl2 = document.getElementById('outSrtR_Aes-' + idx);
       if (aesEl2) aesEl2.value = r.aes_key_len ? String(r.aes_key_len) : '';
+      var cmEl2 = document.getElementById('outSrtR_CryptoMode-' + idx);
+      if (cmEl2) cmEl2.value = r.crypto_mode || '';
+      var pfEl2 = document.getElementById('outSrtR_PacketFilter-' + idx);
+      if (pfEl2) pfEl2.value = r.packet_filter || '';
+      populateSrtAdvanced('outSrtR_' + idx, r);
     }
   } else if (otype === 'rtp') {
     document.getElementById('outRtpDest-' + idx).value = out.dest_addr || '';
@@ -1591,9 +1655,16 @@ function updateOutputFields(idx) {
     '<div class="form-group"><label>Local Address</label><input type="text" id="outSrtLocal-'+p+'" placeholder="0.0.0.0:0"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Remote Address</label><div class="addr-with-discover"><input type="text" id="outSrtRemote-'+p+'" placeholder="remote:9000"/><button type="button" class="endpoint-discover-btn" title="Discover endpoints from other nodes" onclick="showEndpointPicker(\'outSrtRemote-'+p+'\',\'output\',\'srt\',\'outSrtMode-'+p+'\')"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>' +
     '<div class="form-group"><label>Latency (ms)</label><input type="number" id="outSrtLatency-'+p+'" value="120"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Recv Latency (ms)</label><input type="number" id="outSrtRecvLatency-'+p+'" placeholder="Same as Latency" min="0"/></div>' +
+    '<div class="form-group"><label>Peer Latency (ms)</label><input type="number" id="outSrtPeerLatency-'+p+'" placeholder="Same as Latency" min="0"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Peer Idle Timeout (s)</label><input type="number" id="outSrtPeerIdle-'+p+'" value="30"/></div>' +
     '<div class="form-group"><label>Passphrase</label><input type="text" id="outSrtPass-'+p+'" placeholder="Optional"/></div></div>' +
-    '<div class="form-group"><label>AES Key Length</label><select id="outSrtAes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>' +
+    '<div class="form-group"><label>AES Key Length</label><select id="outSrtAes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div>' +
+    '<div class="form-group"><label>Cipher Mode</label><select id="outSrtCryptoMode-'+p+'"><option value="">Default (AES-CTR)</option><option value="aes-ctr">AES-CTR</option><option value="aes-gcm">AES-GCM</option></select></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Max Retransmit BW (bytes/s)</label><input type="number" id="outSrtMaxRexmitBw-'+p+'" placeholder="Unlimited (-1)" min="-1"/><div class="hint">-1 = unlimited, 0 = disable, &gt;0 = cap</div></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Stream ID</label><input type="text" id="outSrtStreamId-'+p+'" placeholder="Optional, max 512 chars" maxlength="512"/><div class="hint">Caller: sent during handshake. Listener: require matching callers.</div></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>FEC Packet Filter</label><input type="text" id="outSrtPacketFilter-'+p+'" placeholder="e.g. fec,cols:10,rows:5,layout:staircase,arq:onreq" maxlength="512"/><div class="hint">SRT Forward Error Correction. cols: row group size, rows: column group size (1=row-only). layout: even|staircase. arq: always|onreq|never.</div></div></div>' +
+    srtAdvancedHtml('outSrt'+p) +
     '<div class="form-row"><div class="form-group"><label>NAT Tunnel</label>' +
     '<select id="outSrtTunnel-'+p+'" onchange="toggleSrtTunnel(\''+p+'\')">' +
     '<option value="none">None (direct SRT)</option>' +
@@ -1621,7 +1692,10 @@ function updateOutputFields(idx) {
     '<div class="form-row"><div class="form-group"><label>Leg 2 Remote Address</label><input type="text" id="outSrtR_Remote-'+p+'" placeholder="remote:9001"/></div>' +
     '<div class="form-group"><label>Leg 2 Latency (ms)</label><input type="number" id="outSrtR_Latency-'+p+'" value="120"/></div></div>' +
     '<div class="form-row"><div class="form-group"><label>Leg 2 Passphrase</label><input type="text" id="outSrtR_Pass-'+p+'" placeholder="Optional"/></div>' +
-    '<div class="form-group"><label>Leg 2 AES Key Length</label><select id="outSrtR_Aes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div></div>' +
+    '<div class="form-group"><label>Leg 2 AES Key Length</label><select id="outSrtR_Aes-'+p+'"><option value="">Default</option><option value="16">128</option><option value="24">192</option><option value="32">256</option></select></div>' +
+    '<div class="form-group"><label>Leg 2 Cipher Mode</label><select id="outSrtR_CryptoMode-'+p+'"><option value="">Default (AES-CTR)</option><option value="aes-ctr">AES-CTR</option><option value="aes-gcm">AES-GCM</option></select></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Leg 2 FEC Packet Filter</label><input type="text" id="outSrtR_PacketFilter-'+p+'" placeholder="e.g. fec,cols:10,rows:5,layout:staircase,arq:onreq" maxlength="512"/></div></div>' +
+    srtAdvancedHtml('outSrtR_'+p) +
     '</div></div>';
   } else if (type === 'rtp') {
     h = '<div class="form-row"><div class="form-group"><label>Destination Address</label><div class="addr-with-discover"><input type="text" id="outRtpDest-'+p+'" placeholder="192.168.1.100:5004"/><button type="button" class="endpoint-discover-btn" title="Discover RTP inputs from other nodes" onclick="showEndpointPicker(\'outRtpDest-'+p+'\',\'output\',\'rtp\',null)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button></div></div>' +
@@ -1666,6 +1740,43 @@ function toggleWebrtcMode(p) {
 function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function ival(id) { var v = val(id); return v ? parseInt(v,10) : null; }
 
+function collectSrtAdvanced(prefix) {
+  var o = {};
+  var mbw = val(prefix+'MaxBw'); if (mbw !== '') o.max_bw = parseInt(mbw);
+  var ibw = val(prefix+'InputBw'); if (ibw !== '') o.input_bw = parseInt(ibw);
+  var obw = val(prefix+'OverheadBw'); if (obw !== '') o.overhead_bw = parseInt(obw);
+  var ee = val(prefix+'EnforcedEncryption'); if (ee !== '') o.enforced_encryption = (ee === 'true');
+  var ct = val(prefix+'ConnectTimeout'); if (ct !== '') o.connect_timeout_secs = parseInt(ct);
+  var ffs = val(prefix+'FlightFlagSize'); if (ffs !== '') o.flight_flag_size = parseInt(ffs);
+  var sbs = val(prefix+'SendBufSize'); if (sbs !== '') o.send_buffer_size = parseInt(sbs);
+  var rbs = val(prefix+'RecvBufSize'); if (rbs !== '') o.recv_buffer_size = parseInt(rbs);
+  var tos = val(prefix+'IpTos'); if (tos !== '') o.ip_tos = parseInt(tos);
+  var ra = val(prefix+'RetransmitAlgo'); if (ra) o.retransmit_algo = ra;
+  var sdd = val(prefix+'SendDropDelay'); if (sdd !== '') o.send_drop_delay = parseInt(sdd);
+  var lmt = val(prefix+'LossMaxTtl'); if (lmt !== '') o.loss_max_ttl = parseInt(lmt);
+  var kmr = val(prefix+'KmRefreshRate'); if (kmr !== '') o.km_refresh_rate = parseInt(kmr);
+  var kmp = val(prefix+'KmPreAnnounce'); if (kmp !== '') o.km_pre_announce = parseInt(kmp);
+  var ps = val(prefix+'PayloadSize'); if (ps !== '') o.payload_size = parseInt(ps);
+  return o;
+}
+
+function populateSrtAdvanced(prefix, data) {
+  var fields = [['MaxBw','max_bw'],['InputBw','input_bw'],['OverheadBw','overhead_bw'],['ConnectTimeout','connect_timeout_secs'],['FlightFlagSize','flight_flag_size'],['SendBufSize','send_buffer_size'],['RecvBufSize','recv_buffer_size'],['IpTos','ip_tos'],['SendDropDelay','send_drop_delay'],['LossMaxTtl','loss_max_ttl'],['KmRefreshRate','km_refresh_rate'],['KmPreAnnounce','km_pre_announce'],['PayloadSize','payload_size']];
+  for (var i=0;i<fields.length;i++) { var el = document.getElementById(prefix+fields[i][0]); if (el) el.value = data[fields[i][1]] != null ? data[fields[i][1]] : ''; }
+  var eeEl = document.getElementById(prefix+'EnforcedEncryption'); if (eeEl) eeEl.value = data.enforced_encryption != null ? String(data.enforced_encryption) : '';
+  var raEl = document.getElementById(prefix+'RetransmitAlgo'); if (raEl) raEl.value = data.retransmit_algo || '';
+}
+
+function srtAdvancedHtml(prefix) {
+  return '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Advanced SRT Settings</summary><div style="margin-top:8px;">' +
+    '<div class="form-row"><div class="form-group"><label>Max BW (B/s)</label><input type="number" id="'+prefix+'MaxBw" placeholder="0 = unlimited" min="0"/></div><div class="form-group"><label>Input BW (B/s)</label><input type="number" id="'+prefix+'InputBw" placeholder="0 = auto" min="0"/></div><div class="form-group"><label>Overhead %</label><input type="number" id="'+prefix+'OverheadBw" placeholder="25" min="5" max="100"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Enforced Enc</label><select id="'+prefix+'EnforcedEncryption"><option value="">Default</option><option value="true">Yes</option><option value="false">No</option></select></div><div class="form-group"><label>Timeout (s)</label><input type="number" id="'+prefix+'ConnectTimeout" placeholder="3" min="1"/></div><div class="form-group"><label>Flight Flag</label><input type="number" id="'+prefix+'FlightFlagSize" placeholder="25600" min="32"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Send Buf</label><input type="number" id="'+prefix+'SendBufSize" placeholder="8192" min="32"/></div><div class="form-group"><label>Recv Buf</label><input type="number" id="'+prefix+'RecvBufSize" placeholder="8192" min="32"/></div><div class="form-group"><label>Payload</label><input type="number" id="'+prefix+'PayloadSize" placeholder="1316" min="188" max="1456"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>IP TOS</label><input type="number" id="'+prefix+'IpTos" placeholder="0" min="0" max="255"/></div><div class="form-group"><label>Rexmit Algo</label><select id="'+prefix+'RetransmitAlgo"><option value="">Default</option><option value="reduced">Reduced</option></select></div><div class="form-group"><label>Drop Delay (ms)</label><input type="number" id="'+prefix+'SendDropDelay" placeholder="-1" min="-1"/></div></div>' +
+    '<div class="form-row"><div class="form-group"><label>Loss TTL</label><input type="number" id="'+prefix+'LossMaxTtl" placeholder="0" min="0"/></div><div class="form-group"><label>KM Refresh</label><input type="number" id="'+prefix+'KmRefreshRate" placeholder="16777216" min="1"/></div><div class="form-group"><label>KM Pre-ann</label><input type="number" id="'+prefix+'KmPreAnnounce" placeholder="4096" min="1"/></div></div>' +
+    '</div></details>';
+}
+
 function buildFlowConfig() {
   var config = { id: val('flowId'), name: val('flowName'), enabled: val('flowEnabled') === 'true' };
 
@@ -1673,15 +1784,25 @@ function buildFlowConfig() {
   var itype = val('inputType');
   if (itype === 'srt') {
     var inp = { type: 'srt', mode: val('srtInputMode'), local_addr: val('srtInputLocalAddr'), latency_ms: parseInt(val('srtInputLatency'))||120 };
+    var irl = val('srtInputRecvLatency'); if (irl !== '') inp.recv_latency_ms = parseInt(irl);
+    var ipl = val('srtInputPeerLatency'); if (ipl !== '') inp.peer_latency_ms = parseInt(ipl);
     var pit = parseInt(val('srtInputPeerIdleTimeout')); if (pit && pit !== 30) inp.peer_idle_timeout_secs = pit;
     if (val('srtInputRemoteAddr')) inp.remote_addr = val('srtInputRemoteAddr');
     if (val('srtInputPassphrase')) inp.passphrase = val('srtInputPassphrase');
     var aes = val('srtInputAesKeyLen'); if (aes) inp.aes_key_len = parseInt(aes);
+    var cm = val('srtInputCryptoMode'); if (cm) inp.crypto_mode = cm;
+    var mrb = val('srtInputMaxRexmitBw'); if (mrb !== '') inp.max_rexmit_bw = parseInt(mrb);
+    if (val('srtInputStreamId')) inp.stream_id = val('srtInputStreamId');
+    if (val('srtInputPacketFilter')) inp.packet_filter = val('srtInputPacketFilter');
+    Object.assign(inp, collectSrtAdvanced('srtInput'));
     if (val('srtInputRedundancy') === 'on') {
       var r = { mode: val('srtInputR_Mode'), local_addr: val('srtInputR_LocalAddr'), latency_ms: parseInt(val('srtInputR_Latency'))||120 };
       if (val('srtInputR_RemoteAddr')) r.remote_addr = val('srtInputR_RemoteAddr');
       if (val('srtInputR_Passphrase')) r.passphrase = val('srtInputR_Passphrase');
       var ra = val('srtInputR_AesKeyLen'); if (ra) r.aes_key_len = parseInt(ra);
+      var rcm = val('srtInputR_CryptoMode'); if (rcm) r.crypto_mode = rcm;
+      if (val('srtInputR_PacketFilter')) r.packet_filter = val('srtInputR_PacketFilter');
+      Object.assign(r, collectSrtAdvanced('srtInputR_'));
       inp.redundancy = r;
     }
     config.input = inp;
@@ -1732,14 +1853,24 @@ function buildFlowConfig() {
       out.mode = val('outSrtMode-'+idx); out.local_addr = val('outSrtLocal-'+idx) || '0.0.0.0:0';
       if (val('outSrtRemote-'+idx)) out.remote_addr = val('outSrtRemote-'+idx);
       out.latency_ms = parseInt(val('outSrtLatency-'+idx))||120;
+      var orl = val('outSrtRecvLatency-'+idx); if (orl !== '') out.recv_latency_ms = parseInt(orl);
+      var opl = val('outSrtPeerLatency-'+idx); if (opl !== '') out.peer_latency_ms = parseInt(opl);
       var opit = parseInt(val('outSrtPeerIdle-'+idx)); if (opit) out.peer_idle_timeout_secs = opit;
       if (val('outSrtPass-'+idx)) out.passphrase = val('outSrtPass-'+idx);
       var a = val('outSrtAes-'+idx); if (a) out.aes_key_len = parseInt(a);
+      var ocm = val('outSrtCryptoMode-'+idx); if (ocm) out.crypto_mode = ocm;
+      var omrb = val('outSrtMaxRexmitBw-'+idx); if (omrb !== '') out.max_rexmit_bw = parseInt(omrb);
+      if (val('outSrtStreamId-'+idx)) out.stream_id = val('outSrtStreamId-'+idx);
+      if (val('outSrtPacketFilter-'+idx)) out.packet_filter = val('outSrtPacketFilter-'+idx);
+      Object.assign(out, collectSrtAdvanced('outSrt'+idx));
       if (val('outSrtRedundancy-'+idx) === 'on') {
         var r = { mode: val('outSrtR_Mode-'+idx), local_addr: val('outSrtR_Local-'+idx) || '0.0.0.0:0', latency_ms: parseInt(val('outSrtR_Latency-'+idx))||120 };
         if (val('outSrtR_Remote-'+idx)) r.remote_addr = val('outSrtR_Remote-'+idx);
         if (val('outSrtR_Pass-'+idx)) r.passphrase = val('outSrtR_Pass-'+idx);
         var ra = val('outSrtR_Aes-'+idx); if (ra) r.aes_key_len = parseInt(ra);
+        var rcm2 = val('outSrtR_CryptoMode-'+idx); if (rcm2) r.crypto_mode = rcm2;
+        if (val('outSrtR_PacketFilter-'+idx)) r.packet_filter = val('outSrtR_PacketFilter-'+idx);
+        Object.assign(r, collectSrtAdvanced('outSrtR_'+idx));
         out.redundancy = r;
       }
       var tunnelMode = val('outSrtTunnel-'+idx);
@@ -2434,14 +2565,24 @@ function buildOutputConfig(p) {
     out.mode = val('outSrtMode-'+p); out.local_addr = val('outSrtLocal-'+p) || '0.0.0.0:0';
     if (val('outSrtRemote-'+p)) out.remote_addr = val('outSrtRemote-'+p);
     out.latency_ms = parseInt(val('outSrtLatency-'+p))||120;
+    var orl2 = val('outSrtRecvLatency-'+p); if (orl2 !== '') out.recv_latency_ms = parseInt(orl2);
+    var opl2 = val('outSrtPeerLatency-'+p); if (opl2 !== '') out.peer_latency_ms = parseInt(opl2);
     var opit2 = parseInt(val('outSrtPeerIdle-'+p)); if (opit2) out.peer_idle_timeout_secs = opit2;
     if (val('outSrtPass-'+p)) out.passphrase = val('outSrtPass-'+p);
     var a = val('outSrtAes-'+p); if (a) out.aes_key_len = parseInt(a);
+    var ocm2 = val('outSrtCryptoMode-'+p); if (ocm2) out.crypto_mode = ocm2;
+    var omrb2 = val('outSrtMaxRexmitBw-'+p); if (omrb2 !== '') out.max_rexmit_bw = parseInt(omrb2);
+    if (val('outSrtStreamId-'+p)) out.stream_id = val('outSrtStreamId-'+p);
+    if (val('outSrtPacketFilter-'+p)) out.packet_filter = val('outSrtPacketFilter-'+p);
+    Object.assign(out, collectSrtAdvanced('outSrt'+p));
     if (val('outSrtRedundancy-'+p) === 'on') {
       var r = { mode: val('outSrtR_Mode-'+p), local_addr: val('outSrtR_Local-'+p) || '0.0.0.0:0', latency_ms: parseInt(val('outSrtR_Latency-'+p))||120 };
       if (val('outSrtR_Remote-'+p)) r.remote_addr = val('outSrtR_Remote-'+p);
       if (val('outSrtR_Pass-'+p)) r.passphrase = val('outSrtR_Pass-'+p);
       var ra = val('outSrtR_Aes-'+p); if (ra) r.aes_key_len = parseInt(ra);
+      var rcm3 = val('outSrtR_CryptoMode-'+p); if (rcm3) r.crypto_mode = rcm3;
+      if (val('outSrtR_PacketFilter-'+p)) r.packet_filter = val('outSrtR_PacketFilter-'+p);
+      Object.assign(r, collectSrtAdvanced('outSrtR_'+p));
       out.redundancy = r;
     }
     var tunnelMode = val('outSrtTunnel-'+p);

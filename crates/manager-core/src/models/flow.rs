@@ -79,10 +79,58 @@ pub struct SrtInputConfig {
     pub remote_addr: Option<String>,
     #[serde(default = "default_latency")]
     pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_latency_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_latency_ms: Option<u64>,
+    #[serde(default = "default_peer_idle_timeout", skip_serializing_if = "is_default_peer_idle_timeout")]
+    pub peer_idle_timeout_secs: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub passphrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aes_key_len: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crypto_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_rexmit_bw: Option<i64>,
+    /// SRT Stream ID for access control (max 512 chars).
+    /// For callers: sent to the listener during handshake.
+    /// For listeners: if set, only connections with a matching stream_id are accepted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<String>,
+    /// SRT packet filter for FEC (Forward Error Correction).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packet_filter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bw: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_bw: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overhead_bw: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enforced_encryption: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flight_flag_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_buffer_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_buffer_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_tos: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retransmit_algo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_drop_delay: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loss_max_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub km_refresh_rate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub km_pre_announce: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redundancy: Option<SrtRedundancyConfig>,
 }
@@ -160,6 +208,14 @@ pub struct WhepInputConfig {
 
 fn default_latency() -> u64 {
     120
+}
+
+fn default_peer_idle_timeout() -> u64 {
+    30
+}
+
+fn is_default_peer_idle_timeout(v: &u64) -> bool {
+    *v == 30
 }
 
 /// Output destination configuration.
@@ -258,10 +314,56 @@ pub struct SrtOutputConfig {
     pub remote_addr: Option<String>,
     #[serde(default = "default_latency")]
     pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_latency_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_latency_ms: Option<u64>,
+    #[serde(default = "default_peer_idle_timeout", skip_serializing_if = "is_default_peer_idle_timeout")]
+    pub peer_idle_timeout_secs: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub passphrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aes_key_len: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crypto_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_rexmit_bw: Option<i64>,
+    /// SRT Stream ID for access control (max 512 chars).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<String>,
+    /// SRT packet filter for FEC (Forward Error Correction).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packet_filter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bw: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_bw: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overhead_bw: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enforced_encryption: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flight_flag_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_buffer_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_buffer_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_tos: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retransmit_algo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_drop_delay: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loss_max_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub km_refresh_rate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub km_pre_announce: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redundancy: Option<SrtRedundancyConfig>,
 }
@@ -349,10 +451,56 @@ pub struct SrtRedundancyConfig {
     pub remote_addr: Option<String>,
     #[serde(default = "default_latency")]
     pub latency_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_latency_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_latency_ms: Option<u64>,
+    #[serde(default = "default_peer_idle_timeout", skip_serializing_if = "is_default_peer_idle_timeout")]
+    pub peer_idle_timeout_secs: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub passphrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aes_key_len: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crypto_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_rexmit_bw: Option<i64>,
+    /// SRT Stream ID for leg 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<String>,
+    /// SRT packet filter for FEC on leg 2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packet_filter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_bw: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_bw: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overhead_bw: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enforced_encryption: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flight_flag_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_buffer_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recv_buffer_size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip_tos: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retransmit_algo: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub send_drop_delay: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loss_max_ttl: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub km_refresh_rate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub km_pre_announce: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload_size: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -433,9 +581,96 @@ pub struct OutputStats {
 pub struct SrtLegStats {
     pub state: String,
     pub rtt_ms: f64,
+    #[serde(default)]
     pub send_rate_mbps: f64,
+    #[serde(default)]
     pub recv_rate_mbps: f64,
+    #[serde(default)]
+    pub bandwidth_mbps: f64,
+    #[serde(default)]
+    pub max_bw_mbps: f64,
+
+    // Cumulative counters
+    #[serde(default)]
+    pub pkt_sent_total: i64,
+    #[serde(default)]
+    pub pkt_recv_total: i64,
     pub pkt_loss_total: i64,
+    #[serde(default)]
+    pub pkt_send_loss_total: i32,
+    #[serde(default)]
+    pub pkt_recv_loss_total: i32,
     pub pkt_retransmit_total: i32,
+    #[serde(default)]
+    pub pkt_recv_drop_total: i32,
+    #[serde(default)]
+    pub pkt_send_drop_total: i32,
+    #[serde(default)]
+    pub pkt_recv_undecrypt_total: i32,
+    #[serde(default)]
+    pub byte_sent_total: u64,
+    #[serde(default)]
+    pub byte_recv_total: u64,
+    #[serde(default)]
+    pub byte_retrans_total: u64,
+    #[serde(default)]
+    pub byte_recv_drop_total: u64,
+
+    // ACK/NAK counters
+    #[serde(default)]
+    pub pkt_sent_ack_total: i32,
+    #[serde(default)]
+    pub pkt_recv_ack_total: i32,
+    #[serde(default)]
+    pub pkt_sent_nak_total: i32,
+    #[serde(default)]
+    pub pkt_recv_nak_total: i32,
+
+    // Flow control / buffer state
+    #[serde(default)]
+    pub pkt_flow_window: i32,
+    #[serde(default)]
+    pub pkt_congestion_window: i32,
+    #[serde(default)]
+    pub pkt_flight_size: i32,
+    #[serde(default)]
+    pub byte_avail_send_buf: i32,
+    #[serde(default)]
+    pub byte_avail_recv_buf: i32,
+    #[serde(default)]
+    pub ms_send_buf: i32,
+    #[serde(default)]
+    pub ms_recv_buf: i32,
+    #[serde(default)]
+    pub ms_send_tsbpd_delay: i32,
+    #[serde(default)]
+    pub ms_recv_tsbpd_delay: i32,
+
+    // Reorder / belated
+    #[serde(default)]
+    pub pkt_reorder_distance: i32,
+    #[serde(default)]
+    pub pkt_reorder_tolerance: i32,
+    #[serde(default)]
+    pub pkt_recv_belated: i64,
+    #[serde(default)]
+    pub pkt_recv_avg_belated_time: f64,
+
+    // FEC (packet filter) statistics
+    #[serde(default)]
+    pub pkt_send_filter_extra_total: i32,
+    #[serde(default)]
+    pub pkt_recv_filter_extra_total: i32,
+    #[serde(default)]
+    pub pkt_recv_filter_supply_total: i32,
+    #[serde(default)]
+    pub pkt_recv_filter_loss_total: i32,
+    #[serde(default)]
+    pub pkt_send_filter_extra: i32,
+    #[serde(default)]
+    pub pkt_recv_filter_supply: i32,
+    #[serde(default)]
+    pub pkt_recv_filter_loss: i32,
+
     pub uptime_ms: i64,
 }

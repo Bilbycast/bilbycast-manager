@@ -76,10 +76,15 @@ INPUT TYPES:
    - Modes: caller (initiates connection), listener (waits for connection), rendezvous (both sides connect)
    - local_addr: local bind address
    - remote_addr: required for caller/rendezvous modes
-   - latency_ms: SRT latency in milliseconds (default 120)
+   - latency_ms: SRT latency in milliseconds (default 120, sets both receiver and sender latency)
+   - recv_latency_ms: Optional receiver-side latency override in ms (overrides latency_ms for receiver)
+   - peer_latency_ms: Optional sender/peer-side latency override in ms (overrides latency_ms for sender)
    - peer_idle_timeout_secs: seconds before connection is considered dead if no data (default 30, use higher for broadcast)
-   - Optional: AES encryption (passphrase + key length 16/24/32)
-   - Optional: SMPTE 2022-7 redundancy — add "redundancy" object with leg 2 config (mode, local_addr, remote_addr, latency_ms, passphrase, aes_key_len). Merges two independent SRT legs for hitless protection switching.
+   - Optional: AES encryption (passphrase + key length 16/24/32 + crypto_mode "aes-ctr" or "aes-gcm"). Default cipher is AES-CTR. AES-GCM provides authenticated encryption (integrity + confidentiality) but requires libsrt >= 1.5.2 on the peer and only supports AES-128/256 (not AES-192).
+   - Optional: max_rexmit_bw — maximum retransmission bandwidth in bytes/sec (-1 = unlimited, 0 = disable retransmissions, >0 = cap). Uses Token Bucket shaper to prevent retransmissions from starving live data on lossy links.
+   - Optional: packet_filter — SRT FEC (Forward Error Correction) config string. Format: "fec,cols:10,rows:5,layout:staircase,arq:onreq". Cols = row group size (number of columns), rows = column group size (1 = row-only FEC). Layout: "even" or "staircase" (default). ARQ modes: "always" (ARQ+FEC parallel), "onreq" (FEC first, then ARQ, default), "never" (FEC only). Both sides must agree on parameters during handshake.
+   - Advanced optional: max_bw (max bandwidth bytes/s, 0=unlimited), input_bw (estimated input rate bytes/s, 0=auto), overhead_bw (overhead %, 5-100, default 25), enforced_encryption (bool, reject unencrypted peers), connect_timeout_secs (default 3), flight_flag_size (flow window pkts, default 25600), send_buffer_size/recv_buffer_size (buffer pkts, default 8192), payload_size (bytes per SRT packet, default 1316), ip_tos (DSCP 0-255), retransmit_algo ("default" or "reduced"), send_drop_delay (ms, -1=off), loss_max_ttl (reorder tolerance, 0=adaptive), km_refresh_rate/km_pre_announce (key rotation packets)
+   - Optional: SMPTE 2022-7 redundancy — add "redundancy" object with leg 2 config (mode, local_addr, remote_addr, latency_ms, passphrase, aes_key_len, crypto_mode, max_rexmit_bw, and all advanced options above). Merges two independent SRT legs for hitless protection switching.
 
 4. RTMP - Accept publish connections from OBS, ffmpeg, etc.
    - listen_addr: address to listen on (e.g., "0.0.0.0:1935")
@@ -97,7 +102,8 @@ OUTPUT TYPES:
    - Strips RTP headers if input is RTP-wrapped. Standard IP/TS transport for ffplay, VLC, multicast.
 
 3. SRT - Send RTP over SRT
-   - Same connection options as SRT input (mode, local_addr, remote_addr, latency_ms, passphrase, aes_key_len)
+   - Same connection options as SRT input (mode, local_addr, remote_addr, latency_ms, passphrase, aes_key_len, crypto_mode, max_rexmit_bw, packet_filter, stream_id, and all advanced options: max_bw, input_bw, overhead_bw, enforced_encryption, connect_timeout_secs, flight_flag_size, send_buffer_size, recv_buffer_size, payload_size, ip_tos, retransmit_algo, send_drop_delay, loss_max_ttl, km_refresh_rate, km_pre_announce)
+   - Optional: packet_filter — SRT FEC config string (same format as SRT input). Both sides must agree on FEC parameters.
    - Optional: SMPTE 2022-7 redundancy — add "redundancy" object with leg 2 config for dual-leg sending. Duplicates every packet to two independent SRT paths. Example:
      "redundancy": { "mode": "caller", "local_addr": "0.0.0.0:0", "remote_addr": "backup-host:9001", "latency_ms": 120 }
 
@@ -162,7 +168,7 @@ pub const FLOW_CONFIG_SCHEMA: &str = r#"
     "type": "rtp | udp | srt | rtmp | rtsp | webrtc | whep",
     // For RTP: "bind_addr", optionally "interface_addr", "fec_decode", "allowed_sources", etc.
     // For UDP: "bind_addr", optionally "interface_addr" (no FEC or RTP-specific features)
-    // For SRT: "mode", "local_addr", optionally "remote_addr", "latency_ms", "peer_idle_timeout_secs", "passphrase", "redundancy": {...}
+    // For SRT: "mode", "local_addr", optionally "remote_addr", "latency_ms", "recv_latency_ms", "peer_latency_ms", "peer_idle_timeout_secs", "passphrase", "aes_key_len", "crypto_mode", "max_rexmit_bw", "packet_filter" (FEC), "redundancy": {...}
     // For RTMP: "listen_addr", optionally "app", "stream_key"
     // For RTSP: "rtsp_url", optionally "username", "password", "transport" (tcp|udp), "reconnect_delay_secs"
     // For WebRTC (WHIP server): optionally "bearer_token", "video_only", "public_ip", "stun_server" — publishers POST SDP to /api/v1/flows/{id}/whip
@@ -173,7 +179,8 @@ pub const FLOW_CONFIG_SCHEMA: &str = r#"
       "type": "rtp | udp | srt | rtmp | hls | webrtc",
       "id": "string - unique output ID within flow",
       "name": "string - human-readable name",
-      // Type-specific fields as documented above
+      // For SRT: "mode", "local_addr", optionally "remote_addr", "latency_ms", "recv_latency_ms", "peer_latency_ms", "peer_idle_timeout_secs", "passphrase", "aes_key_len", "crypto_mode", "max_rexmit_bw", "packet_filter" (FEC), "stream_id", "redundancy": {...}
+      // Other types: fields as documented above
     }
   ]
 }
