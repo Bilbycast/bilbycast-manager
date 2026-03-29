@@ -83,7 +83,7 @@ impl NodeAuthLimiter {
 // ───────────────────────────────────────────────────────
 
 /// State for a connected device node.
-struct ConnectedNode {
+pub(crate) struct ConnectedNode {
     node_id: String,
     node_name: String,
     device_type: String,
@@ -92,6 +92,7 @@ struct ConnectedNode {
     cached_stats: Option<serde_json::Value>,
     cached_health: Option<serde_json::Value>,
     software_version: Option<String>,
+    protocol_version: Option<u32>,
     connected_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -101,7 +102,7 @@ struct ConnectedNode {
 
 /// Hub managing all device node WebSocket connections.
 pub struct NodeHub {
-    connections: DashMap<String, ConnectedNode>,
+    pub(crate) connections: DashMap<String, ConnectedNode>,
     browser_tx: broadcast::Sender<String>,
     auth_limiter: Arc<NodeAuthLimiter>,
     pending_commands: DashMap<String, oneshot::Sender<CommandAckPayload>>,
@@ -349,6 +350,7 @@ impl NodeHub {
                 "stats": node.cached_stats,
                 "health": node.cached_health,
                 "software_version": node.software_version,
+                "protocol_version": node.protocol_version,
                 "uptime_secs": uptime_secs,
             });
 
@@ -459,6 +461,29 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
         .map(|n| (n.name, n.device_type))
         .unwrap_or_else(|_| (node_id.clone(), "edge".to_string()));
 
+    // Log protocol version mismatch warning
+    if let Some(pv) = auth_result.protocol_version {
+        if pv != manager_core::models::ws_protocol::WS_PROTOCOL_VERSION {
+            tracing::warn!(
+                "Node {node_id} protocol version ({pv}) differs from manager ({}). Consider upgrading.",
+                manager_core::models::ws_protocol::WS_PROTOCOL_VERSION
+            );
+            let _ = manager_core::db::events::insert_event(
+                &state.db,
+                &node_id,
+                EventSeverity::Warning,
+                "compatibility",
+                &format!(
+                    "Node WebSocket protocol version ({pv}) differs from manager ({}). Consider upgrading.",
+                    manager_core::models::ws_protocol::WS_PROTOCOL_VERSION
+                ),
+                None,
+                None,
+            )
+            .await;
+        }
+    }
+
     // Create command channel
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<String>(64);
 
@@ -468,15 +493,25 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
         ConnectedNode {
             node_id: node_id.clone(),
             node_name,
-            device_type,
+            device_type: device_type.clone(),
             command_tx: cmd_tx,
             cached_config: None,
             cached_stats: None,
             cached_health: None,
             software_version: None,
+            protocol_version: auth_result.protocol_version,
             connected_at: Utc::now(),
         },
     );
+
+    // Push pending/active tunnels to the reconnected node (edge and relay nodes)
+    if device_type == "edge" || device_type == "relay" {
+        let state_clone = state.clone();
+        let nid = node_id.clone();
+        tokio::spawn(async move {
+            push_pending_tunnels_to_node(&state_clone, &nid).await;
+        });
+    }
 
     // Main message loop
     loop {
@@ -520,6 +555,24 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
         manager_core::db::nodes::update_node_status(&state.db, &node_id, NodeStatus::Offline)
             .await;
 
+    // Reset tunnel push statuses so the retry task re-pushes configs on reconnection.
+    // When a relay reboots it loses all in-memory state (auth tokens, bindings).
+    // When an edge disconnects its tunnel tasks may have exited and removed tunnels.
+    match manager_core::db::tunnels::reset_push_status_for_node(&state.db, &node_id).await {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!(
+                    "Reset {count} tunnel push status(es) for disconnected node {node_id}"
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to reset tunnel push statuses for node {node_id}: {e}"
+            );
+        }
+    }
+
     let _ = manager_core::db::events::insert_event(
         &state.db,
         &node_id,
@@ -539,6 +592,7 @@ async fn handle_node_connection(mut socket: WebSocket, state: AppState) {
 struct AuthResult {
     node_id: String,
     new_credentials: Option<(String, String)>,
+    protocol_version: Option<u32>,
 }
 
 /// Wait for the first WebSocket message which must be an auth frame.
@@ -565,6 +619,7 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthR
     }
 
     let payload = &auth["payload"];
+    let protocol_version = payload["protocol_version"].as_u64().map(|v| v as u32);
 
     // Check for registration token
     if let Some(token) = payload["registration_token"].as_str() {
@@ -601,6 +656,7 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthR
         return Ok(AuthResult {
             node_id: node.id.clone(),
             new_credentials: Some((node.id, node_secret)),
+            protocol_version,
         });
     }
 
@@ -657,6 +713,7 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Result<AuthR
     Ok(AuthResult {
         node_id: node_id.to_string(),
         new_credentials: None,
+        protocol_version,
     })
 }
 
@@ -782,6 +839,50 @@ async fn handle_node_message(state: &AppState, node_id: &str, text: &str) {
         "pong" => {}
         other => {
             tracing::debug!("Unknown message type '{other}' from node {node_id}");
+        }
+    }
+}
+
+/// Push all pending/active tunnels for a node that just (re)connected.
+/// This ensures tunnels created while the node was offline get configured.
+async fn push_pending_tunnels_to_node(state: &AppState, node_id: &str) {
+    let tunnels = match manager_core::db::tunnels::list_tunnels_for_node_full(&state.db, node_id).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::warn!("Failed to load tunnels for reconnected node {node_id}: {e}");
+            return;
+        }
+    };
+
+    let active_tunnels: Vec<_> = tunnels.into_iter()
+        .filter(|t| matches!(t.status, manager_core::models::tunnel::TunnelStatus::Pending | manager_core::models::tunnel::TunnelStatus::Active))
+        .collect();
+
+    if active_tunnels.is_empty() {
+        return;
+    }
+
+    tracing::info!("Pushing {} tunnel(s) to reconnected node {node_id}", active_tunnels.len());
+
+    for tunnel in &active_tunnels {
+        match crate::api::tunnels::push_tunnel_to_node(state, tunnel, node_id).await {
+            Ok(()) => {
+                tracing::info!("Pushed tunnel '{}' to node {node_id}", tunnel.id);
+                // Mark active only when all participants are connected
+                let ingress_ok = state.node_hub.connections.contains_key(&tunnel.ingress_node_id);
+                let egress_ok = state.node_hub.connections.contains_key(&tunnel.egress_node_id);
+                let relay_ok = tunnel.relay_node_id.as_ref()
+                    .map(|r| state.node_hub.connections.contains_key(r))
+                    .unwrap_or(true); // no relay needed for direct tunnels
+                if ingress_ok && egress_ok && relay_ok {
+                    let _ = manager_core::db::tunnels::update_tunnel_status(
+                        &state.db, &tunnel.id, "active"
+                    ).await;
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to push tunnel '{}' to node {node_id}: {e}", tunnel.id);
+            }
         }
     }
 }

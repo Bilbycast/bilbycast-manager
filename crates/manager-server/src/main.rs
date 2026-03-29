@@ -300,6 +300,18 @@ async fn run_serve(config_path: &str, port_override: Option<u16>) -> anyhow::Res
         });
     }
 
+    // Periodic retry for tunnels with pending/failed push legs.
+    {
+        let retry_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                crate::api::tunnels::retry_pending_tunnels(&retry_state).await;
+            }
+        });
+    }
+
     let app = build_router(state);
 
     if is_behind_proxy {

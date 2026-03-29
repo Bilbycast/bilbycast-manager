@@ -109,9 +109,23 @@ pub struct Tunnel {
     /// Node ID of the relay server (for relay mode tunnels).
     pub relay_node_id: Option<String>,
     /// Encrypted tunnel encryption key (ChaCha20-Poly1305), stored encrypted at rest.
+    #[serde(skip_serializing)]
     pub tunnel_key_enc: Option<String>,
+    /// Encrypted tunnel PSK for direct mode QUIC auth, stored encrypted at rest.
+    #[serde(skip_serializing)]
+    pub tunnel_psk_enc: Option<String>,
+    /// Encrypted tunnel bind secret for relay HMAC-SHA256 auth, stored encrypted at rest.
+    #[serde(skip_serializing)]
+    pub tunnel_bind_secret_enc: Option<String>,
     pub status: TunnelStatus,
     pub associated_flow_ids: Option<Vec<String>>,
+    /// Per-leg push status: "pending", "pushed", or "failed".
+    pub ingress_push_status: String,
+    pub egress_push_status: String,
+    pub relay_push_status: Option<String>,
+    pub ingress_push_error: Option<String>,
+    pub egress_push_error: Option<String>,
+    pub relay_push_error: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -166,4 +180,10 @@ pub struct TunnelSummary {
     pub relay_node_id: Option<String>,
     pub status: String,
     pub associated_flow_ids: Option<Vec<String>>,
+    pub ingress_push_status: String,
+    pub egress_push_status: String,
+    pub relay_push_status: Option<String>,
+    pub ingress_push_error: Option<String>,
+    pub egress_push_error: Option<String>,
+    pub relay_push_error: Option<String>,
 }

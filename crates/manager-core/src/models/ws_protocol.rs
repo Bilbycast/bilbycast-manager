@@ -7,6 +7,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Current WebSocket protocol version.
+/// Bump when adding new message types, commands, or changing protocol semantics.
+/// Nodes include this in their auth payload so the manager can detect version mismatches.
+pub const WS_PROTOCOL_VERSION: u32 = 1;
+
 /// Envelope for all WebSocket messages between manager and device nodes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEnvelope {
@@ -24,6 +29,9 @@ pub struct RegisterPayload {
     pub token: String,
     pub software_version: Option<String>,
     pub hostname: Option<String>,
+    /// WebSocket protocol version for compatibility detection (optional, for backwards compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<u32>,
 }
 
 /// Authentication message for reconnecting nodes.
@@ -32,6 +40,9 @@ pub struct AuthenticatePayload {
     pub node_id: String,
     pub node_secret: String,
     pub software_version: Option<String>,
+    /// WebSocket protocol version for compatibility detection (optional, for backwards compat).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_version: Option<u32>,
 }
 
 /// Stats snapshot from a device node.

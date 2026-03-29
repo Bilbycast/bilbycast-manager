@@ -229,6 +229,9 @@
   .ft-connected-node {
     display: inline-flex; align-items: center; gap: 2px;
   }
+  .flow-table tbody tr.ft-offline { opacity: 0.45; }
+  .flow-table tbody tr.ft-offline .ft-node-dot { background: #64748b !important; }
+
   .ft-node-name-sm {
     font-size: 12px; font-weight: 500; color: #94a3b8; cursor: pointer;
   }
@@ -458,6 +461,7 @@
   // ── Data store ──
   var topoNodes = [];  // { id, name, status, x, y, vx, vy, flows: [...], srtInput: bool, srtOutput: bool }
   var topoLinks = [];  // { source: idx, target: idx, label: string }
+  var dbTunnelRecords = [];  // tunnel records from DB for fallback link rendering
   var hoveredNode = null;
   var dragNode = null;
   var dragOffset = { x: 0, y: 0 };
@@ -1000,6 +1004,38 @@
           }
         }
       }
+    }
+
+    // ── DB tunnel fallback: draw links from manager DB when relay live stats are empty ──
+    // After relay reboot the relay reports zero tunnels until edges re-bind.
+    // Use persisted tunnel records to keep links visible during recovery.
+    for (var dt = 0; dt < dbTunnelRecords.length; dt++) {
+      var dbt = dbTunnelRecords[dt];
+      if (dbt.mode !== 'relay' || !dbt.relay_node_id) continue;
+
+      // Find relay, ingress, and egress nodes in topoNodes
+      var relayIdx = -1, ingressIdx = -1, egressIdx = -1;
+      for (var k = 0; k < topoNodes.length; k++) {
+        if (topoNodes[k].isExternal) continue;
+        if (topoNodes[k].id === dbt.relay_node_id) relayIdx = k;
+        if (topoNodes[k].id === dbt.ingress_node_id) ingressIdx = k;
+        if (topoNodes[k].id === dbt.egress_node_id) egressIdx = k;
+      }
+      if (relayIdx < 0 || ingressIdx < 0 || egressIdx < 0) continue;
+
+      // Skip if relay already has this tunnel in live stats (addLink deduplicates, but
+      // we want to avoid the "(recovering)" label when live data is available)
+      var relayNode = topoNodes[relayIdx];
+      var liveTunnels = relayNode.tunnels || [];
+      var alreadyLive = false;
+      for (var lt = 0; lt < liveTunnels.length; lt++) {
+        if (liveTunnels[lt].tunnel_id === dbt.id) { alreadyLive = true; break; }
+      }
+      if (alreadyLive) continue;
+
+      var proto = (dbt.protocol || 'tcp').toUpperCase();
+      addLink(ingressIdx, relayIdx, proto + ' via Relay', 'tunnel');
+      addLink(relayIdx, egressIdx, proto + ' via Relay', 'tunnel');
     }
 
     // Helper: find a managed node by edge_id (for relay tunnel matching)
@@ -2503,6 +2539,11 @@
     showFlowTable();
   });
 
+  // ── Hide-offline toggle: rebuild flow table when toggled ──
+  document.getElementById('hideOffline').addEventListener('change', function() {
+    if (currentView === 'flow') buildFlowTable();
+  });
+
   // ── Click node name to open detail page (single-click in Flow view) ──
   document.getElementById('flowTableContent').addEventListener('click', function(e) {
     var el = e.target.closest('[data-node-id]');
@@ -2940,6 +2981,20 @@
     var localFlows = paths.local;
     var orphanTunnels = paths.orphanTunnels;
 
+    // Filter out all-offline paths when "Hide offline nodes" is checked
+    var hideOff = document.getElementById('hideOffline').checked;
+    if (hideOff) {
+      crossNode = crossNode.filter(function(p) {
+        if (p.sourceNode && p.sourceNode.status === 'online') return true;
+        for (var d = 0; d < p.destinations.length; d++) {
+          if (p.destinations[d].destNode && p.destinations[d].destNode.status === 'online') return true;
+        }
+        return false;
+      });
+      localFlows = localFlows.filter(function(r) { return r.node.status !== 'offline'; });
+      orphanTunnels = orphanTunnels.filter(function(r) { return r.node.status !== 'offline'; });
+    }
+
     // Build cross-reference map for input/output node linking
     flowCrossRef = buildFlowCrossRefMap();
 
@@ -3143,7 +3198,16 @@
     var flowState = srcFlow ? srcFlow.state : 'unknown';
     var flowHealth = srcFlow ? srcFlow.health : '';
 
-    var h = '<tr data-row-id="' + ftEsc(path.rowId) + '" draggable="false">';
+    // Determine if all nodes in this path are offline
+    var allOffline = (!path.sourceNode || path.sourceNode.status === 'offline');
+    if (allOffline) {
+      for (var d = 0; d < path.destinations.length; d++) {
+        if (path.destinations[d].destNode && path.destinations[d].destNode.status !== 'offline') { allOffline = false; break; }
+      }
+    }
+    var offlineClass = allOffline ? ' class="ft-offline"' : '';
+
+    var h = '<tr data-row-id="' + ftEsc(path.rowId) + '"' + offlineClass + ' draggable="false">';
     // Drag handle
     h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
     // Flow name
@@ -3226,7 +3290,8 @@
     var inp = ftFlowInput(flow);
     var outs = flow.outputs || [];
 
-    var h = '<tr data-row-id="' + ftEsc(row.rowId) + '" draggable="false">';
+    var offlineClass = node.status === 'offline' ? ' class="ft-offline"' : '';
+    var h = '<tr data-row-id="' + ftEsc(row.rowId) + '"' + offlineClass + ' draggable="false">';
     // Drag handle
     h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
     // Flow name
@@ -3270,7 +3335,8 @@
     var stats = tun.stats || {};
     var tid = tun.tunnel_id || tun.id;
 
-    var h = '<tr data-row-id="' + ftEsc(row.rowId) + '" draggable="false">';
+    var offlineClass = node.status === 'offline' ? ' class="ft-offline"' : '';
+    var h = '<tr data-row-id="' + ftEsc(row.rowId) + '"' + offlineClass + ' draggable="false">';
     // Drag handle
     h += '<td><div class="ft-drag" data-drag="1">\u2630</div></td>';
     // Tunnel name
@@ -3792,11 +3858,7 @@
       var kept = existingMap[remainingKeys[r]];
       if (!kept.isExternal) {
         kept.status = 'offline';
-        kept.flows = [];
-        kept.tunnels = [];
-        kept.edges = [];
-        kept.srtInput = false;
-        kept.srtOutput = false;
+        // Preserve last-known flows/tunnels/edges so Flow view can show offline signal paths
         newNodes.push(kept);
       }
     }
@@ -3962,6 +4024,25 @@
   }
 
   fetchInitialNodes();
+
+  // ── Fetch tunnel records from DB for fallback link rendering ──
+  function fetchDbTunnels() {
+    apiFetch('/api/v1/tunnels', { headers: authHeaders() })
+      .then(function (r) { return r.ok ? r.json() : { tunnels: [] }; })
+      .then(function (data) {
+        var tunnels = data.tunnels || [];
+        dbTunnelRecords = tunnels.filter(function (t) {
+          return t.status === 'pending' || t.status === 'active';
+        });
+        if (topoNodes.length > 0) {
+          computeLinksAndExternals();
+        }
+      })
+      .catch(function () {});
+  }
+
+  fetchDbTunnels();
+  setInterval(fetchDbTunnels, 30000);
 
 })();
 </script>

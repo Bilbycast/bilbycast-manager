@@ -100,21 +100,23 @@ HTTP Request → SecurityHeaders → TraceLayer → Router
 
 **Node Hub** (`manager-server/src/ws/node_hub.rs`) — the most complex component:
 
-1. **Connection auth** (10s timeout): Node sends first message with either `registration_token` (new node) or `node_id + node_secret` (reconnection)
+1. **Connection auth** (10s timeout): Node sends first message with either `registration_token` (new node) or `node_id + node_secret` (reconnection). Auth payload also includes optional `protocol_version` and `software_version` for compatibility detection
 2. **Registration flow:** Token lookup → check expiry → generate secret → encrypt with master_key → store in DB → return `register_ack` with credentials
 3. **Reconnection flow:** Decrypt stored secret → compare → check expiry → return `auth_ok`
-4. **Node expiry:** Nodes with `expires_at` in the past are rejected at auth time (both registration and reconnection)
-4. **Main loop:** `tokio::select!` over socket recv (stats/health/events from node) and mpsc recv (commands to node)
-5. **State:** Each connected node tracked as `ConnectedNode` in `DashMap<String, ConnectedNode>` with `device_type`, cached config, stats, health
-6. **Anti-bruteforce:** `NodeAuthLimiter` — 5 failures per 60s window per node_id
-7. **Driver-aware broadcast:** Dashboard updates include `device_type` and `driver_metrics` extracted by the node's registered driver
+4. **Version mismatch detection:** If `protocol_version` in auth payload differs from `WS_PROTOCOL_VERSION` (defined in `ws_protocol.rs`, currently `1`), a warning event is logged. Old nodes that don't send `protocol_version` are handled gracefully (field is `Option` with `serde(default)`)
+5. **Node expiry:** Nodes with `expires_at` in the past are rejected at auth time (both registration and reconnection)
+6. **Main loop:** `tokio::select!` over socket recv (stats/health/events from node) and mpsc recv (commands to node)
+7. **State:** Each connected node tracked as `ConnectedNode` in `DashMap<String, ConnectedNode>` with `device_type`, cached config, stats, health, `protocol_version`
+8. **Anti-bruteforce:** `NodeAuthLimiter` — 5 failures per 60s window per node_id
+9. **Driver-aware broadcast:** Dashboard updates include `device_type`, `protocol_version`, and `driver_metrics` extracted by the node's registered driver
 
 **Communication:** All manager→node communication uses WebSocket commands (nodes connect outbound to manager). No direct HTTP calls to nodes — this enables management of devices behind firewalls/NAT.
 
-**Message protocol** (`manager-core/src/models/ws_protocol.rs`): JSON envelope `{"msg_type": "...", "payload": {...}}`
+**Message protocol** (`manager-core/src/models/ws_protocol.rs`): JSON envelope `{"msg_type": "...", "payload": {...}}`. Defines `WS_PROTOCOL_VERSION` constant (currently `1`) and optional `protocol_version` field on `RegisterPayload`/`AuthenticatePayload` for compatibility detection.
 
 - Node → Manager: `stats`, `health`, `event`, `config_response`, `command_ack`, `pong`
 - Manager → Node: `command` with action payload (GetConfig, UpdateConfig, CreateFlow, DeleteFlow, StartFlow, StopFlow, etc.)
+- **Backward compatibility:** Unknown message types are handled gracefully by both sides (string-based dispatch with catch-all arms). New optional fields use `#[serde(default)]` and are safe to add without breaking older nodes
 
 **Browser Dashboard** (`ws/browser.rs`) — One-way broadcast of aggregated node stats to all connected browsers via `broadcast::channel(256)`. Requires a valid session cookie before the WebSocket upgrade is accepted.
 
